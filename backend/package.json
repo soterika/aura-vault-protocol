@@ -11,7 +11,7 @@
     "backfill": "tsx src/scripts/backfill-events.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.726.0",
+    "@aws-sdk/client-secrets-manager": "^3.1095.0",
     "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -32,10 +32,10 @@
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/pg": "^8.20.0",
-    "@types/supertest": "^6.0.2",
+    "@types/supertest": "^7.2.1",
     "@types/uuid": "^10.0.0",
-    "supertest": "^7.0.0",
-    "tsx": "^4.19.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.1",
     "typescript": "^5.7.0",
     "vitest": "^4.1.10"
   }
