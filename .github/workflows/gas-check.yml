@@ -1,0 +1,181 @@
+name: Gas Check
+
+# Run on every pull request and on pushes to main/develop so that the baseline
+# is always up to date on the trunk branches.
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "aura-vault/src/**"
+      - "aura-vault/Cargo.toml"
+      - "gas-baselines.json"
+      - "scripts/measure-gas.sh"
+      - "scripts/compare-gas.py"
+      - ".github/workflows/gas-check.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "aura-vault/src/**"
+      - "aura-vault/Cargo.toml"
+
+concurrency:
+  group: gas-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  gas-check:
+    name: Gas Regression Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Needed to post a PR comment
+      pull-requests: write
+      contents: read
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Rust toolchain ────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # ── Cargo cache ───────────────────────────────────────────────────────
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-gas-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-gas-
+            ${{ runner.os }}-cargo-
+
+      # ── Run gas benchmarks ────────────────────────────────────────────────
+      - name: Run gas benchmarks
+        id: benchmarks
+        run: |
+          chmod +x scripts/measure-gas.sh
+          ./scripts/measure-gas.sh --output gas-report.json
+
+      # ── Compare against baseline ──────────────────────────────────────────
+      - name: Compare gas against baseline
+        id: compare
+        # Always run so the PR comment is posted even on failure
+        if: always() && steps.benchmarks.outcome != 'skipped'
+        run: |
+          python3 scripts/compare-gas.py \
+            --baseline gas-baselines.json \
+            --report   gas-report.json \
+            --output   gas-diff.md
+          echo "compare_exit=$?" >> "$GITHUB_OUTPUT"
+        # capture exit code without failing the step immediately
+        continue-on-error: true
+
+      # ── Upload gas report as artifact ─────────────────────────────────────
+      - name: Upload gas report
+        if: always() && steps.benchmarks.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-report-${{ github.sha }}
+          path: |
+            gas-report.json
+            gas-diff.md
+          retention-days: 30
+
+      # ── Post PR comment ───────────────────────────────────────────────────
+      - name: Post gas report as PR comment
+        if: >
+          github.event_name == 'pull_request' &&
+          always() &&
+          steps.compare.outcome != 'skipped'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: gas-check
+          path: gas-diff.md
+
+      # ── Enforce threshold ─────────────────────────────────────────────────
+      - name: Fail if gas threshold exceeded
+        if: steps.compare.outputs.compare_exit != '0'
+        run: |
+          echo "::error::Gas regression detected — one or more contract functions"
+          echo "::error::exceeded the +10% CPU instruction or memory threshold."
+          echo "::error::See the 'Gas Regression Check' step for details."
+          echo "::error::To intentionally accept new baselines, run:"
+          echo "::error::  python3 scripts/compare-gas.py --update-baseline"
+          echo "::error::and commit the updated gas-baselines.json."
+          exit 1
+
+  # ── Optional: auto-update baseline on main after a green merge ────────────
+  update-baseline:
+    name: Update Gas Baseline (main only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Only run on pushes to main/develop, not on PRs
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    needs: [gas-check]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Use a token that can push (default GITHUB_TOKEN is sufficient for
+          # branch pushes when branch protection allows it)
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-gas-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-gas-
+            ${{ runner.os }}-cargo-
+
+      - name: Run gas benchmarks
+        run: |
+          chmod +x scripts/measure-gas.sh
+          ./scripts/measure-gas.sh --output gas-report.json
+
+      - name: Update baseline file
+        run: |
+          python3 scripts/compare-gas.py \
+            --baseline gas-baselines.json \
+            --report   gas-report.json \
+            --update-baseline
+
+      - name: Commit updated baseline
+        env:
+          GIT_REF_NAME: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet gas-baselines.json; then
+            echo "No changes to gas-baselines.json — nothing to commit."
+          else
+            git add gas-baselines.json
+            git commit -m "chore: update gas-baselines.json [skip ci] — auto-refresh on ${GIT_REF_NAME} @ ${GIT_SHA}"
+            git push
+          fi

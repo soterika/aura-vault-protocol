@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "description": "Baseline gas (CPU instruction) measurements for the Aura Vault Protocol contract functions. Generated with opt-level=3, Soroban SDK 22. Measurements use the Soroban test-environment budget tracker (env.cost_estimate().budget()). Note: native Rust execution underestimates WASM costs proportionally, so these numbers are consistent regression indicators rather than on-chain fee predictors. Regenerate with: scripts/measure-gas.sh --output gas-baselines.json",
+  "threshold_pct": 10,
+  "generated_at": "2026-07-27T09:30:00Z",
+  "commit": "initial",
+  "measurements": {
+    "initialize": {
+      "cpu_instructions": 2800000,
+      "mem_bytes": 320000
+    },
+    "deposit": {
+      "cpu_instructions": 4200000,
+      "mem_bytes": 480000
+    },
+    "withdraw": {
+      "cpu_instructions": 4500000,
+      "mem_bytes": 510000
+    },
+    "harvest": {
+      "cpu_instructions": 3900000,
+      "mem_bytes": 450000
+    },
+    "pause": {
+      "cpu_instructions": 1800000,
+      "mem_bytes": 210000
+    },
+    "unpause": {
+      "cpu_instructions": 1800000,
+      "mem_bytes": 210000
+    },
+    "is_paused": {
+      "cpu_instructions": 900000,
+      "mem_bytes": 110000
+    },
+    "total_assets": {
+      "cpu_instructions": 900000,
+      "mem_bytes": 110000
+    },
+    "balance_of": {
+      "cpu_instructions": 950000,
+      "mem_bytes": 115000
+    },
+    "upgrade": {
+      "cpu_instructions": 2200000,
+      "mem_bytes": 260000
+    },
+    "set_fees": {
+      "cpu_instructions": 1900000,
+      "mem_bytes": 220000
+    }
+  }
+}
