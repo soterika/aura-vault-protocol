@@ -70,7 +70,7 @@ jobs:
 
       # Scan BEFORE pushing — Critical CVEs block the push
       - name: Trivy scan — backend (CRITICAL blocks push)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: backend-scan:${{ github.sha }}
           format: sarif
@@ -145,7 +145,7 @@ jobs:
 
       # Scan BEFORE pushing — Critical CVEs block the push
       - name: Trivy scan — frontend (CRITICAL blocks push)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: frontend-scan:${{ github.sha }}
           format: sarif

@@ -89,7 +89,7 @@ jobs:
       # ── Scan backend ──────────────────────────────────────────────────────
 
       - name: Scan backend — table output
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-backend:${{ github.sha }}
           format: table
@@ -100,7 +100,7 @@ jobs:
 
       - name: Scan backend — JSON output
         id: scan-backend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-backend:${{ github.sha }}
           format: json
@@ -110,7 +110,7 @@ jobs:
         continue-on-error: true
 
       - name: Scan backend — SARIF output (blocks on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-backend:${{ github.sha }}
           format: sarif
@@ -122,7 +122,7 @@ jobs:
       # ── Scan frontend ─────────────────────────────────────────────────────
 
       - name: Scan frontend — table output
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-frontend:${{ github.sha }}
           format: table
@@ -133,7 +133,7 @@ jobs:
 
       - name: Scan frontend — JSON output
         id: scan-frontend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-frontend:${{ github.sha }}
           format: json
@@ -143,7 +143,7 @@ jobs:
         continue-on-error: true
 
       - name: Scan frontend — SARIF output (blocks on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-frontend:${{ github.sha }}
           format: sarif
@@ -155,7 +155,7 @@ jobs:
       # ── Scan contract builder ─────────────────────────────────────────────
 
       - name: Scan contract builder — table output
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-contract:${{ github.sha }}
           format: table
@@ -166,7 +166,7 @@ jobs:
 
       - name: Scan contract builder — JSON output
         id: scan-contract
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-contract:${{ github.sha }}
           format: json
@@ -176,7 +176,7 @@ jobs:
         continue-on-error: true
 
       - name: Scan contract builder — SARIF output (blocks on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: aura-contract:${{ github.sha }}
           format: sarif
