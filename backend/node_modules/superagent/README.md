@@ -1,6 +1,6 @@
 # superagent
 
-[![build status](https://img.shields.io/travis/ladjs/superagent.svg)](https://travis-ci.org/ladjs/superagent)
+[![build status](https://github.com/forwardemail/superagent/actions/workflows/ci.yml/badge.svg)](https://github.com/forwardemail/superagent/actions/workflows/ci.yml)
 [![code coverage](https://img.shields.io/codecov/c/github/ladjs/superagent.svg)](https://codecov.io/gh/ladjs/superagent)
 [![code style](https://img.shields.io/badge/code_style-XO-5ed9c7.svg)](https://github.com/sindresorhus/xo)
 [![styled with prettier](https://img.shields.io/badge/styled_with-prettier-ff69b4.svg)](https://github.com/prettier/prettier)

@@ -7,8 +7,10 @@
  *   - Dead-letter queue (DLQ) for exhausted jobs
  *   - Per-job status tracking
  *   - Webhook callbacks on completion/failure
+ *   - Database persistence for job tracking
  */
 import { v4 as uuidv4 } from "uuid";
+import { saveJob } from "./services/queueDb.js";
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -59,6 +61,10 @@ export function enqueue(data) {
     };
     jobs.set(job.id, job);
     waitingQueue.push(job.id);
+    // Persist to database (async, best-effort)
+    saveJob(job).catch((err) => {
+        console.error("[queue] Failed to persist job to database:", err);
+    });
     return job;
 }
 export function getJob(id) {
@@ -73,6 +79,10 @@ export function getDeadLetterJobs() {
 }
 function update(job, patch) {
     Object.assign(job, patch, { updatedAt: Date.now() });
+    // Persist to database (async, best-effort)
+    saveJob(job).catch((err) => {
+        console.error("[queue] Failed to update job in database:", err);
+    });
 }
 function retryDelayMs(attempt) {
     return BASE_DELAY_MS * Math.pow(2, attempt - 1);

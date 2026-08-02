@@ -47,18 +47,28 @@ import {
   loginSchema,
   refreshSchema,
 } from "./validation.js";
-
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(loggingMiddleware());
-app.use(globalIpRateLimiter(["/api/health"]));
 
-// ── A05 Security Misconfiguration: security headers (Helmet) ─────────────────
+app.use(express.json());
+
+app.get("/api/health", async (_req, res) => {
+  const redisHealthy = await pingRedis();
+
+  res.status(200).json({
+    status: redisHealthy ? "ok" : "degraded",
+    redis: redisHealthy,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/api/ready", async (_req, res) => {
+  res.status(200).json({
+    status: "ready",
+  });
+});
+
 applySecurityHeaders(app);
 
-// ── A05 Security Misconfiguration: strict CORS ───────────────────────────────
-// Replace the open cors() with allowlist-driven corsOptions
 app.use(cors(corsOptions));
 
 // ── A09 Logging Failures: correlation IDs + structured request logging ────────

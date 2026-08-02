@@ -15,9 +15,13 @@ const fakeRedisClient = {
     on: vi.fn(),
     quit: vi.fn().mockResolvedValue(undefined),
 };
+// disconnectRedis must be a stable function reference — not a vitest mock — so it
+// still resolves after the module registry is torn down (server.close callback fires
+// asynchronously after the test environment is destroyed).
+const stableDisconnect = () => Promise.resolve(undefined);
 vi.mock("../../redis.js", () => ({
     pingRedis: vi.fn().mockResolvedValue(true),
-    disconnectRedis: vi.fn().mockResolvedValue(undefined),
+    disconnectRedis: stableDisconnect,
     getRedis: vi.fn().mockReturnValue(fakeRedisClient),
 }));
 vi.mock("../../cache.js", () => {
@@ -36,6 +40,10 @@ vi.mock("../../cache.js", () => {
 vi.mock("../../queue.js", () => ({
     startWorker: vi.fn(),
     stopWorker: vi.fn(),
+    queueMetrics: vi.fn(() => ({ waiting: 0, active: 0, completed: 0, failed: 0, total: 0 })),
+    listJobs: vi.fn((_status) => []),
+    getJob: vi.fn((_id) => undefined),
+    getDeadLetterJobs: vi.fn(() => []),
 }));
 vi.mock("../../services/emailQueue.js", () => ({
     startEmailWorker: vi.fn(),
@@ -116,7 +124,7 @@ beforeAll(async () => {
     refreshToken = res.body.refreshToken;
 });
 afterAll(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
 });
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function authHeader() {
@@ -633,5 +641,178 @@ describe("Performance benchmarks", () => {
         const start = Date.now();
         await request(app).get("/api/v1/user/portfolio").set(authHeader());
         expect(Date.now() - start).toBeLessThan(300);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// QUEUE  /api/v1/queue
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/v1/queue/metrics", () => {
+    it("returns queue metrics object", async () => {
+        const res = await request(app).get("/api/v1/queue/metrics");
+        expect(res.status).toBe(200);
+        expect(typeof res.body).toBe("object");
+    });
+});
+describe("GET /api/v1/queue/dashboard", () => {
+    it("returns metrics, active, waiting, recentCompleted, recentDead, timestamp", async () => {
+        const res = await request(app).get("/api/v1/queue/dashboard");
+        expect(res.status).toBe(200);
+        expect(res.body.metrics).toBeDefined();
+        expect(Array.isArray(res.body.active)).toBe(true);
+        expect(Array.isArray(res.body.waiting)).toBe(true);
+        expect(Array.isArray(res.body.recentCompleted)).toBe(true);
+        expect(Array.isArray(res.body.recentDead)).toBe(true);
+        expect(res.body.timestamp).toBeTruthy();
+    });
+});
+describe("GET /api/v1/queue/jobs/:id", () => {
+    it("returns 404 for an unknown job id", async () => {
+        const res = await request(app).get("/api/v1/queue/jobs/unknown-job-xyz");
+        expect(res.status).toBe(404);
+        expect(res.body.error).toBeTruthy();
+    });
+});
+describe("GET /api/v1/queue/dlq", () => {
+    it("returns the dead-letter queue array", async () => {
+        const res = await request(app).get("/api/v1/queue/dlq");
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body)).toBe(true);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH — additional scenarios
+// ─────────────────────────────────────────────────────────────────────────────
+describe("POST /api/auth/revoke-all", () => {
+    it("revokes all sessions and returns { success: true }", async () => {
+        const res = await request(app)
+            .post("/api/auth/revoke-all")
+            .set(authHeader());
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+    });
+    it("returns 401 without auth token", async () => {
+        const res = await request(app).post("/api/auth/revoke-all").send({});
+        expect(res.status).toBe(401);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// EMAIL — DNS verification
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/email/dns", () => {
+    it("returns dns spf/dkim/dmarc fields for a valid domain", async () => {
+        const res = await request(app)
+            .get("/api/email/dns?domain=auravault.io&selector=s1")
+            .set(authHeader());
+        expect(res.status).toBe(200);
+        expect(res.body.dns).toBeDefined();
+        expect(typeof res.body.dns.spf).toBe("boolean");
+        expect(typeof res.body.dns.dkim).toBe("boolean");
+        expect(typeof res.body.dns.dmarc).toBe("boolean");
+    });
+    it("returns 400 when domain param is absent", async () => {
+        const res = await request(app)
+            .get("/api/email/dns")
+            .set(authHeader());
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/domain/i);
+    });
+    it("returns 401 without auth", async () => {
+        const res = await request(app).get("/api/email/dns?domain=auravault.io");
+        expect(res.status).toBe(401);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// YIELD — service-level error propagation
+// ─────────────────────────────────────────────────────────────────────────────
+describe("POST /api/v1/yield/calculate — error propagation", () => {
+    it("returns 400 when positions is not an array", async () => {
+        const res = await request(app)
+            .post("/api/v1/yield/calculate")
+            .send({ positions: "bad", sources: sampleSources });
+        expect(res.status).toBe(400);
+    });
+    it("returns 400 when sources is not an array", async () => {
+        const res = await request(app)
+            .post("/api/v1/yield/calculate")
+            .send({ positions: samplePositions, sources: "bad" });
+        expect(res.status).toBe(400);
+    });
+});
+describe("POST /api/v1/yield/backfill — error propagation", () => {
+    it("returns 400 when endDate is missing", async () => {
+        const res = await request(app)
+            .post("/api/v1/yield/backfill")
+            .send({ positions: samplePositions, sources: sampleSources, startDate: "2025-01-01T00:00:00Z" });
+        expect(res.status).toBe(400);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// WITHDRAWAL — additional scenarios
+// ─────────────────────────────────────────────────────────────────────────────
+describe("POST /api/v1/withdraw — additional scenarios", () => {
+    it("returns 400 when shares is missing", async () => {
+        const res = await request(app)
+            .post("/api/v1/withdraw")
+            .set(authHeader())
+            .send({ walletAddress: "GWALLET1" });
+        expect(res.status).toBe(400);
+    });
+    it("returns 400 when shares is non-numeric", async () => {
+        const res = await request(app)
+            .post("/api/v1/withdraw")
+            .set(authHeader())
+            .send({ walletAddress: "GWALLET1", shares: "not-a-number" });
+        expect(res.status).toBe(400);
+    });
+    it("defaults contractId to env when not provided", async () => {
+        const res = await request(app)
+            .post("/api/v1/withdraw")
+            .set(authHeader())
+            .send({ walletAddress: "GWALLET1", shares: 10 });
+        expect(res.status).toBe(200);
+        expect(res.body.txParams.contractId).toBeDefined();
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTFOLIO — additional error scenarios
+// ─────────────────────────────────────────────────────────────────────────────
+describe("GET /api/v1/user/portfolio — additional scenarios", () => {
+    it("uses page=1 default when page param is invalid", async () => {
+        const res = await request(app)
+            .get("/api/v1/user/portfolio?page=abc")
+            .set(authHeader());
+        expect(res.status).toBe(200);
+        expect(res.body.pagination.page).toBe(1);
+    });
+    it("clamps pageSize to minimum 1 when given 0", async () => {
+        const res = await request(app)
+            .get("/api/v1/user/portfolio?pageSize=0")
+            .set(authHeader());
+        expect(res.status).toBe(200);
+        expect(res.body.pagination.pageSize).toBeGreaterThanOrEqual(1);
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// PERFORMANCE — additional benchmarks
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Performance benchmarks — queue and auth", () => {
+    it("GET /api/v1/queue/metrics responds within 200ms", async () => {
+        const start = Date.now();
+        await request(app).get("/api/v1/queue/metrics");
+        expect(Date.now() - start).toBeLessThan(200);
+    });
+    it("POST /api/auth/login responds within 500ms", async () => {
+        const start = Date.now();
+        await request(app)
+            .post("/api/auth/login")
+            .send({ walletAddress: "GBENCH1" });
+        expect(Date.now() - start).toBeLessThan(500);
+    });
+    it("GET /api/v1/withdraw/queue/stats responds within 200ms", async () => {
+        const start = Date.now();
+        await request(app)
+            .get("/api/v1/withdraw/queue/stats")
+            .set(authHeader());
+        expect(Date.now() - start).toBeLessThan(200);
     });
 });

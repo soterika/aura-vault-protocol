@@ -152,3 +152,7 @@ scrape_configs:
       - targets: ["docker-exporter:9323"]
         labels:
           service: "docker"
+  - job_name: "kube-state-metrics"
+    static_configs:
+      - targets:
+          - "kube-state-metrics:8080"

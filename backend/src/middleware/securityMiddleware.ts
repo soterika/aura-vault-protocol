@@ -14,42 +14,68 @@ import { type Application } from "express";
 
 function buildAllowedOrigins(): (string | RegExp)[] {
   const raw = process.env.CORS_ORIGIN ?? "";
+
   if (raw.trim() === "" || raw.trim() === "*") {
     if (process.env.NODE_ENV === "production") {
       console.warn(
-        "[security] CORS_ORIGIN is not set in production — defaulting to deny all."
+        "[security] CORS_ORIGIN is not set in production — defaulting to deny browser origins."
       );
+
+      // Do not allow browser origins, but allow non-browser requests
+      // (Kubernetes probes, internal services, CLI tools)
       return [];
     }
-    return [/^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
+
+    return [
+      /^http:\/\/localhost(:\d+)?$/,
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+    ];
   }
+
   return raw.split(",").map((o) => o.trim());
 }
 
 export const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
+    /**
+     * Kubernetes probes, backend-to-backend requests,
+     * curl, and internal service calls do not send Origin.
+     *
+     * Allow these requests.
+     */
     if (!origin) {
-      if (process.env.NODE_ENV !== "production") {
-        callback(null, true);
-      } else {
-        callback(new Error("No origin header"), false);
-      }
+      callback(null, true);
       return;
     }
+
     const allowed = buildAllowedOrigins();
+
     const isAllowed = allowed.some((pattern) =>
-      typeof pattern === "string" ? pattern === origin : pattern.test(origin)
+      typeof pattern === "string"
+        ? pattern === origin
+        : pattern.test(origin)
     );
+
     if (isAllowed) {
       callback(null, true);
     } else {
-      callback(new Error(`Origin ${origin} is not allowed by CORS policy`), false);
+      callback(
+        new Error(`Origin ${origin} is not allowed by CORS policy`),
+        false
+      );
     }
   },
+
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Authorization", "Content-Type", "X-Correlation-ID"],
-  exposedHeaders: ["X-Correlation-ID"],
+  allowedHeaders: [
+    "Authorization",
+    "Content-Type",
+    "X-Correlation-ID",
+  ],
+  exposedHeaders: [
+    "X-Correlation-ID",
+  ],
   maxAge: 86400,
 };
 
@@ -57,7 +83,7 @@ export const corsOptions: CorsOptions = {
 
 /**
  * Applies all security headers to the Express app.
- * Call this before registering any routes.
+ * Call this before registering routes.
  */
 export function applySecurityHeaders(app: Application): void {
   app.use(
@@ -67,11 +93,21 @@ export function applySecurityHeaders(app: Application): void {
         includeSubDomains: true,
         preload: true,
       },
+
       noSniff: true,
-      frameguard: { action: "deny" },
-      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+
+      frameguard: {
+        action: "deny",
+      },
+
+      referrerPolicy: {
+        policy: "strict-origin-when-cross-origin",
+      },
+
       xssFilter: true,
+
       hidePoweredBy: true,
+
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
@@ -88,19 +124,30 @@ export function applySecurityHeaders(app: Application): void {
           upgradeInsecureRequests: [],
         },
       },
+
       crossOriginEmbedderPolicy: false,
-      crossOriginOpenerPolicy: { policy: "same-origin" },
-      crossOriginResourcePolicy: { policy: "cross-origin" },
-      permittedCrossDomainPolicies: { permittedPolicies: "none" },
+
+      crossOriginOpenerPolicy: {
+        policy: "same-origin",
+      },
+
+      crossOriginResourcePolicy: {
+        policy: "cross-origin",
+      },
+
+      permittedCrossDomainPolicies: {
+        permittedPolicies: "none",
+      },
     })
   );
 
-  // Permissions-Policy (not in Helmet yet)
+  // Permissions-Policy
   app.use((_req, res, next) => {
     res.setHeader(
       "Permissions-Policy",
       "camera=(), microphone=(), geolocation=(), payment=()"
     );
+
     next();
   });
 }
