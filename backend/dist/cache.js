@@ -20,6 +20,9 @@ export const NS = {
     EMAIL_RETRY: "email:retry",
     EMAIL_DEAD: "email:dead",
     EMAIL_INFLIGHT: "email:inflight",
+    // Yield worker
+    YIELD_STATS: "yield:stats",
+    YIELD_HISTORY: "yield:history",
 };
 function key(ns, id) {
     return `${ns}:${id}`;

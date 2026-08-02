@@ -4,10 +4,28 @@ import { cacheGet, cacheSet, cacheDel, setAdd, setMembers, setDel, NS, } from ".
 const JWT_SECRET = process.env.JWT_SECRET || "aura-vault-dev-secret";
 const ACCESS_TOKEN_TTL = 900; // 15 minutes
 const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days
+// A07 JWT Best Practices: explicit algorithm, issuer, and audience
+// — prevents algorithm confusion attacks (e.g. RS256→HS256 downgrade)
+const JWT_ALGORITHM = "HS256";
+// Issuer and audience are opt-in: set JWT_ISSUER / JWT_AUDIENCE env vars in
+// production. When unset (e.g. unit tests) the claims are omitted so existing
+// tests continue to pass without modification.
+const JWT_ISSUER = process.env.JWT_ISSUER;
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE;
 export async function generateTokens(userId, deviceId, tier = "free") {
     const sessionId = uuidv4();
-    const accessToken = jwt.sign({ sub: userId, sessionId, deviceId, tier }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
-    const refreshToken = jwt.sign({ sub: userId, sessionId, type: "refresh" }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL });
+    const accessToken = jwt.sign({ sub: userId, sessionId, deviceId, tier }, JWT_SECRET, {
+        expiresIn: ACCESS_TOKEN_TTL,
+        algorithm: JWT_ALGORITHM,
+        ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
+        ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
+    });
+    const refreshToken = jwt.sign({ sub: userId, sessionId, type: "refresh" }, JWT_SECRET, {
+        expiresIn: REFRESH_TOKEN_TTL,
+        algorithm: JWT_ALGORITHM,
+        ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
+        ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
+    });
     const stored = { userId, sessionId, deviceId, tier };
     await cacheSet(NS.AUTH_REFRESH, refreshToken, stored, REFRESH_TOKEN_TTL);
     await setAdd(NS.AUTH_SESSIONS, userId, sessionId, REFRESH_TOKEN_TTL);
@@ -18,7 +36,11 @@ export async function validateAccessToken(token) {
     if (blacklisted)
         return null;
     try {
-        return jwt.verify(token, JWT_SECRET);
+        return jwt.verify(token, JWT_SECRET, {
+            algorithms: [JWT_ALGORITHM],
+            ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
+            ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
+        });
     }
     catch {
         return null;
@@ -29,7 +51,11 @@ export async function refreshAccessToken(refreshToken) {
     if (!stored)
         return null;
     try {
-        jwt.verify(refreshToken, JWT_SECRET);
+        jwt.verify(refreshToken, JWT_SECRET, {
+            algorithms: [JWT_ALGORITHM],
+            ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
+            ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
+        });
     }
     catch {
         return null;

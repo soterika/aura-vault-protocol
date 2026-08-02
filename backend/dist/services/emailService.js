@@ -4,12 +4,12 @@ import crypto from 'crypto';
 import dns from 'dns/promises';
 import { getRedis } from '../redis.js';
 import { NS } from '../cache.js';
+import { getSecret } from '../secrets.js';
 import { EMAIL_TEMPLATES } from '../templates/emailTemplates.js';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const FROM_ADDRESS = process.env.EMAIL_FROM || 'noreply@auravault.io';
 const FROM_NAME = process.env.EMAIL_FROM_NAME || 'Aura Vault';
 const BASE_URL = process.env.APP_BASE_URL || 'https://auravault.io';
-const UNSUB_SECRET = process.env.UNSUBSCRIBE_SECRET || 'aura-vault-unsub-dev-secret';
 // 1×1 transparent GIF — served by the open-tracking endpoint
 const TRACKING_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 const compiled = new Map();
@@ -36,7 +36,11 @@ function renderTemplate(name, data) {
 }
 // ─── Unsubscribe tokens ───────────────────────────────────────────────────────
 export function generateUnsubscribeToken(email) {
-    const hmac = crypto.createHmac('sha256', UNSUB_SECRET).update(email).digest('hex');
+    const secret = process.env.UNSUBSCRIBE_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+        throw new Error('UNSUBSCRIBE_SECRET is not loaded');
+    }
+    const hmac = crypto.createHmac('sha256', secret || 'local-dev-only').update(email).digest('hex');
     const encoded = Buffer.from(email).toString('base64url');
     return `${encoded}.${hmac}`;
 }
@@ -57,7 +61,10 @@ export function parseUnsubscribeToken(token) {
     catch {
         return null;
     }
-    const expected = crypto.createHmac('sha256', UNSUB_SECRET).update(email).digest('hex');
+    const secret = process.env.UNSUBSCRIBE_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production')
+        return null;
+    const expected = crypto.createHmac('sha256', secret || 'local-dev-only').update(email).digest('hex');
     try {
         if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(expected, 'hex'))) {
             return null;
@@ -110,12 +117,11 @@ export async function getTrackingEvents(trackingId) {
 }
 export { TRACKING_GIF };
 // ─── Provider abstraction ─────────────────────────────────────────────────────
-function initSendGrid() {
-    const key = process.env.SENDGRID_API_KEY;
+async function initSendGrid() {
+    const key = await getSecret('SENDGRID_API_KEY');
     if (key)
         sgMail.setApiKey(key);
 }
-initSendGrid();
 async function sendViaSendGrid(msg) {
     const [response] = await sgMail.send({
         to: msg.to,
@@ -133,8 +139,10 @@ async function sendViaSendGrid(msg) {
     return response.headers['x-message-id'] ?? 'sg-unknown';
 }
 async function sendViaMailgun(msg) {
-    const domain = process.env.MAILGUN_DOMAIN;
-    const apiKey = process.env.MAILGUN_API_KEY;
+    const [domain, apiKey] = await Promise.all([
+        getSecret('MAILGUN_DOMAIN'),
+        getSecret('MAILGUN_API_KEY'),
+    ]);
     if (!domain || !apiKey)
         throw new Error('Mailgun credentials not configured');
     const region = process.env.MAILGUN_REGION === 'eu' ? 'api.eu.mailgun.net' : 'api.mailgun.net';
@@ -172,6 +180,8 @@ function validateAttachments(attachments) {
     }
 }
 export async function sendEmail(job) {
+    process.env.UNSUBSCRIBE_SECRET ??= await getSecret('UNSUBSCRIBE_SECRET');
+    await initSendGrid();
     const blocked = await isBlocked(job.to);
     if (blocked.blocked) {
         return { success: false, error: `Blocked: ${blocked.reason}` };

@@ -5,6 +5,9 @@
  * Supports multiple yield sources (staking, fees, incentives) with
  * compound interest, batch processing for 100k+ positions, backfill,
  * and alerting on calculation failures.
+ *
+ * Monitoring counters are exposed via `getMetrics()` for integration with
+ * Prometheus or any metrics-scraping pipeline.
  */
 // ---------------------------------------------------------------------------
 // Pure math helpers
@@ -44,18 +47,61 @@ export function totalCompoundYield(amount, sources, entryDate, calcDate) {
 export function createYieldService(opts = {}) {
     const batchSize = opts.batchSize ?? 500;
     const alert = opts.onAlert ?? ((msg, meta) => console.error(`[YieldService] ALERT: ${msg}`, meta ?? ""));
+    // -------------------------------------------------------------------------
+    // Monitoring counters
+    // -------------------------------------------------------------------------
+    const metrics = {
+        calculationsAttempted: 0,
+        calculationsSucceeded: 0,
+        skippedInactive: 0,
+        skippedZeroAmount: 0,
+        calculationErrors: 0,
+        batchRuns: 0,
+        backfillRuns: 0,
+        totalBatchDurationMs: 0,
+        alertsFired: 0,
+        lastSuccessfulBatchAt: "",
+    };
+    /** Wrap the alert function so every call also increments the counter. */
+    function fireAlert(msg, meta) {
+        metrics.alertsFired++;
+        alert(msg, meta);
+    }
+    /** Return a snapshot of current metrics. */
+    function getMetrics() {
+        return { ...metrics };
+    }
+    /** Reset all counters — useful in tests or after a metrics export. */
+    function resetMetrics() {
+        metrics.calculationsAttempted = 0;
+        metrics.calculationsSucceeded = 0;
+        metrics.skippedInactive = 0;
+        metrics.skippedZeroAmount = 0;
+        metrics.calculationErrors = 0;
+        metrics.batchRuns = 0;
+        metrics.backfillRuns = 0;
+        metrics.totalBatchDurationMs = 0;
+        metrics.alertsFired = 0;
+        metrics.lastSuccessfulBatchAt = "";
+    }
+    // -------------------------------------------------------------------------
+    // Core calculation
+    // -------------------------------------------------------------------------
     /**
      * Calculate yield for a single position at the given date.
      * Returns null (and fires alert) if the position is inactive or amount is zero.
      */
     function calculateForPosition(position, sources, calcDate = new Date()) {
+        metrics.calculationsAttempted++;
         if (!position.isActive) {
             // Edge case: vault closed/deactivated — emit alert, skip
-            alert("Skipping inactive position", { positionId: position.id });
+            metrics.skippedInactive++;
+            fireAlert("Skipping inactive position", { positionId: position.id });
             return null;
         }
         if (position.amount <= 0) {
-            alert("Position has zero amount", { positionId: position.id });
+            metrics.skippedZeroAmount++;
+            fireAlert("Position has zero amount", { positionId: position.id });
             return null;
         }
         const activeSources = sources.filter((s) => s.apy > 0);
@@ -66,6 +112,7 @@ export function createYieldService(opts = {}) {
         }));
         const dailyYield = perSourceDaily.reduce((sum, s) => sum + s.yield, 0);
         const totalYield = totalCompoundYield(position.amount, activeSources, position.entryDate, calcDate);
+        metrics.calculationsSucceeded++;
         return {
             positionId: position.id,
             dailyYield,
@@ -75,6 +122,9 @@ export function createYieldService(opts = {}) {
             sources: perSourceDaily,
         };
     }
+    // -------------------------------------------------------------------------
+    // Batch processing
+    // -------------------------------------------------------------------------
     /**
      * Process up to 100k+ positions efficiently in sequential batches.
      * Each batch is processed concurrently; promises are bounded to batchSize
@@ -97,23 +147,33 @@ export function createYieldService(opts = {}) {
                 else {
                     const errMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
                     errors.push({ positionId: pos.id, error: errMsg });
-                    alert("Calculation failure", { positionId: pos.id, error: errMsg });
+                    metrics.calculationErrors++;
+                    fireAlert("Calculation failure", { positionId: pos.id, error: errMsg });
                 }
             }
         }
+        const durationMs = Date.now() - start;
+        metrics.batchRuns++;
+        metrics.totalBatchDurationMs += durationMs;
         if (errors.length > 0) {
-            alert(`Batch completed with ${errors.length} failure(s) out of ${positions.length}`, {
+            fireAlert(`Batch completed with ${errors.length} failure(s) out of ${positions.length}`, {
                 failureRate: `${((errors.length / positions.length) * 100).toFixed(2)}%`,
             });
+        }
+        else {
+            metrics.lastSuccessfulBatchAt = new Date().toISOString();
         }
         return {
             processed: results.length,
             failed: errors.length,
             errors,
             results,
-            durationMs: Date.now() - start,
+            durationMs,
         };
     }
+    // -------------------------------------------------------------------------
+    // Backfill
+    // -------------------------------------------------------------------------
     /**
      * Backfill: calculate yield for every hour between startDate and endDate.
      * Useful for catching up missed hourly runs.
@@ -132,7 +192,8 @@ export function createYieldService(opts = {}) {
             const result = await processBatch(eligible, sources, slot);
             batchResults.push(result);
         }
+        metrics.backfillRuns++;
         return batchResults;
     }
-    return { calculateForPosition, processBatch, backfill };
+    return { calculateForPosition, processBatch, backfill, getMetrics, resetMetrics };
 }

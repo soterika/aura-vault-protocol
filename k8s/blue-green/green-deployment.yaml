@@ -1,8 +1,10 @@
 # Green deployment — the "standby" slot.
-# CI always deploys the new image here first.  The stable Service selector
+# CI always deploys the new image here first. The stable Service selector
 # is flipped to slot=green only after smoke tests pass.
+
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
   name: aura-vault-green
   namespace: aura-vault
@@ -13,32 +15,39 @@ metadata:
   annotations:
     deployment.kubernetes.io/revision: "1"
     blue-green/slot: green
+
 spec:
   replicas: 3
   revisionHistoryLimit: 2
+
   selector:
     matchLabels:
       app: aura-vault
       slot: green
+
   strategy:
     type: Recreate
+
   template:
     metadata:
       labels:
         app: aura-vault
         slot: green
         component: app
-        version: "REPLACE_IMAGE_TAG"    # patched by deploy.sh
+        version: "REPLACE_IMAGE_TAG"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3001"
         prometheus.io/path: "/metrics"
+
     spec:
       serviceAccountName: backend
+
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -48,17 +57,22 @@ spec:
                   matchExpressions:
                     - key: app
                       operator: In
-                      values: [aura-vault]
+                      values:
+                        - aura-vault
                 topologyKey: kubernetes.io/hostname
+
       containers:
         - name: backend
-          image: ghcr.io/soterika/aura-vault-protocol:REPLACE_IMAGE_TAG
-          imagePullPolicy: Always
+          image: aura-vault-backend:v2
+          imagePullPolicy: IfNotPresent
+
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop: [ALL]
+              drop:
+                - ALL
+
           ports:
             - name: http
               containerPort: 3001
@@ -66,14 +80,17 @@ spec:
             - name: metrics
               containerPort: 3001
               protocol: TCP
+
           envFrom:
             - configMapRef:
                 name: backend-config
             - secretRef:
                 name: backend-secrets
+
           env:
             - name: DEPLOYMENT_SLOT
               value: green
+
           resources:
             requests:
               cpu: "100m"
@@ -81,6 +98,7 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+
           livenessProbe:
             httpGet:
               path: /api/health
@@ -89,6 +107,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+
           readinessProbe:
             httpGet:
               path: /api/ready
@@ -98,6 +117,7 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
             successThreshold: 1
+
           startupProbe:
             httpGet:
               path: /api/health
@@ -106,14 +126,17 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 12
+
           volumeMounts:
             - name: tmp
               mountPath: /tmp
             - name: cache
               mountPath: /app/cache
+
       volumes:
         - name: tmp
           emptyDir: {}
+
         - name: cache
           emptyDir:
             sizeLimit: 1Gi

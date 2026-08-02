@@ -226,6 +226,49 @@ Get started:
 To unsubscribe: {{unsubscribeUrl}}
 `,
 };
+const GDPR_ERASURE_CONFIRMATION = {
+    defaultSubject: 'Your data erasure request has been completed — Aura Vault',
+    html: layout('Data Erasure Completed', `
+    ${greeting()}
+    <p style="color:#c0c0d0;font-size:15px;margin:0 0 8px;">
+      Your right-to-erasure request has been completed. The following off-chain data has been removed from our systems.
+    </p>
+    ${detailTable(`
+      ${row('Request ID', '#{{requestId}}', false)}
+      ${row('Wallet Address', '<span style="font-family:monospace;font-size:12px;word-break:break-all;">{{walletAddress}}</span>')}
+      ${row('Completed At', '{{completedAt}}')}
+      ${row('Deleted Fields', '<span style="color:#22c55e;">{{deletedFields}}</span>')}
+    `)}
+    <div style="background:#1a2a1a;border:1px solid #14532d;border-radius:12px;padding:20px 24px;margin:24px 0;">
+      <div style="color:#86efac;font-size:14px;font-weight:600;margin-bottom:8px;">&#x2139; Retained records</div>
+      <p style="color:#a0c0a0;font-size:13px;margin:0;">
+        On-chain data (transaction hashes, vault positions) cannot be erased from the blockchain
+        and falls outside GDPR erasure scope. These records remain on-chain.
+      </p>
+    </div>
+    <p style="color:#6b6b80;font-size:13px;margin:24px 0 0;">
+      Questions? <a href="{{supportUrl}}" style="color:#6366f1;text-decoration:none;">Contact support</a>
+    </p>
+  `),
+    text: `Aura Vault — Data Erasure Completed
+
+Hi {{userName}},
+
+Your right-to-erasure request #{{requestId}} has been completed.
+
+Wallet Address:  {{walletAddress}}
+Completed At:    {{completedAt}}
+Deleted Fields:  {{deletedFields}}
+
+RETAINED RECORDS
+On-chain data (transaction hashes, vault positions) cannot be erased from the
+blockchain and falls outside GDPR erasure scope. These records remain on-chain.
+
+Questions? {{supportUrl}}
+
+To unsubscribe: {{unsubscribeUrl}}
+`,
+};
 // ─── Registry ─────────────────────────────────────────────────────────────────
 export const EMAIL_TEMPLATES = {
     'transaction-confirmation': TRANSACTION_CONFIRMATION,
@@ -233,4 +276,5 @@ export const EMAIL_TEMPLATES = {
     'withdrawal': WITHDRAWAL,
     'security-alert': SECURITY_ALERT,
     'welcome': WELCOME,
+    'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
 };

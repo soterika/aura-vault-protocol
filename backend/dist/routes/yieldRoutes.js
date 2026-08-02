@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { createYieldService } from "../services/yieldService.js";
+import { getLastRunStats, getRunHistory, isYieldWorkerRunning } from "../services/yieldWorker.js";
+import { parsePagination, paginateArray } from "../middleware/paginationMiddleware.js";
 const yieldService = createYieldService();
 export const yieldRouter = Router();
 /**
@@ -45,5 +47,33 @@ yieldRouter.post("/backfill", async (req, res) => {
     catch (err) {
         console.error("[yield/backfill]", err);
         res.status(500).json({ error: "Backfill failed" });
+    }
+});
+/**
+ * GET /api/v1/yield/stats
+ * Returns last hourly worker run stats and cursor-paginated run history.
+ * Query params: cursor (opaque base64), limit (default 20, max 100)
+ */
+yieldRouter.get("/stats", async (req, res) => {
+    const { limit, cursor } = parsePagination(req);
+    try {
+        const [lastRun, allHistory] = await Promise.all([
+            getLastRunStats(),
+            getRunHistory(100),
+        ]);
+        const { data, nextCursor } = paginateArray(allHistory, (item, index) => ({
+            id: String(index),
+            timestamp: typeof item.lastRunAt === "string" ? item.lastRunAt : "0",
+        }), limit, cursor);
+        res.json({
+            workerRunning: isYieldWorkerRunning(),
+            lastRun,
+            data,
+            nextCursor,
+        });
+    }
+    catch (err) {
+        console.error("[yield/stats]", err);
+        res.status(500).json({ error: "Failed to retrieve yield stats" });
     }
 });
