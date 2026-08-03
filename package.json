@@ -31,7 +31,7 @@
     "@axe-core/playwright": "^4.10.2",
     "@commitlint/cli": "^19.6.1",
     "@commitlint/config-conventional": "^21.2.0",
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "axe-core": "^4.10.2",
     "cypress": "^15.19.0",
     "cypress-axe": "^1.5.0",
