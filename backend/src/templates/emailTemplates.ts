@@ -290,6 +290,42 @@ To unsubscribe: {{unsubscribeUrl}}
 `,
 };
 
+const ALERT_SUBSCRIPTION: TemplateDefinition = {
+  defaultSubject: 'Alert Subscription Confirmed — Aura Vault',
+  html: layout('Alert Subscription Confirmed', `
+    ${greeting()}
+    <p style="color:#c0c0d0;font-size:15px;margin:0 0 8px;">
+      You've successfully subscribed to transaction alerts for your Aura Vault wallet.
+    </p>
+    ${detailTable(`
+      ${row('Wallet Address', '<span style="font-family:monospace;font-size:12px;word-break:break-all;">{{walletAddress}}</span>', false)}
+      ${row('Alert Threshold', '{{threshold}} {{asset}}')}
+      ${row('Event Types', '{{eventTypes}}')}
+    `)}
+    <div style="background:#1a1a2e;border-radius:12px;padding:16px 24px;margin:24px 0;">
+      <p style="color:#a0a0b0;font-size:13px;margin:0;">
+        You will receive an email whenever a deposit or withdrawal exceeding your
+        threshold occurs on this wallet. You can update or cancel your subscription
+        at any time using the unsubscribe link below.
+      </p>
+    </div>
+  `),
+  text: `Aura Vault — Alert Subscription Confirmed
+
+Hi {{userName}},
+
+You've successfully subscribed to transaction alerts.
+
+Wallet Address: {{walletAddress}}
+Threshold:      {{threshold}} {{asset}}
+Event Types:    {{eventTypes}}
+
+You will be notified whenever a matching transaction exceeds your threshold.
+
+To unsubscribe: {{unsubscribeUrl}}
+`,
+};
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
@@ -299,4 +335,5 @@ export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
   'security-alert': SECURITY_ALERT,
   'welcome': WELCOME,
   'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
+  'alert-subscription': ALERT_SUBSCRIPTION,
 };

@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
   authRateLimiter,
@@ -22,6 +21,7 @@ import { pingRedis, disconnectRedis } from "./redis.js";
 import { webhookRouter } from "./webhook.js";
 import portfolioRouter from "./portfolio.js";
 import { emailRouter } from "./routes/emailRoutes.js";
+import { notificationRouter } from "./routes/notificationRoutes.js";
 import { gasRouter } from "./routes/gasRoutes.js";
 import { yieldRouter } from "./routes/yieldRoutes.js";
 import { queueRouter } from "./routes/queueRoutes.js";
@@ -36,7 +36,7 @@ import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
 import {
   applySecurityHeaders,
-  corsOptions,
+  applyCors,
 } from "./middleware/securityMiddleware.js";
 import {
   correlationIdMiddleware,
@@ -49,7 +49,6 @@ import {
 } from "./validation.js";
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 app.use(loggingMiddleware());
 app.use(globalIpRateLimiter(["/api/health"]));
@@ -58,8 +57,8 @@ app.use(globalIpRateLimiter(["/api/health"]));
 applySecurityHeaders(app);
 
 // ── A05 Security Misconfiguration: strict CORS ───────────────────────────────
-// Replace the open cors() with allowlist-driven corsOptions
-app.use(cors(corsOptions));
+// credentials:true ONLY for /api/auth/*; all other routes use credentials:false
+applyCors(app);
 
 // ── A09 Logging Failures: correlation IDs + structured request logging ────────
 app.use(correlationIdMiddleware());
@@ -127,6 +126,7 @@ app.post("/api/auth/revoke-all", authenticate, userRateLimiter(), async (req, re
 // ── A01 Broken Access Control: all protected routes use `authenticate` ────────
 app.use("/api/webhooks", authenticate, webhookRouter);
 app.use("/api/email", emailRouter);
+app.use("/api/notifications/email", notificationRouter);
 app.use("/api/v1/user/portfolio", authenticate, portfolioRouter);
 app.use("/api/v1/gas", gasRouter);
 app.use("/api/v1/yield", yieldRouter);
