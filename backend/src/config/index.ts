@@ -64,7 +64,7 @@ const envSchema = z.object({
     .optional()
     .default("development"),
   LOG_LEVEL: z
-    .enum(["error", "warn", "info", "http", "verbose", "debug", "silly"])
+    .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .optional()
     .default("info"),
   CORS_ORIGIN: optionalStr,
