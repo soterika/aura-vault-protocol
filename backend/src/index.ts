@@ -3,7 +3,6 @@ import { initTracing, tracingMiddleware, shutdownTracing } from "./tracing.js";
 initTracing();
 
 import express from "express";
-import cors from "cors";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
   authRateLimiter,
@@ -25,6 +24,7 @@ import {
 import { pingRedis, disconnectRedis } from "./redis.js";
 import { webhookRouter } from "./webhook.js";
 import { emailRouter } from "./routes/emailRoutes.js";
+import { notificationRouter } from "./routes/notificationRoutes.js";
 import { gasRouter } from "./routes/gasRoutes.js";
 import { yieldRouter } from "./routes/yieldRoutes.js";
 import { queueRouter } from "./routes/queueRoutes.js";
@@ -41,7 +41,7 @@ import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
 import { swaggerRouter } from "./routes/swaggerRoutes.js";
 import {
   applySecurityHeaders,
-  corsOptions,
+  applyCors,
 } from "./middleware/securityMiddleware.js";
 import {
   correlationIdMiddleware,
@@ -151,6 +151,7 @@ app.post("/api/auth/revoke-all", authenticate, userRateLimiter(), async (req, re
 // ── A01 Broken Access Control: all protected routes use `authenticate` ────────
 app.use("/api/webhooks", authenticate, webhookRouter);
 app.use("/api/email", emailRouter);
+app.use("/api/notifications/email", notificationRouter);
 app.use("/api/v1/user/portfolio", authenticate, portfolioRouter);
 app.use("/api/v1/gas", gasRouter);
 app.use("/api/v1/yield", yieldRouter);
