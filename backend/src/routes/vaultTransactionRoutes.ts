@@ -91,6 +91,7 @@ vaultTransactionRouter.post(
   "/deposit",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   validate(vaultDepositSchema),
   async (req: Request, res: Response): Promise<void> => {
@@ -132,6 +133,7 @@ vaultTransactionRouter.post(
   "/withdraw",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   validate(vaultWithdrawSchema),
   async (req: Request, res: Response): Promise<void> => {
@@ -173,6 +175,7 @@ vaultTransactionRouter.post(
   "/harvest",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   validate(vaultHarvestSchema),
   async (req: Request, res: Response): Promise<void> => {
