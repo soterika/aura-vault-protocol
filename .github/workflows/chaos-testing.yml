@@ -1,0 +1,157 @@
+name: Chaos Testing
+
+on:
+  schedule:
+    # Run monthly chaos tests on the first day of the month at midnight UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  chaos-test:
+    runs-on: ubuntu-latest
+    environment: staging
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aura_vault_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aura_vault_test
+          REDIS_URL: redis://localhost:6379
+        run: npm run migrate
+
+      - name: Run chaos tests
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aura_vault_test
+          REDIS_URL: redis://localhost:6379
+          HORIZON_URL: https://horizon-testnet.stellar.org
+          NODE_ENV: staging
+          CHAOS_ENABLED: 'true'
+        run: npm run test -- chaos.test.ts --reporter=verbose
+
+      - name: Run resilience tests with service killing
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aura_vault_test
+          REDIS_URL: redis://localhost:6379
+          HORIZON_URL: https://horizon-testnet.stellar.org
+          NODE_ENV: staging
+          CHAOS_ENABLED: 'true'
+        run: |
+          # Start test server in background
+          npm run dev &
+          SERVER_PID=$!
+          sleep 3
+
+          # Test 1: Kill and restart Redis
+          docker-compose -f docker-compose.test.yml stop redis
+          sleep 5
+          docker-compose -f docker-compose.test.yml start redis
+          sleep 3
+
+          # Test 2: Kill and restart PostgreSQL
+          docker-compose -f docker-compose.test.yml stop postgres
+          sleep 5
+          docker-compose -f docker-compose.test.yml start postgres
+          sleep 3
+
+          # Verify server is still running
+          curl http://localhost:3001/api/health || exit 1
+
+          # Cleanup
+          kill $SERVER_PID || true
+
+      - name: Report chaos test results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const testResults = fs.existsSync('backend/test-results.json')
+              ? JSON.parse(fs.readFileSync('backend/test-results.json', 'utf8'))
+              : { passed: 0, failed: 0 };
+
+            const message = `
+            # Chaos Testing Results
+
+            - **Passed**: ${testResults.passed}
+            - **Failed**: ${testResults.failed}
+            - **Date**: ${new Date().toISOString()}
+
+            See action logs for detailed results.
+            `;
+
+            core.notice(message);
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_CHAOS_WEBHOOK }}
+          payload: |
+            {
+              "text": "Chaos Testing Failed",
+              "attachments": [
+                {
+                  "color": "danger",
+                  "title": "Monthly Chaos Testing",
+                  "text": "Circuit breaker or degradation tests failed in staging environment",
+                  "fields": [
+                    {
+                      "title": "Repository",
+                      "value": "${{ github.repository }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Run",
+                      "value": "${{ github.run_number }}",
+                      "short": true
+                    }
+                  ],
+                  "actions": [
+                    {
+                      "type": "button",
+                      "text": "View Details",
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
