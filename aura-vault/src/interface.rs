@@ -29,7 +29,8 @@ pub trait AuraVaultTrait {
     /// Initialise the vault.
     ///
     /// Must be called exactly once after the contract is deployed. Sets the
-    /// admin address, the underlying token, and the governance signer list.
+    /// admin address, the underlying token, governance signer list, metadata,
+    /// and vault share precision (`decimals`).
     /// All subsequent calls return [`VaultError::AlreadyInitialized`].
     ///
     /// # Parameters
@@ -41,23 +42,36 @@ pub trait AuraVaultTrait {
     ///   tokens are deposited into and withdrawn from the vault.
     /// - `signers` — Ordered list of addresses authorised to create and vote
     ///   on governance proposals. Must be non-empty.
+    /// - `name` — Vault name string.
+    /// - `symbol` — Vault share symbol string.
+    /// - `decimals` — Number of decimal places used by vault shares (e.g. 7 for Stellar standard). Immutable thereafter.
     ///
     /// # Errors
     ///
     /// - [`VaultError::AlreadyInitialized`] — vault has already been initialised.
-    fn initialize(env: Env, admin: Address, underlying_token: Address, signers: Vec<Address>) -> Result<(), VaultError>;
+    fn initialize(
+        env: Env,
+        admin: Address,
+        underlying_token: Address,
+        signers: Vec<Address>,
+        name: String,
+        symbol: String,
+        decimals: u32,
+    ) -> Result<(), VaultError>;
 
     /// Deposit underlying tokens and receive proportional vault shares.
     ///
     /// Transfers `amount` of the underlying token from `caller` to the vault,
-    /// then mints shares according to the current exchange rate:
+    /// then mints shares according to the current exchange rate and configured share decimals:
     ///
     /// ```text
     /// shares = floor(amount × total_shares / total_deposited)   // if vault non-empty
-    /// shares = amount                                            // if vault empty (1:1 seed)
+    /// shares = amount                                            // if vault empty (1:1 seed at vault decimal precision)
     /// ```
     ///
+    /// Vault share decimals match underlying token precision (default 7 decimals / 1 share = 10^7 stroops).
     /// Enforces the flash-loan guard (actual balance == tracked balance) before
+    /// executing. Emits a `deposit` event on success.
     /// executing. Emits a `deposit` event on success.
     ///
     /// # Parameters
@@ -543,4 +557,11 @@ pub trait AuraVaultTrait {
 
     /// Returns the contract version integer. Read-only.
     fn version(env: Env) -> u32;
+
+    /// Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard).
+    ///
+    /// Set during `initialize` and immutable thereafter.
+    /// Read-only; no authorization required.
+    fn decimals(env: Env) -> u32;
 }
+

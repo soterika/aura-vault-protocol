@@ -44,8 +44,10 @@ When yield is harvested, `total_assets` increases but `total_shares` does not. T
 | `total_shares` | Instance | `i128` | Sum of all outstanding vault shares |
 | `balance(addr)` | Persistent per address | `i128` | Share balance of a specific depositor |
 | `perf_fee_bps` | Instance | `u32` | Performance fee in basis points (default: 1000 = 10%) |
+| `decimals` | Instance (`DataKey::Decimals`) | `u32` | Number of decimal places used by vault shares (set at initialization, immutable; default: 7) |
 
-All values are in **stroops** (1 token = 10,000,000 stroops for a 7-decimal token like XLM or USDC on Stellar). The formulas are the same regardless of decimal precision because they operate on the raw integer values.
+All values are in **stroops** (1 token = 10^decimals base units, e.g. 10,000,000 stroops for a 7-decimal token like XLM or USDC on Stellar). The share precision is configured at initialization via `DataKey::Decimals` and exposed publicly via `decimals() -> u32`. The formulas operate on raw integer units scaled to `10^decimals`.
+
 
 ---
 

@@ -68,7 +68,7 @@ pub enum DataKey {
     /// Minimum deposit amount in underlying token units.
     MinDeposit,
     // -----------------------------------------------------------------------
-    // Contract metadata (Issue #350)
+    // Contract metadata (Issue #350, Issue #347)
     // -----------------------------------------------------------------------
     /// Vault name (set at initialization).
     VaultName,
@@ -76,6 +76,8 @@ pub enum DataKey {
     VaultSymbol,
     /// Contract version integer (set at initialization).
     VaultVersion,
+    /// Vault share decimals (set at initialization, immutable). Issue #347.
+    Decimals,
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -518,3 +520,16 @@ pub fn get_vault_version(env: &Env) -> u32 {
 pub fn set_vault_version(env: &Env, version: u32) {
     env.storage().instance().set(&DataKey::VaultVersion, &version);
 }
+
+// ---------------------------------------------------------------------------
+// Vault share decimals helpers (Issue #347)
+// ---------------------------------------------------------------------------
+
+pub fn get_decimals(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::Decimals).unwrap_or(7u32)
+}
+
+pub fn set_decimals(env: &Env, decimals: u32) {
+    env.storage().instance().set(&DataKey::Decimals, &decimals);
+}
+

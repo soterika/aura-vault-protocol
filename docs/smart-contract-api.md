@@ -785,6 +785,32 @@ stellar contract invoke \
 
 ---
 
+## 16.1 decimals
+
+Read-only. Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard). Set during `initialize` and immutable thereafter.
+
+### Signature
+
+```rust
+fn decimals(env: Env) -> u32
+```
+
+### Returns
+
+Vault share precision as `u32` (e.g. `7`).
+
+### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- decimals
+```
+
+---
+
+
 ## 17. upgrade
 
 Admin-only. Upgrade the contract's Wasm bytecode to a new version. Requires admin authorization. Fails if the on-chain storage layout version does not match `CURRENT_LAYOUT_VERSION`.
@@ -1137,6 +1163,7 @@ Topics are indexed on-chain for efficient filtering by event name, caller, or am
 | `LastMgmtFeeTime` | Instance | `u64` | Last management fee timestamp (reserved) |
 | `YieldToken(addr)` | Instance | `bool` | Yield token whitelist |
 | `Balance(addr)` | Persistent | `i128` | Per-user share balance |
+| `Decimals` | Instance | `u32` | Number of decimal places used by vault shares (immutable; default: 7) |
 
 **TTL constants:**  
 - Instance and persistent storage: 30-day bump amount (517,200 ledgers), 7-day threshold (120,960 ledgers).

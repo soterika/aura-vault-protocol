@@ -90,6 +90,7 @@ use storage::{
     get_whitelist_enabled, set_whitelist_enabled, is_whitelisted as storage_is_whitelisted, set_whitelisted,
     get_min_deposit, set_min_deposit,
     get_vault_name, set_vault_name, get_vault_symbol, set_vault_symbol, get_vault_version, set_vault_version,
+    get_decimals, set_decimals,
 };use governance::{
     initialize_governance, create_proposal, vote_on_proposal, execute_proposal,
     get_proposal_status, ProposalStatus, ProposalType,
@@ -253,6 +254,7 @@ impl AuraVault {
         signers: Vec<Address>,
         name: soroban_sdk::String,
         symbol: soroban_sdk::String,
+        decimals: u32,
     ) -> Result<(), VaultError> {
         if get_admin(&env).is_some() {
             return Err(VaultError::AlreadyInitialized);
@@ -270,6 +272,7 @@ impl AuraVault {
         set_vault_name(&env, &name);
         set_vault_symbol(&env, &symbol);
         set_vault_version(&env, 1);
+        set_decimals(&env, decimals);
         initialize_governance(&env, signers)?;
         bump_instance(&env);
         Ok(())
@@ -2293,4 +2296,12 @@ impl AuraVault {
     pub fn version(env: Env) -> u32 {
         get_vault_version(&env)
     }
+
+    /// Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard).
+    /// Set during `initialize` and immutable thereafter.
+    /// Read-only, no auth required.
+    pub fn decimals(env: Env) -> u32 {
+        get_decimals(&env)
+    }
 }
+

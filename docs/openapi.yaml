@@ -49,6 +49,9 @@ tags:
     description: Vault event webhook subscriptions
   - name: Email
     description: Transactional email delivery and tracking
+  - name: Vault
+    description: Vault metadata, decimals configuration, stats, and operations
+
 
 paths:
   # ---------------------------------------------------------------------------
@@ -237,6 +240,44 @@ paths:
               example:
                 status: "ok"
                 timestamp: "2026-06-25T13:00:00.000Z"
+
+  # ---------------------------------------------------------------------------
+  # Vault
+  # ---------------------------------------------------------------------------
+  /api/v1/vault/decimals:
+    get:
+      tags: [Vault]
+      summary: Get vault share decimals
+      description: |
+        Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard).
+        Stored in DataKey::Decimals during vault initialize and immutable thereafter.
+      operationId: getVaultDecimals
+      parameters:
+        - name: vaultId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Optional vault contract address or ID.
+      responses:
+        "200":
+          description: Vault share decimals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  decimals:
+                    type: integer
+                    example: 7
+                    description: Vault share precision
+                  symbol:
+                    type: string
+                    example: "AVS"
+                  name:
+                    type: string
+                    example: "Aura Vault Share"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   # ---------------------------------------------------------------------------
   # Portfolio
