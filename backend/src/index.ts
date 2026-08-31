@@ -35,6 +35,7 @@ import { runCacheWarmup, getWarmupStatus } from "./services/cacheWarmup.js";
 import { startEmailWorker, stopEmailWorker } from "./services/emailQueue.js";
 import { startYieldWorker, stopYieldWorker } from "./services/yieldWorker.js";
 import { vaultRouter } from "./routes/vaultRoutes.js";
+import { vaultTransactionRouter } from "./routes/vaultTransactionRoutes.js";
 import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
 import {
@@ -51,7 +52,6 @@ import {
   refreshSchema,
 } from "./validation.js";
 import { v1Router } from "./routes/v1Router.js";
-import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { docsRouter } from "./routes/docsRoutes.js";
 import { deprecationHeader, CURRENT_API_VERSION } from "./middleware/versionMiddleware.js";
 
@@ -147,6 +147,9 @@ app.use("/api/vault/leaderboard", leaderboardRouter);
 // Issue #318: User preferences — requires authentication
 app.use("/api/users/preferences", authenticate, userPreferencesRouter);
 app.use("/api/analytics", analyticsRouter);
+
+// Issue #302: Vault transaction endpoints (deposit / withdraw / harvest)
+app.use("/api/v1/vault", vaultTransactionRouter);
 
 app.get("/api/health", async (_req, res) => {
   const redisHealthy = await pingRedis();
