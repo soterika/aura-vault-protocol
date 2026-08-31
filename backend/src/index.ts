@@ -51,9 +51,19 @@ import {
   loginSchema,
   refreshSchema,
 } from "./validation.js";
-import { v1Router } from "./routes/v1Router.js";
-import { docsRouter } from "./routes/docsRoutes.js";
-import { deprecationHeader, CURRENT_API_VERSION } from "./middleware/versionMiddleware.js";
+import { getDegradationStatus, degradationStatusMiddleware } from "./middleware/degradationMiddleware.js";
+import {
+  getCircuitBreakerState,
+  getCircuitBreakerStats,
+} from "./services/horizonCircuitBreakerService.js";
+import {
+  getDatabaseCircuitBreakerState,
+  getDatabaseCircuitBreakerStats,
+} from "./services/databaseCircuitBreakerService.js";
+import {
+  getRedisCircuitBreakerState,
+  getRedisCircuitBreakerStats,
+} from "./services/redisCircuitBreakerService.js";
 
 const app = express();
 
@@ -77,6 +87,9 @@ app.use(express.json({ limit: "1mb" }));
 
 // Global IP rate limiter — health check excluded so load-balancer probes are not throttled
 app.use(globalIpRateLimiter(["/api/health"]));
+
+// ── Issue #869: Graceful Degradation — monitor circuit breaker states ────────
+app.use(degradationStatusMiddleware);
 
 // ── A03 Injection / A07 Auth Failures: validate login input with Zod ─────────
 app.post(
@@ -154,12 +167,16 @@ app.use("/api/v1/vault", vaultTransactionRouter);
 app.get("/api/health", async (_req, res) => {
   const redisHealthy = await pingRedis();
   const warmup = getWarmupStatus();
+  const degradationStatus = getDegradationStatus();
+  const horizonStats = getCircuitBreakerStats();
+  const databaseStats = getDatabaseCircuitBreakerStats();
+  const redisStats = getRedisCircuitBreakerStats();
 
   // Return 'starting' until cache warm-up completes (issue #325)
   let status: string;
   if (warmup === "pending" || warmup === "warming") {
     status = "starting";
-  } else if (!redisHealthy) {
+  } else if (degradationStatus.isDegraded) {
     status = "degraded";
   } else {
     status = "ok";
@@ -167,9 +184,26 @@ app.get("/api/health", async (_req, res) => {
 
   res.json({
     status,
+    timestamp: new Date().toISOString(),
+    // Legacy fields for backwards compatibility
     redis: redisHealthy,
     warmup,
-    timestamp: new Date().toISOString(),
+    // Issue #869: Circuit breaker states and stats
+    circuits: {
+      horizon: {
+        state: getCircuitBreakerState(),
+        stats: horizonStats,
+      },
+      database: {
+        state: getDatabaseCircuitBreakerState(),
+        stats: databaseStats,
+      },
+      redis: {
+        state: getRedisCircuitBreakerState(),
+        stats: redisStats,
+      },
+    },
+    degradation: degradationStatus,
   });
 });
 
