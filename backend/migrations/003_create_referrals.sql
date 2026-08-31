@@ -56,3 +56,10 @@ COMMENT ON COLUMN referrals.claimed_reward IS
   'Total rewards that have been claimed by the referrer.';
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TRIGGER IF EXISTS trg_referrals_updated_at ON referrals;
+DROP FUNCTION IF EXISTS touch_referrals_updated_at();
+DROP TABLE IF EXISTS referrals CASCADE;
+COMMIT;

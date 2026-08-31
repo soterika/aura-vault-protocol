@@ -34,3 +34,10 @@ BEFORE UPDATE ON transaction_jobs
 FOR EACH ROW EXECUTE FUNCTION touch_tx_jobs_updated_at();
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TRIGGER IF EXISTS trg_tx_jobs_updated_at ON transaction_jobs;
+DROP FUNCTION IF EXISTS touch_tx_jobs_updated_at();
+DROP TABLE IF EXISTS transaction_jobs CASCADE;
+COMMIT;

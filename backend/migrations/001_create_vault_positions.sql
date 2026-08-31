@@ -109,3 +109,14 @@ FOR EACH ROW
 EXECUTE FUNCTION audit_vault_positions();
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TRIGGER IF EXISTS trg_vault_positions_audit ON vault_positions;
+DROP TRIGGER IF EXISTS trg_vault_positions_updated_at ON vault_positions;
+DROP FUNCTION IF EXISTS audit_vault_positions();
+DROP FUNCTION IF EXISTS touch_vault_positions_updated_at();
+DROP TABLE IF EXISTS vault_position_audit_log CASCADE;
+DROP TABLE IF EXISTS vault_positions CASCADE;
+COMMIT;
+

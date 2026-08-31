@@ -51,3 +51,8 @@ COMMENT ON COLUMN vault_events.ledger_timestamp IS
   'On-chain ledger close time; lag = indexed_at - ledger_timestamp.';
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TABLE IF EXISTS vault_events CASCADE;
+COMMIT;

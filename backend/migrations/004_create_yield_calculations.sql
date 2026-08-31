@@ -44,3 +44,10 @@ CREATE INDEX IF NOT EXISTS idx_yield_worker_runs_run_at
   ON yield_worker_runs (run_at DESC);
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TABLE IF EXISTS yield_worker_runs CASCADE;
+DROP TABLE IF EXISTS yield_calculations CASCADE;
+DROP TABLE IF EXISTS yield_sources CASCADE;
+COMMIT;

@@ -62,3 +62,10 @@ VALUES (
 ON CONFLICT (contract_id) DO NOTHING;
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TRIGGER IF EXISTS vaults_updated_at_trigger ON vaults;
+DROP FUNCTION IF EXISTS vaults_set_updated_at();
+DROP TABLE IF EXISTS vaults CASCADE;
+COMMIT;

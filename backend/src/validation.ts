@@ -4,16 +4,53 @@
  * Usage:
  *   app.post('/route', validate(mySchema), handler)
  *   app.get('/route', validateQuery(mySchema), handler)
+ *   app.get('/route', validateHeaders(mySchema), handler)
+ *
+ * All schemas are centralized in types/schemas.ts for reuse and frontend code generation.
  */
 
 import { z, type ZodSchema } from "zod";
 import { type Request, type Response, type NextFunction } from "express";
+
+// Re-export schemas for backwards compatibility
+export {
+  authLoginSchema as loginSchema,
+  authRefreshSchema as refreshSchema,
+  portfolioPaginationSchema,
+  yieldCalculateSchema,
+  backfillSchema,
+  depositSimulateSchema,
+  // Additional schemas from types/schemas.ts
+  stellarAddressSchema,
+  amountSchema,
+  decimalAmountSchema,
+  vaultDepositSchema,
+  vaultWithdrawSchema,
+  vaultHarvestSchema,
+  queryPaginationSchema,
+  emailSendSchema,
+  userPreferencesSchema,
+  // Types
+  type AuthLoginInput as LoginInput,
+  type AuthRefreshInput as RefreshInput,
+  type PortfolioPaginationInput,
+  type YieldCalculateInput,
+  type DepositSimulateInput,
+  type VaultDepositInput,
+  type VaultWithdrawInput,
+  type VaultHarvestInput,
+  type StellarAddress,
+  type Amount,
+} from "./types/schemas.js";
 
 // ── Middleware Factories ──────────────────────────────────────────────────────
 
 /**
  * Validates req.body against a Zod schema.
  * On failure returns 400 with structured error detail.
+ *
+ * @example
+ * app.post('/route', validate(mySchema), handler);
  */
 export function validate<T>(schema: ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -22,12 +59,19 @@ export function validate<T>(schema: ZodSchema<T>) {
       const issues = result.error.issues;
       const firstField = issues[0]?.path.join(".") ?? "input";
       res.status(400).json({
-        // Include the field name in the top-level message for backwards compatibility
-        error: `Validation failed: ${firstField} — ${issues[0]?.message ?? "invalid"}`,
-        details: issues.map((i) => ({
-          field: i.path.join("."),
-          message: i.message,
-        })),
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: `Validation failed: ${firstField} — ${issues[0]?.message ?? "invalid"}`,
+          details: issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
       });
       return;
     }
@@ -38,17 +82,29 @@ export function validate<T>(schema: ZodSchema<T>) {
 
 /**
  * Validates req.query against a Zod schema.
+ * On failure returns 400 with structured error detail.
+ *
+ * @example
+ * app.get('/route', validateQuery(mySchema), handler);
  */
 export function validateQuery<T>(schema: ZodSchema<T>) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.query);
     if (!result.success) {
       res.status(400).json({
-        error: "Invalid query parameters",
-        details: result.error.issues.map((i) => ({
-          field: i.path.join("."),
-          message: i.message,
-        })),
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid query parameters",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
       });
       return;
     }
@@ -57,70 +113,124 @@ export function validateQuery<T>(schema: ZodSchema<T>) {
   };
 }
 
-// ── Schemas ───────────────────────────────────────────────────────────────────
+/**
+ * Validates req.headers against a Zod schema.
+ * On failure returns 400 with structured error detail.
+ *
+ * @example
+ * app.post('/route', validateHeaders(mySchema), handler);
+ */
+export function validateHeaders<T>(schema: ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.headers);
+    if (!result.success) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid request headers",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+    (req as Request & { validatedHeaders: T }).validatedHeaders = result.data;
+    next();
+  };
+}
 
-export const loginSchema = z.object({
-  // Accept any non-empty string up to 100 chars.
-  // Strict format validation (Stellar G-address or EVM 0x) is enforced
-  // at the contract/chain layer; the API accepts any identifier so that
-  // tests and future auth schemes (e.g. passkeys) don't need updating here.
-  walletAddress: z
-    .string({ required_error: "walletAddress is required" })
-    .min(1, "walletAddress is required")
-    .max(100, "walletAddress too long"),
-  deviceId: z.string().max(128).optional(),
-  tier: z.enum(["free", "paid"]).optional().default("free"),
-});
+/**
+ * Combine multiple Zod schemas into a single validation middleware.
+ * Validates body, query, and headers in a single pass.
+ *
+ * @example
+ * app.post('/route', validateAll({ body: schema1, query: schema2 }), handler);
+ */
+export function validateAll<
+  TBody = unknown,
+  TQuery = unknown,
+  THeaders = unknown
+>(schemas: {
+  body?: ZodSchema<TBody>;
+  query?: ZodSchema<TQuery>;
+  headers?: ZodSchema<THeaders>;
+}) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const errors: Array<{ section: string; details: Array<{ field: string; message: string; code: string }> }> = [];
 
-export const refreshSchema = z.object({
-  refreshToken: z.string().min(1, "refreshToken is required"),
-});
+    // Validate body
+    if (schemas.body) {
+      const result = schemas.body.safeParse(req.body);
+      if (!result.success) {
+        errors.push({
+          section: "body",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        });
+      } else {
+        req.body = result.data;
+      }
+    }
 
-export const portfolioPaginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+    // Validate query
+    if (schemas.query) {
+      const result = schemas.query.safeParse(req.query);
+      if (!result.success) {
+        errors.push({
+          section: "query",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        });
+      } else {
+        (req as Request & { validatedQuery: TQuery }).validatedQuery = result.data;
+      }
+    }
 
-export const yieldCalculateSchema = z.object({
-  positions: z.array(
-    z.object({
-      id: z.string().optional(),
-      amount: z.number().nonnegative(),
-      entryPrice: z.number().nonnegative().optional(),
-    })
-  ),
-  sources: z.array(
-    z.object({
-      id: z.string().optional(),
-      apy: z.number().min(0).max(100),
-    })
-  ),
-  calcDate: z
-    .string()
-    .datetime({ message: "calcDate must be an ISO 8601 datetime string" })
-    .optional(),
-});
+    // Validate headers
+    if (schemas.headers) {
+      const result = schemas.headers.safeParse(req.headers);
+      if (!result.success) {
+        errors.push({
+          section: "headers",
+          details: result.error.issues.map((i) => ({
+            field: i.path.join("."),
+            message: i.message,
+            code: i.code,
+          })),
+        });
+      } else {
+        (req as Request & { validatedHeaders: THeaders }).validatedHeaders = result.data;
+      }
+    }
 
-export const backfillSchema = z.object({
-  positions: z.array(z.object({ id: z.string().optional() })),
-  sources: z.array(z.object({ id: z.string().optional() })),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
-});
+    if (errors.length > 0) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Validation failed across multiple sections",
+          details: errors,
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
+      });
+      return;
+    }
 
-export const depositSimulateSchema = z.object({
-  /**
-   * Underlying token amount to simulate depositing.
-   * Must be a positive integer (vault uses integer arithmetic on-chain).
-   */
-  amount: z
-    .number({ required_error: "amount is required" })
-    .int("amount must be an integer")
-    .positive("amount must be greater than 0"),
-});
-
-export type LoginInput = z.infer<typeof loginSchema>;
-export type RefreshInput = z.infer<typeof refreshSchema>;
-export type PortfolioPaginationInput = z.infer<typeof portfolioPaginationSchema>;
-export type YieldCalculateInput = z.infer<typeof yieldCalculateSchema>;
-export type DepositSimulateInput = z.infer<typeof depositSimulateSchema>;
+    next();
+  };
+}
