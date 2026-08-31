@@ -239,6 +239,178 @@ paths:
                 timestamp: "2026-06-25T13:00:00.000Z"
 
   # ---------------------------------------------------------------------------
+  # Vault Transactions (with Idempotency Support)
+  # ---------------------------------------------------------------------------
+  /api/v1/vault/deposit:
+    post:
+      tags: [Vault]
+      summary: Submit a signed deposit transaction
+      description: |
+        Submits a signed Soroban deposit transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitDeposit
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, address]
+              properties:
+                signedXdr:
+                  type: string
+                  description: Base64-encoded signed Stellar TransactionEnvelope XDR.
+                address:
+                  type: string
+                  example: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+      responses:
+        "200":
+          description: Deposit submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+              description: Set to "true" if the response was served from the idempotency cache.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "deposit" }
+                  address: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+                  envelopeXdr: { type: string }
+                  resultXdr: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
+
+  /api/v1/vault/withdraw:
+    post:
+      tags: [Vault]
+      summary: Submit a signed withdraw transaction
+      description: |
+        Submits a signed Soroban withdraw transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitWithdraw
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, shares, address]
+              properties:
+                signedXdr:
+                  type: string
+                shares:
+                  type: string
+                  example: "1000"
+                address:
+                  type: string
+      responses:
+        "200":
+          description: Withdrawal submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "withdraw" }
+                  address: { type: string }
+                  shares: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
+
+  /api/v1/vault/harvest:
+    post:
+      tags: [Vault]
+      summary: Submit a signed harvest transaction
+      description: |
+        Submits a signed Soroban harvest transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitHarvest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, yieldAmount]
+              properties:
+                signedXdr:
+                  type: string
+                yieldAmount:
+                  type: string
+                  example: "500"
+      responses:
+        "200":
+          description: Harvest submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "harvest" }
+                  yieldAmount: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
+
+  # ---------------------------------------------------------------------------
   # Portfolio
   # ---------------------------------------------------------------------------
   /api/v1/user/portfolio:

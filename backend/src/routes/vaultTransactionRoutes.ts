@@ -17,6 +17,7 @@ import { Router, Request, Response } from "express";
 import { authenticate } from "../middleware/authMiddleware.js";
 import { userRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import { validateXdr } from "../middleware/validateXdrMiddleware.js";
+import { idempotency } from "../middleware/idempotencyMiddleware.js";
 import {
   submitTransaction,
   XdrValidationError,
@@ -62,6 +63,7 @@ vaultTransactionRouter.post(
   "/deposit",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   async (req: Request, res: Response): Promise<void> => {
     const { signedXdr, address } = req.body as {
@@ -111,6 +113,7 @@ vaultTransactionRouter.post(
   "/withdraw",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   async (req: Request, res: Response): Promise<void> => {
     const { signedXdr, shares, address } = req.body as {
@@ -175,6 +178,7 @@ vaultTransactionRouter.post(
   "/harvest",
   authenticate,
   userRateLimiter(),
+  idempotency(),
   validateXdr(),
   async (req: Request, res: Response): Promise<void> => {
     const { signedXdr, yieldAmount } = req.body as {
