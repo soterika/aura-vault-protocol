@@ -38,6 +38,7 @@ import { vaultRouter } from "./routes/vaultRoutes.js";
 import { vaultTransactionRouter } from "./routes/vaultTransactionRoutes.js";
 import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
+import { swaggerRouter } from "./routes/swaggerRoutes.js";
 import {
   applySecurityHeaders,
   corsOptions,
@@ -163,6 +164,9 @@ app.use("/api/analytics", analyticsRouter);
 
 // Issue #302: Vault transaction endpoints (deposit / withdraw / harvest)
 app.use("/api/v1/vault", vaultTransactionRouter);
+
+// Issue #868: OpenAPI 3.1 Spec and Swagger UI at /api/docs
+app.use("/api/docs", swaggerRouter);
 
 app.get("/api/health", async (_req, res) => {
   const redisHealthy = await pingRedis();
