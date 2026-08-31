@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
   authRateLimiter,
@@ -34,10 +33,11 @@ import { startYieldWorker, stopYieldWorker } from "./services/yieldWorker.js";
 import { vaultRouter } from "./routes/vaultRoutes.js";
 import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
+import { applySecurityHeaders } from "./middleware/securityMiddleware.js";
 import {
-  applySecurityHeaders,
-  corsOptions,
-} from "./middleware/securityMiddleware.js";
+  createCorsMiddleware,
+  corsPreflightHandler,
+} from "./middleware/corsMiddleware.js";
 import {
   correlationIdMiddleware,
   createRequestLogger,
@@ -49,7 +49,10 @@ import {
 } from "./validation.js";
 
 const app = express();
-app.use(cors());
+
+// ── A05 Security Misconfiguration: handle CORS preflight before any auth/rate-limit ──
+app.options(/.*/, corsPreflightHandler());
+
 app.use(express.json());
 app.use(loggingMiddleware());
 app.use(globalIpRateLimiter(["/api/health"]));
@@ -58,8 +61,8 @@ app.use(globalIpRateLimiter(["/api/health"]));
 applySecurityHeaders(app);
 
 // ── A05 Security Misconfiguration: strict CORS ───────────────────────────────
-// Replace the open cors() with allowlist-driven corsOptions
-app.use(cors(corsOptions));
+// Per-request CORS: credentials enabled only for /api/auth/* routes
+app.use(createCorsMiddleware());
 
 // ── A09 Logging Failures: correlation IDs + structured request logging ────────
 app.use(correlationIdMiddleware());
