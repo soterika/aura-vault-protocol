@@ -213,6 +213,7 @@ app.get("/api/health", async (_req, res) => {
 
 const PORT = Number.parseInt(process.env.PORT ?? "3001", 10);
 const server = app.listen(PORT, () => {
+  void autoMigrate();         // issue #293: run pending SQL migrations on startup
   startWorker();
   startEmailWorker();
   startYieldWorker();

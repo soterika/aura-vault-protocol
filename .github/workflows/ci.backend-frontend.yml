@@ -88,6 +88,10 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379
 
+      - name: Check database migrations
+        run: npm run migrate:check --workspace=backend
+        continue-on-error: true
+
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest

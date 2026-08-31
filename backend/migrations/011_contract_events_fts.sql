@@ -86,3 +86,11 @@ END;
 $$;
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TRIGGER IF EXISTS contract_events_search_vector_trigger ON contract_events;
+DROP FUNCTION IF EXISTS contract_events_search_vector_update();
+DROP INDEX IF EXISTS idx_contract_events_search_vector;
+ALTER TABLE contract_events DROP COLUMN IF EXISTS search_vector;
+COMMIT;
