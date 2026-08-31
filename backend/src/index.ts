@@ -54,6 +54,7 @@ import {
 import { v1Router } from "./routes/v1Router.js";
 import { docsRouter } from "./routes/docsRoutes.js";
 import { deprecationHeader, CURRENT_API_VERSION } from "./middleware/versionMiddleware.js";
+import { autoMigrate } from "./migrations/runner.js";
 
 const app = express();
 
@@ -175,6 +176,7 @@ app.get("/api/health", async (_req, res) => {
 
 const PORT = Number.parseInt(process.env.PORT ?? "3001", 10);
 const server = app.listen(PORT, () => {
+  void autoMigrate();         // issue #293: run pending SQL migrations on startup
   startWorker();
   startEmailWorker();
   startYieldWorker();

@@ -8,7 +8,12 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "backfill": "tsx src/scripts/backfill-events.ts"
+    "backfill": "tsx src/scripts/backfill-events.ts",
+    "migrate:up": "tsx src/migrations/cli.ts up",
+    "migrate:down": "tsx src/migrations/cli.ts down",
+    "migrate:status": "tsx src/migrations/cli.ts status",
+    "migrate:check": "tsx src/migrations/cli.ts check",
+    "seed": "tsx src/scripts/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1115.0",
