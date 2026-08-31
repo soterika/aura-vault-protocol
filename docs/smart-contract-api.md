@@ -1137,6 +1137,8 @@ Topics are indexed on-chain for efficient filtering by event name, caller, or am
 | `LastMgmtFeeTime` | Instance | `u64` | Last management fee timestamp (reserved) |
 | `YieldToken(addr)` | Instance | `bool` | Yield token whitelist |
 | `Balance(addr)` | Persistent | `i128` | Per-user share balance |
+| `ReentrancyGuard` | Instance | `bool` | Explicit reentrancy lock (true during mutating calls; false otherwise) |
+
 
 **TTL constants:**  
 - Instance and persistent storage: 30-day bump amount (517,200 ledgers), 7-day threshold (120,960 ledgers).

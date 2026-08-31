@@ -1,4 +1,5 @@
 use soroban_sdk::{contracttype, Address, Env};
+use crate::errors::VaultError;
 
 #[contracttype]
 pub enum DataKey {
@@ -76,6 +77,8 @@ pub enum DataKey {
     VaultSymbol,
     /// Contract version integer (set at initialization).
     VaultVersion,
+    /// Reentrancy guard lock flag (Issue #345).
+    ReentrancyGuard,
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -518,3 +521,28 @@ pub fn get_vault_version(env: &Env) -> u32 {
 pub fn set_vault_version(env: &Env, version: u32) {
     env.storage().instance().set(&DataKey::VaultVersion, &version);
 }
+
+// ---------------------------------------------------------------------------
+// Reentrancy guard helpers (Issue #345)
+// ---------------------------------------------------------------------------
+
+pub fn is_reentrancy_locked(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::ReentrancyGuard).unwrap_or(false)
+}
+
+pub fn set_reentrancy_lock(env: &Env, locked: bool) {
+    env.storage().instance().set(&DataKey::ReentrancyGuard, &locked);
+}
+
+pub fn enter_reentrancy_guard(env: &Env) -> Result<(), VaultError> {
+    if is_reentrancy_locked(env) {
+        return Err(VaultError::Reentrancy);
+    }
+    set_reentrancy_lock(env, true);
+    Ok(())
+}
+
+pub fn exit_reentrancy_guard(env: &Env) {
+    set_reentrancy_lock(env, false);
+}
+
