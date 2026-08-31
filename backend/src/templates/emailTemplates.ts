@@ -290,37 +290,41 @@ To unsubscribe: {{unsubscribeUrl}}
 `,
 };
 
-const ALERT_SUBSCRIPTION: TemplateDefinition = {
-  defaultSubject: 'Alert Subscription Confirmed — Aura Vault',
-  html: layout('Alert Subscription Confirmed', `
+const PORTFOLIO_DIGEST: TemplateDefinition = {
+  defaultSubject: 'Your Daily Aura Vault Summary',
+  html: layout('Daily Portfolio Summary', `
     ${greeting()}
     <p style="color:#c0c0d0;font-size:15px;margin:0 0 8px;">
-      You've successfully subscribed to transaction alerts for your Aura Vault wallet.
+      Here's your daily Aura Vault portfolio snapshot for
+      <span style="font-family:monospace;font-size:13px;color:#a0a0b0;word-break:break-all;">{{walletAddress}}</span>.
     </p>
     ${detailTable(`
-      ${row('Wallet Address', '<span style="font-family:monospace;font-size:12px;word-break:break-all;">{{walletAddress}}</span>', false)}
-      ${row('Alert Threshold', '{{threshold}} {{asset}}')}
-      ${row('Event Types', '{{eventTypes}}')}
+      ${row('Current Value', '<span style="color:#6366f1;font-size:18px;font-weight:700;">{{currentValue}} {{asset}}</span>', false)}
+      ${row('24h Change', `
+        {{#if (eq changeSign "+")}}
+          <span style="color:#22c55e;font-size:15px;font-weight:600;">{{changeSign}}{{change24h}} {{asset}}</span>
+        {{else}}
+          <span style="color:#f59e0b;font-size:15px;font-weight:600;">{{changeSign}}{{change24h}} {{asset}}</span>
+        {{/if}}
+      `)}
+      ${row('Accrued Yield', '<span style="color:#22c55e;font-size:15px;font-weight:600;">{{accruedYield}} {{asset}}</span>')}
+      ${row('Last Harvest', '{{lastHarvest}}')}
     `)}
-    <div style="background:#1a1a2e;border-radius:12px;padding:16px 24px;margin:24px 0;">
-      <p style="color:#a0a0b0;font-size:13px;margin:0;">
-        You will receive an email whenever a deposit or withdrawal exceeding your
-        threshold occurs on this wallet. You can update or cancel your subscription
-        at any time using the unsubscribe link below.
-      </p>
-    </div>
+    <p style="color:#6b6b80;font-size:12px;margin:24px 0 0;">
+      This digest is sent daily at 08:00 UTC. To stop receiving it,
+      <a href="{{unsubscribeUrl}}" style="color:#6366f1;text-decoration:none;">unsubscribe here</a>.
+    </p>
   `),
-  text: `Aura Vault — Alert Subscription Confirmed
+  text: `Aura Vault — Daily Portfolio Summary
 
 Hi {{userName}},
 
-You've successfully subscribed to transaction alerts.
+Here's your portfolio snapshot for {{walletAddress}}:
 
-Wallet Address: {{walletAddress}}
-Threshold:      {{threshold}} {{asset}}
-Event Types:    {{eventTypes}}
-
-You will be notified whenever a matching transaction exceeds your threshold.
+Current Value:  {{currentValue}} {{asset}}
+24h Change:     {{changeSign}}{{change24h}} {{asset}}
+Accrued Yield:  {{accruedYield}} {{asset}}
+Last Harvest:   {{lastHarvest}}
 
 To unsubscribe: {{unsubscribeUrl}}
 `,
@@ -335,5 +339,5 @@ export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
   'security-alert': SECURITY_ALERT,
   'welcome': WELCOME,
   'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
-  'alert-subscription': ALERT_SUBSCRIPTION,
+  'portfolio-digest': PORTFOLIO_DIGEST,
 };

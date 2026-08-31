@@ -27,7 +27,7 @@ export function Modal({ isOpen, title, onClose, children }: Props) {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="modal-backdrop" onClick={onClose} aria-hidden="true">
+    <div className="modal-backdrop" onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"

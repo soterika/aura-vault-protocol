@@ -1,47 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import {
-  AlertCircle,
-  Check,
-  CheckCircle,
-  XCircle,
-  Info,
-  ChevronUp,
-  ChevronDown,
-  Wallet,
-  PauseCircle,
-  Globe,
-  WifiOff,
-  ExternalLink,
-} from "lucide-react";
-import TransactionConfirmation from "@/components/TransactionConfirmation";
-import { useHapticsStandalone } from "@/components/HapticFeedback";
-import { ShareBalanceDisplay } from "@/components/ShareBalanceDisplay";
-import { getErrorRecovery, type VaultErrorContext } from "@/lib/errorTranslator";
-import { useAnimatedNumber } from "@/lib/useAnimatedNumber";
-import { AnimatedShareBalance } from "@/components/AnimatedShareBalance";
-import { EmptyState } from "@/components/EmptyState";
-import {
-  createDefaultAdvancedSettingsState,
-  readAdvancedSettingsState,
-  writeAdvancedSettingsState,
-  type AdvancedSettingsState,
-} from "@/lib/transactionAdvancedSettings";
+import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 
-type TxType = "deposit" | "withdraw" | "harvest";
-/** 1 = Amount, 2 = Review/Sign, 3 = Submit, 4 = Confirmed */
-type Step = 1 | 2 | 3 | 4;
+type TxType = "deposit" | "withdraw";
+type Step = 1 | 2 | 3;
 type TxStatus = "idle" | "pending" | "success" | "error";
 
 interface Props {
   type: TxType;
   balance: string;
-  /** Current share price used to estimate shares / tokens in the review step. Defaults to "1.0". */
-  sharePrice?: string;
   onClose: () => void;
-  /** Unix timestamp (ms) when sharePrice was last fetched */
-  sharePriceUpdatedAt?: number;
 }
 
 interface GasEstimate {
@@ -50,344 +19,16 @@ interface GasEstimate {
   totalGas: string;
 }
 
-// ─── Timeline step definitions ────────────────────────────────────────────────
-
-interface StepDef {
-  id: Step;
-  label: string;
-  descriptions: Record<TxType, string>;
-}
-
-const STEP_DEFS: StepDef[] = [
-  {
-    id: 1,
-    label: "Confirm",
-    descriptions: {
-      deposit: "Enter the amount you want to deposit into the vault.",
-      withdraw: "Enter the number of shares you want to redeem.",
-      harvest: "Enter the yield amount you want to inject into the vault.",
-    },
-  },
-  {
-    id: 2,
-    label: "Sign",
-    descriptions: {
-      deposit: "Review gas estimates and confirm the deposit details.",
-      withdraw: "Review the redemption details and estimated output.",
-      harvest: "Review the yield injection details before confirming.",
-    },
-  },
-  {
-    id: 3,
-    label: "Submit",
-    descriptions: {
-      deposit: "Submitting your deposit to the Stellar network…",
-      withdraw: "Broadcasting your withdrawal transaction…",
-      harvest: "Broadcasting your harvest transaction…",
-    },
-  },
-  {
-    id: 4,
-    label: "Confirmed",
-    descriptions: {
-      deposit: "Your deposit was successful. Shares have been minted.",
-      withdraw: "Withdrawal complete. Underlying tokens have been sent.",
-      harvest: "Harvest complete. Yield has been injected into the vault.",
-    },
-  },
-];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function Spinner() {
   return (
-    <svg
-      className="animate-spin h-5 w-5 text-current"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v8H4z"
-      />
+    <svg className="animate-spin h-5 w-5 text-current" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
     </svg>
   );
 }
 
-// ─── StepTimeline component ───────────────────────────────────────────────────
-
-interface StepTimelineProps {
-  currentStep: Step;
-  txType: TxType;
-  txStatus: TxStatus;
-}
-
-function StepTimeline({ currentStep, txType, txStatus }: StepTimelineProps) {
-  // Derive the "effective" step for display:
-  // After success we show step 4 as complete; error keeps us on step 3.
-  const displayStep: Step =
-    txStatus === "success" ? 4 : currentStep;
-
-  const currentDef =
-    STEP_DEFS.find((s) => s.id === displayStep) ?? STEP_DEFS[0];
-  const description = currentDef.descriptions[txType];
-
-  return (
-    <div className="mb-6">
-      {/* Accessible live region — announces step changes to screen readers */}
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        className="sr-only"
-      >
-        {`Step ${displayStep} of 4: ${currentDef.label}. ${description}`}
-      </div>
-
-      {/* Visual timeline */}
-      <ol
-        aria-label="Transaction steps"
-        className="flex items-center w-full mb-3"
-      >
-        {STEP_DEFS.map((stepDef, index) => {
-          const isCompleted = stepDef.id < displayStep;
-          const isCurrent = stepDef.id === displayStep;
-          const isFuture = stepDef.id > displayStep;
-          const isLast = index === STEP_DEFS.length - 1;
-
-          return (
-            <li
-              key={stepDef.id}
-              className="flex items-center flex-1 last:flex-none"
-              aria-current={isCurrent ? "step" : undefined}
-            >
-              {/* Circle */}
-              <div className="flex flex-col items-center gap-1 relative">
-                <div
-                  className={[
-                    "relative flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all duration-300",
-                    isCompleted
-                      ? "border-emerald-500 bg-emerald-500 text-white"
-                      : isCurrent
-                      ? "border-indigo-600 bg-indigo-600 text-white ring-4 ring-indigo-600/20"
-                      : "border-zinc-300 bg-white text-zinc-400 dark:border-zinc-600 dark:bg-zinc-900",
-                  ].join(" ")}
-                  aria-hidden="true"
-                >
-                  {isCompleted ? (
-                    <Check size={14} strokeWidth={3} />
-                  ) : isCurrent && (txStatus === "pending" || stepDef.id === 3) ? (
-                    <span className="h-2.5 w-2.5 rounded-full bg-white animate-pulse" />
-                  ) : (
-                    <span className="text-xs font-bold">{stepDef.id}</span>
-                  )}
-                </div>
-
-                {/* Label below circle */}
-                <span
-                  className={[
-                    "absolute top-9 text-[10px] font-medium whitespace-nowrap transition-colors duration-300",
-                    isCompleted
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : isCurrent
-                      ? "text-indigo-600 dark:text-indigo-400"
-                      : "text-zinc-400 dark:text-zinc-500",
-                  ].join(" ")}
-                >
-                  {stepDef.label}
-                </span>
-              </div>
-
-              {/* Connector line between steps */}
-              {!isLast && (
-                <div
-                  aria-hidden="true"
-                  className="flex-1 mx-1 relative h-0.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
-                >
-                  {/* Animated fill for completed connectors */}
-                  <div
-                    className={[
-                      "absolute inset-0 h-full rounded-full transition-all duration-500 ease-in-out",
-                      isCompleted
-                        ? "bg-emerald-500 w-full"
-                        : isCurrent
-                        ? "bg-indigo-600 w-1/2"
-                        : "w-0",
-                    ].join(" ")}
-                  />
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      {/* Step description — context-specific copy */}
-      <div className="mt-7 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-        <p
-          className={[
-            "text-sm transition-colors duration-200",
-            isFutureStep(displayStep)
-              ? "text-zinc-400"
-              : "text-zinc-600 dark:text-zinc-300",
-          ].join(" ")}
-        >
-          {description}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function isFutureStep(_step: Step) {
-  // helper kept for potential future use — currently description is always contextual
-  return false;
-}
-
-// ─── AdvancedSettingsPanel component ─────────────────────────────────────────
-
-interface TooltipProps {
-  text: string;
-}
-
-function Tooltip({ text }: TooltipProps) {
-  return (
-    <span className="group relative inline-flex items-center">
-      <Info
-        size={14}
-        className="ml-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 cursor-help"
-        aria-label={`Info: ${text}`}
-      />
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-3 py-2 text-xs text-zinc-100 dark:text-zinc-900 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 shadow-lg"
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
-
-interface AdvancedSettingsPanelProps {
-  settings: AdvancedSettingsState;
-  isOpen: boolean;
-  onToggle: () => void;
-  onChange: (updated: AdvancedSettingsState) => void;
-}
-
-function AdvancedSettingsPanel({ settings, isOpen, onToggle, onChange }: AdvancedSettingsPanelProps) {
-  return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden" data-cy="advanced-settings">
-      <button
-        type="button"
-        aria-expanded={isOpen}
-        aria-controls="advanced-settings-content"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
-        data-cy="advanced-settings-toggle"
-      >
-        <span className="flex items-center gap-1.5">
-          Advanced Settings
-          <Tooltip text="Optional settings for power users. Defaults are safe for most transactions." />
-        </span>
-        {isOpen ? (
-          <ChevronUp size={16} aria-hidden="true" className="text-zinc-400" />
-        ) : (
-          <ChevronDown size={16} aria-hidden="true" className="text-zinc-400" />
-        )}
-      </button>
-
-      <div
-        id="advanced-settings-content"
-        role="region"
-        aria-label="Advanced Settings"
-        className={[
-          "overflow-hidden transition-all duration-300 ease-in-out",
-          isOpen ? "max-h-72 opacity-100" : "max-h-0 opacity-0",
-        ].join(" ")}
-      >
-        <div className="flex flex-col gap-5 px-4 pb-4 pt-3 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-700">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="slippage-slider" className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center">
-                Slippage Tolerance
-                <Tooltip text="Maximum price movement you're willing to accept. Higher values reduce failed transactions but may lead to a worse execution price." />
-              </label>
-              <span className="font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200 min-w-[3.5rem] text-right" aria-live="polite">
-                {settings.slippageTolerance.toFixed(1)}%
-              </span>
-            </div>
-            <input
-              id="slippage-slider"
-              type="range"
-              min={0.1}
-              max={5}
-              step={0.1}
-              value={settings.slippageTolerance}
-              onChange={(e) => {
-                onChange({ ...settings, slippageTolerance: parseFloat(e.target.value) });
-              }}
-              aria-label={`Slippage tolerance: ${settings.slippageTolerance.toFixed(1)}%`}
-              aria-valuemin={0.1}
-              aria-valuemax={5}
-              aria-valuenow={settings.slippageTolerance}
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-zinc-200 dark:bg-zinc-700 accent-zinc-900 dark:accent-zinc-100"
-              data-cy="slippage-slider"
-            />
-            <div className="flex justify-between text-[10px] text-zinc-400">
-              <span>0.1%</span>
-              <span>2.5%</span>
-              <span>5.0%</span>
-            </div>
-            {settings.slippageTolerance > 2 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1" role="alert">
-                <AlertCircle size={12} />
-                High slippage — transaction may be front-run
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="gas-priority" className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center">
-                Gas Priority
-                <Tooltip text="Choose a higher priority if you want the transaction confirmed faster, usually at a higher fee." />
-              </label>
-            </div>
-            <select
-              id="gas-priority"
-              value={settings.gasPriority}
-              onChange={(e) => {
-                onChange({ ...settings, gasPriority: e.target.value as AdvancedSettingsState["gasPriority"] });
-              }}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-              data-cy="gas-priority-select"
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
-
-export default function TransactionModal({ type, balance, sharePrice = "1.0", sharePriceUpdatedAt, onClose }: Props) {
+export default function TransactionModal({ type, balance, onClose }: Props) {
   const [step, setStep] = useState<Step>(1);
   const [amount, setAmount] = useState("");
   const [amountError, setAmountError] = useState("");
@@ -397,21 +38,11 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
   const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
   const [gasLoading, setGasLoading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [advancedSettings, setAdvancedSettings] = useState<AdvancedSettingsState>(() => readAdvancedSettingsState());
   const inputRef = useRef<HTMLInputElement>(null);
-  const { vibrate } = useHapticsStandalone();
 
   useEffect(() => {
     if (step === 1) inputRef.current?.focus();
   }, [step]);
-
-  useEffect(() => {
-    setAdvancedSettings(readAdvancedSettingsState());
-  }, []);
-
-  useEffect(() => {
-    writeAdvancedSettingsState(advancedSettings);
-  }, [advancedSettings]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -429,18 +60,27 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, amount: txAmount }),
       });
+
       if (res.ok) {
         const data = await res.json();
         setGasEstimate({
-          baseFee: data.baseFee ?? "0.001",
-          priorityFee: data.priorityFee ?? "0.0005",
-          totalGas: data.totalGas ?? "0.0015",
+          baseFee: data.baseFee || "0.001",
+          priorityFee: data.priorityFee || "0.0005",
+          totalGas: data.totalGas || "0.0015",
         });
       } else {
-        setGasEstimate({ baseFee: "0.001", priorityFee: "0.0005", totalGas: "0.0015" });
+        setGasEstimate({
+          baseFee: "0.001",
+          priorityFee: "0.0005",
+          totalGas: "0.0015",
+        });
       }
     } catch {
-      setGasEstimate({ baseFee: "0.001", priorityFee: "0.0005", totalGas: "0.0015" });
+      setGasEstimate({
+        baseFee: "0.001",
+        priorityFee: "0.0005",
+        totalGas: "0.0015",
+      });
     } finally {
       setGasLoading(false);
     }
@@ -465,7 +105,6 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
       await estimateGas(amount);
       setStep(2);
     } else if (step === 2) {
-      vibrate("confirmationOpen"); // 1 short vibration when confirm dialog advances
       setStep(3);
       await handleSubmit();
     }
@@ -476,25 +115,27 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
       setStatus("pending");
       setTxError("");
     }
+
     try {
       const res = await fetch("/api/vault/transactions/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, amount }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Transaction failed");
-      setTxHash(data.hash ?? `tx-${Date.now()}`);
+
+      if (!res.ok) {
+        throw new Error(data.error || "Transaction failed");
+      }
+
+      setTxHash(data.hash || `tx-${Date.now()}`);
       setStatus("success");
-      vibrate("transactionSuccess"); // 2 short vibrations
       setRetryCount(0);
     } catch (err: unknown) {
-      const errorMsg =
-        (err instanceof Error ? err.message : "Transaction failed") ??
-        "Transaction failed";
+      const errorMsg = (err instanceof Error ? err.message : "Transaction failed") ?? "Transaction failed";
       setTxError(errorMsg);
       setStatus("error");
-      vibrate("transactionFailure"); // 3 long vibrations
 
       if (retrying) {
         setRetryCount((prev) => prev + 1);
@@ -505,26 +146,13 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
   function handleRetry() {
     setStatus("idle");
     setRetryCount((prev) => prev + 1);
-    void handleSubmit(true);
+    handleSubmit(true);
   }
 
-  const labelMap: Record<TxType, string> = { deposit: "Deposit", withdraw: "Withdraw", harvest: "Harvest" };
-  const label = labelMap[type];
+  const label = type === "deposit" ? "Deposit" : "Withdraw";
   const balanceNum = parseFloat(balance);
   const amountNum = parseFloat(amount) || 0;
-  const sharePriceNum = parseFloat(sharePrice) || 1;
-  const totalWithGas = amountNum + parseFloat(gasEstimate?.totalGas ?? "0");
-
-  // Estimated shares for deposit: amount / sharePrice
-  const estimatedShares =
-    sharePriceNum > 0
-      ? Math.floor(amountNum / sharePriceNum).toString()
-      : "0";
-  // Estimated tokens for withdraw: shares * sharePrice (treat amount as shares for withdraw)
-  const estimatedTokens =
-    type === "withdraw"
-      ? (amountNum * sharePriceNum).toFixed(4)
-      : "0";
+  const totalWithGas = amountNum + (parseFloat(gasEstimate?.totalGas || "0"));
 
   return (
     <div
@@ -544,18 +172,23 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
           ✕
         </button>
 
-        <h2 className="mb-5 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-          {label}
-        </h2>
+        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">{label}</h2>
 
-        {/* ── Visual step timeline ─────────────────────────────────────── */}
-        <StepTimeline
-          currentStep={step}
-          txType={type}
-          txStatus={status}
-        />
+        {/* Step indicator */}
+        <div className="flex gap-2 mb-6">
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full ${
+                s <= step
+                  ? "bg-zinc-900 dark:bg-zinc-100"
+                  : "bg-zinc-200 dark:bg-zinc-700"
+              }`}
+            />
+          ))}
+        </div>
 
-        {/* ── Step 1: Amount Input ─────────────────────────────────────── */}
+        {/* Step 1: Amount Input */}
         {step === 1 && (
           <div data-cy="modal-step-1" className="flex flex-col gap-4">
             <p className="text-sm text-zinc-500">
@@ -609,7 +242,7 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
 
             <button
               data-cy="modal-next-btn"
-              onClick={() => void handleNext()}
+              onClick={handleNext}
               className="rounded-lg bg-zinc-900 px-4 py-2.5 font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
             >
               Next
@@ -617,18 +250,62 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
           </div>
         )}
 
-        {/* ── Step 2: Review / Sign ────────────────────────────────────── */}
+        {/* Step 2: Review */}
         {step === 2 && (
           <div data-cy="modal-step-2" className="flex flex-col gap-4">
-            <TransactionConfirmation
-              type={type}
-              amount={amount}
-              estimatedShares={estimatedShares}
-              estimatedTokens={estimatedTokens}
-              sharePrice={sharePrice}
-              onConfirm={() => void handleNext()}
-              onBack={() => setStep(1)}
-            />
+            <dl className="flex flex-col gap-3 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800">
+              <div className="flex justify-between text-sm">
+                <dt className="text-zinc-500">Amount</dt>
+                <dd data-cy="modal-review-amount" className="font-mono font-semibold">
+                  {amount}
+                </dd>
+              </div>
+
+              {gasLoading ? (
+                <div className="flex justify-between text-sm">
+                  <dt className="text-zinc-500">Est. Gas</dt>
+                  <dd className="flex items-center gap-1">
+                    <Spinner />
+                    <span className="text-xs text-zinc-500">Estimating…</span>
+                  </dd>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-zinc-500">Base Fee</dt>
+                    <dd data-cy="modal-base-fee" className="font-mono">
+                      {gasEstimate?.baseFee || "0.001"} XLM
+                    </dd>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-zinc-500">Priority Fee</dt>
+                    <dd data-cy="modal-priority-fee" className="font-mono">
+                      {gasEstimate?.priorityFee || "0.0005"} XLM
+                    </dd>
+                  </div>
+                  <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3 mt-2 flex justify-between text-sm font-semibold">
+                    <dt className="text-zinc-600 dark:text-zinc-300">Total Gas</dt>
+                    <dd data-cy="modal-gas-estimate" className="font-mono">
+                      {gasEstimate?.totalGas || "0.0015"} XLM
+                    </dd>
+                  </div>
+                </>
+              )}
+
+              <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3 mt-2 flex justify-between text-base font-bold">
+                <dt className="text-zinc-900 dark:text-zinc-100">Total (with gas)</dt>
+                <dd
+                  data-cy="modal-total"
+                  className={`font-mono ${
+                    totalWithGas > balanceNum
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-green-600 dark:text-green-400"
+                  }`}
+                >
+                  {totalWithGas.toFixed(4)}
+                </dd>
+              </div>
+            </dl>
 
             {totalWithGas > balanceNum && (
               <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
@@ -636,10 +313,28 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
                 Insufficient balance for gas fees
               </p>
             )}
+
+            <div className="flex gap-3">
+              <button
+                data-cy="modal-back-btn"
+                onClick={() => setStep(1)}
+                className="flex-1 rounded-lg border border-zinc-300 px-4 py-2.5 font-semibold hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
+              >
+                Back
+              </button>
+              <button
+                data-cy="modal-next-btn"
+                onClick={handleNext}
+                disabled={totalWithGas > balanceNum || gasLoading}
+                className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-black disabled:dark:opacity-50"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         )}
 
-        {/* ── Step 3: Submit / Result ──────────────────────────────────── */}
+        {/* Step 3: Signing / Result */}
         {step === 3 && (
           <div
             data-cy="modal-step-3"
@@ -648,9 +343,7 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
             {status === "pending" && (
               <>
                 <Spinner />
-                <p className="text-sm text-zinc-500">
-                  Broadcasting transaction to Stellar…
-                </p>
+                <p className="text-sm text-zinc-500">Confirming in wallet…</p>
                 <button
                   data-cy="modal-confirm-btn"
                   disabled
@@ -662,20 +355,17 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
             )}
 
             {status === "success" && (
-              <div
-                data-cy="modal-success"
-                className="flex flex-col items-center gap-3 w-full"
-              >
-                <CheckCircle
-                  size={48}
-                  className="text-green-600 dark:text-green-400"
-                />
+              <div data-cy="modal-success" className="flex flex-col items-center gap-3">
+                <CheckCircle size={48} className="text-green-600 dark:text-green-400" />
                 <p className="font-semibold text-zinc-900 dark:text-zinc-50">
                   {label} successful!
                 </p>
                 <p className="text-xs text-zinc-500">
                   Tx:{" "}
-                  <span data-cy="modal-tx-hash" className="font-mono">
+                  <span
+                    data-cy="modal-tx-hash"
+                    className="font-mono"
+                  >
                     {txHash.slice(0, 16)}…
                   </span>
                 </p>
@@ -689,14 +379,8 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
             )}
 
             {status === "error" && (
-              <div
-                data-cy="modal-error"
-                className="flex flex-col items-center gap-3"
-              >
-                <XCircle
-                  size={48}
-                  className="text-red-600 dark:text-red-400"
-                />
+              <div data-cy="modal-error" className="flex flex-col items-center gap-3">
+                <XCircle size={48} className="text-red-600 dark:text-red-400" />
                 <p className="text-sm text-red-600 dark:text-red-400">
                   {txError || "Transaction failed"}
                 </p>
@@ -719,154 +403,6 @@ export default function TransactionModal({ type, balance, sharePrice = "1.0", sh
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ErrorRecoveryPanel — renders contextual recovery guidance
-// ---------------------------------------------------------------------------
-
-interface ErrorRecoveryPanelProps {
-  txError: string;
-  balance: string;
-  amount: string;
-  retryCount: number;
-  handleRetry: () => void;
-  setStep: (step: Step) => void;
-  setAmount: (amount: string) => void;
-}
-
-const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  Wallet,
-  PauseCircle,
-  Globe,
-  WifiOff,
-  XCircle,
-  AlertCircle,
-  CheckCircle,
-  ExternalLink,
-};
-
-const SEVERITY_STYLES: Record<VaultErrorContext["severity"], {
-  border: string;
-  iconClass: string;
-  titleClass: string;
-}> = {
-  error: {
-    border: "border-l-4 border-red-500",
-    iconClass: "text-red-600 dark:text-red-400",
-    titleClass: "text-red-700 dark:text-red-300",
-  },
-  warning: {
-    border: "border-l-4 border-yellow-500",
-    iconClass: "text-yellow-600 dark:text-yellow-400",
-    titleClass: "text-yellow-700 dark:text-yellow-300",
-  },
-  info: {
-    border: "border-l-4 border-blue-500",
-    iconClass: "text-blue-600 dark:text-blue-400",
-    titleClass: "text-blue-700 dark:text-blue-300",
-  },
-};
-
-function ErrorRecoveryPanel({
-  txError,
-  balance,
-  amount,
-  retryCount,
-  handleRetry,
-  setStep,
-  setAmount,
-}: ErrorRecoveryPanelProps) {
-  const recovery = getErrorRecovery(txError || "Transaction failed", {
-    walletBalance: balance,
-    enteredAmount: amount,
-    tokenSymbol: "USDC",
-  });
-
-  const styles = SEVERITY_STYLES[recovery.severity];
-  const IconComponent = ICON_MAP[recovery.icon] ?? XCircle;
-
-  return (
-    <div
-      data-cy="modal-error"
-      className={`w-full rounded-xl bg-zinc-50 dark:bg-zinc-800 p-4 text-left ${styles.border}`}
-    >
-      {/* Header: icon + title */}
-      <div className="flex items-start gap-3 mb-2">
-        <IconComponent size={24} className={`mt-0.5 shrink-0 ${styles.iconClass}`} />
-        <p className={`font-bold text-sm ${styles.titleClass}`}>{recovery.title}</p>
-      </div>
-
-      {/* Descriptive message */}
-      <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4 pl-9">
-        {recovery.message}
-      </p>
-
-      {/* Action buttons */}
-      <div className="flex flex-col gap-2 pl-9">
-        {recovery.actions.map((recoveryAction) => {
-          if (recoveryAction.action === "external") {
-            return (
-              <a
-                key={recoveryAction.label}
-                href={recoveryAction.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black dark:hover:bg-zinc-300"
-              >
-                {recoveryAction.label}
-                <ExternalLink size={13} />
-              </a>
-            );
-          }
-
-          if (recoveryAction.action === "retry") {
-            if (retryCount >= 3) return null;
-            return (
-              <button
-                key={recoveryAction.label}
-                data-cy="modal-retry-btn"
-                onClick={handleRetry}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black"
-              >
-                {recoveryAction.label}
-                {retryCount > 0 && ` (${retryCount}/3)`}
-              </button>
-            );
-          }
-
-          if (recoveryAction.action === "reduce_amount") {
-            return (
-              <button
-                key={recoveryAction.label}
-                onClick={() => setStep(1)}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-black"
-              >
-                {recoveryAction.label}
-              </button>
-            );
-          }
-
-          if (recoveryAction.action === "start_over") {
-            return (
-              <button
-                key={recoveryAction.label}
-                onClick={() => {
-                  setAmount("");
-                  setStep(1);
-                }}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800"
-              >
-                {recoveryAction.label}
-              </button>
-            );
-          }
-
-          return null;
-        })}
       </div>
     </div>
   );

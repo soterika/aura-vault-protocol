@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
@@ -98,7 +98,7 @@ jobs:
 
     steps:
       - name: Download results
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: load-test-results
         continue-on-error: true

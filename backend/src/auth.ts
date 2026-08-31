@@ -23,13 +23,14 @@ const JWT_ALGORITHM = "HS256" as const;
 const JWT_ISSUER = process.env.JWT_ISSUER;
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE;
 
-export type Tier = "free" | "paid";
+export type Tier = "free" | "paid" | "admin";
 
 export interface TokenPayload {
   sub: string;
   sessionId: string;
   deviceId?: string;
   tier?: Tier;
+  scope?: string;
 }
 
 export interface TokenPair {
@@ -52,8 +53,9 @@ export async function generateTokens(
 ): Promise<TokenPair> {
   const sessionId = uuidv4();
 
+  const scope = tier === 'admin' ? 'admin' : undefined;
   const accessToken = jwt.sign(
-    { sub: userId, sessionId, deviceId, tier } satisfies TokenPayload,
+    { sub: userId, sessionId, deviceId, tier, ...(scope && { scope }) } as TokenPayload,
     JWT_SECRET,
     {
       expiresIn: ACCESS_TOKEN_TTL,

@@ -87,6 +87,9 @@ use storage::{
     get_withdrawal_fee_bps, set_withdrawal_fee_bps,
     get_withdrawal_next_id, set_withdrawal_next_id,
     get_withdrawal_entry, set_withdrawal_entry, remove_withdrawal_entry,
+    get_whitelist_enabled, set_whitelist_enabled, is_whitelisted as storage_is_whitelisted, set_whitelisted,
+    get_min_deposit, set_min_deposit,
+    get_vault_name, set_vault_name, get_vault_symbol, set_vault_symbol, get_vault_version, set_vault_version,
 };use governance::{
     initialize_governance, create_proposal, vote_on_proposal, execute_proposal,
     get_proposal_status, ProposalStatus, ProposalType,
@@ -248,6 +251,8 @@ impl AuraVault {
         admin: Address,
         underlying_token: Address,
         signers: Vec<Address>,
+        name: soroban_sdk::String,
+        symbol: soroban_sdk::String,
     ) -> Result<(), VaultError> {
         if get_admin(&env).is_some() {
             return Err(VaultError::AlreadyInitialized);
@@ -262,6 +267,9 @@ impl AuraVault {
         storage::set_user_pending_yield(&env, &admin, 0);
         set_version(&env, 1);
         set_layout_version(&env, CURRENT_LAYOUT_VERSION);
+        set_vault_name(&env, &name);
+        set_vault_symbol(&env, &symbol);
+        set_vault_version(&env, 1);
         initialize_governance(&env, signers)?;
         bump_instance(&env);
         Ok(())
@@ -321,6 +329,17 @@ impl AuraVault {
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
+        }
+
+        // Whitelist check — Issue #349
+        if get_whitelist_enabled(&env) && !storage::is_whitelisted(&env, &caller) {
+            return Err(VaultError::NotWhitelisted);
+        }
+
+        // Minimum deposit check — Issue #355
+        let min_deposit = get_min_deposit(&env);
+        if min_deposit > 0 && amount < min_deposit {
+            return Err(VaultError::BelowMinDeposit);
         }
 
         // TVL cap check — 0 means unlimited (Issue #467)
@@ -2150,8 +2169,128 @@ impl AuraVault {
             22 => Some(VaultError::QueueUnbondingPending.message()),
             23 => Some(VaultError::InvalidWithdrawalFee.message()),
             24 => Some(VaultError::CircuitBreakerTripped.message()),
+            28 => Some(VaultError::NotWhitelisted.message()),
+            29 => Some(VaultError::BelowMinDeposit.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))
+    }
+
+    // -----------------------------------------------------------------------
+    // Whitelist-only deposit mode (Issue #349)
+    // -----------------------------------------------------------------------
+
+    /// Admin: enable whitelist-only deposit mode.
+    pub fn enable_whitelist(env: Env, admin: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_whitelist_enabled(&env, true);
+        bump_instance(&env);
+        env.events().publish(
+            (Symbol::new(&env, "whitelist_enabled"), admin),
+            (),
+        );
+        Ok(())
+    }
+
+    /// Admin: disable whitelist-only deposit mode.
+    pub fn disable_whitelist(env: Env, admin: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_whitelist_enabled(&env, false);
+        bump_instance(&env);
+        env.events().publish(
+            (Symbol::new(&env, "whitelist_disabled"), admin),
+            (),
+        );
+        Ok(())
+    }
+
+    /// Admin: add an address to the whitelist.
+    pub fn add_to_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_whitelisted(&env, &addr, true);
+        bump_instance(&env);
+        bump_persistent(&env, &addr);
+        env.events().publish(
+            (Symbol::new(&env, "whitelist_added"), admin, addr),
+            (),
+        );
+        Ok(())
+    }
+
+    /// Admin: remove an address from the whitelist.
+    pub fn remove_from_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_whitelisted(&env, &addr, false);
+        bump_instance(&env);
+        env.events().publish(
+            (Symbol::new(&env, "whitelist_removed"), admin, addr),
+            (),
+        );
+        Ok(())
+    }
+
+    /// Query whether an address is whitelisted. Read-only, no auth required.
+    pub fn is_whitelisted(env: Env, addr: Address) -> bool {
+        storage::is_whitelisted(&env, &addr)
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimum deposit amount (Issue #355)
+    // -----------------------------------------------------------------------
+
+    /// Admin: set the minimum deposit amount.
+    pub fn set_min_deposit(env: Env, admin: Address, amount: i128) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_min_deposit(&env, amount);
+        bump_instance(&env);
+        env.events().publish(
+            (Symbol::new(&env, "min_deposit_set"), admin),
+            (amount,),
+        );
+        Ok(())
+    }
+
+    /// Query the minimum deposit amount. Read-only, no auth required.
+    pub fn min_deposit(env: Env) -> i128 {
+        get_min_deposit(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Contract metadata (Issue #350)
+    // -----------------------------------------------------------------------
+
+    /// Returns the vault name. Read-only, no auth required.
+    pub fn name(env: Env) -> Option<soroban_sdk::String> {
+        get_vault_name(&env)
+    }
+
+    /// Returns the vault share symbol. Read-only, no auth required.
+    pub fn symbol(env: Env) -> Option<soroban_sdk::String> {
+        get_vault_symbol(&env)
+    }
+
+    /// Returns the contract version integer. Read-only, no auth required.
+    pub fn version(env: Env) -> u32 {
+        get_vault_version(&env)
     }
 }

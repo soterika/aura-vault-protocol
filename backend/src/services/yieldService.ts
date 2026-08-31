@@ -5,9 +5,6 @@
  * Supports multiple yield sources (staking, fees, incentives) with
  * compound interest, batch processing for 100k+ positions, backfill,
  * and alerting on calculation failures.
- *
- * Monitoring counters are exposed via `getMetrics()` for integration with
- * Prometheus or any metrics-scraping pipeline.
  */
 
 export type YieldSourceType = "staking" | "fees" | "incentives";
@@ -41,33 +38,6 @@ export interface BatchResult {
   errors: { positionId: string; error: string }[];
   results: YieldResult[];
   durationMs: number;
-}
-
-/**
- * Metrics counters for monitoring and alerting on calculation failures.
- * Reset via `resetMetrics()` between test runs.
- */
-export interface YieldMetrics {
-  /** Total individual position calculations attempted. */
-  calculationsAttempted: number;
-  /** Successful calculations. */
-  calculationsSucceeded: number;
-  /** Positions skipped because they are inactive. */
-  skippedInactive: number;
-  /** Positions skipped because amount is zero. */
-  skippedZeroAmount: number;
-  /** Hard errors (thrown exceptions) during calculation. */
-  calculationErrors: number;
-  /** Number of batch runs completed. */
-  batchRuns: number;
-  /** Number of backfill runs completed. */
-  backfillRuns: number;
-  /** Total duration of all batch runs in ms. */
-  totalBatchDurationMs: number;
-  /** Number of alert events fired. */
-  alertsFired: number;
-  /** Timestamp of last successful batch completion (ISO string or empty). */
-  lastSuccessfulBatchAt: string;
 }
 
 export interface YieldServiceOptions {
@@ -121,51 +91,6 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
   const batchSize = opts.batchSize ?? 500;
   const alert = opts.onAlert ?? ((msg, meta) => console.error(`[YieldService] ALERT: ${msg}`, meta ?? ""));
 
-  // -------------------------------------------------------------------------
-  // Monitoring counters
-  // -------------------------------------------------------------------------
-  const metrics: YieldMetrics = {
-    calculationsAttempted: 0,
-    calculationsSucceeded: 0,
-    skippedInactive: 0,
-    skippedZeroAmount: 0,
-    calculationErrors: 0,
-    batchRuns: 0,
-    backfillRuns: 0,
-    totalBatchDurationMs: 0,
-    alertsFired: 0,
-    lastSuccessfulBatchAt: "",
-  };
-
-  /** Wrap the alert function so every call also increments the counter. */
-  function fireAlert(msg: string, meta?: unknown): void {
-    metrics.alertsFired++;
-    alert(msg, meta);
-  }
-
-  /** Return a snapshot of current metrics. */
-  function getMetrics(): Readonly<YieldMetrics> {
-    return { ...metrics };
-  }
-
-  /** Reset all counters — useful in tests or after a metrics export. */
-  function resetMetrics(): void {
-    metrics.calculationsAttempted = 0;
-    metrics.calculationsSucceeded = 0;
-    metrics.skippedInactive = 0;
-    metrics.skippedZeroAmount = 0;
-    metrics.calculationErrors = 0;
-    metrics.batchRuns = 0;
-    metrics.backfillRuns = 0;
-    metrics.totalBatchDurationMs = 0;
-    metrics.alertsFired = 0;
-    metrics.lastSuccessfulBatchAt = "";
-  }
-
-  // -------------------------------------------------------------------------
-  // Core calculation
-  // -------------------------------------------------------------------------
-
   /**
    * Calculate yield for a single position at the given date.
    * Returns null (and fires alert) if the position is inactive or amount is zero.
@@ -175,17 +100,13 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
     sources: YieldSource[],
     calcDate: Date = new Date()
   ): YieldResult | null {
-    metrics.calculationsAttempted++;
-
     if (!position.isActive) {
       // Edge case: vault closed/deactivated — emit alert, skip
-      metrics.skippedInactive++;
-      fireAlert("Skipping inactive position", { positionId: position.id });
+      alert("Skipping inactive position", { positionId: position.id });
       return null;
     }
     if (position.amount <= 0) {
-      metrics.skippedZeroAmount++;
-      fireAlert("Position has zero amount", { positionId: position.id });
+      alert("Position has zero amount", { positionId: position.id });
       return null;
     }
 
@@ -199,8 +120,6 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
     const dailyYield = perSourceDaily.reduce((sum, s) => sum + s.yield, 0);
     const totalYield = totalCompoundYield(position.amount, activeSources, position.entryDate, calcDate);
 
-    metrics.calculationsSucceeded++;
-
     return {
       positionId: position.id,
       dailyYield,
@@ -210,10 +129,6 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
       sources: perSourceDaily,
     };
   }
-
-  // -------------------------------------------------------------------------
-  // Batch processing
-  // -------------------------------------------------------------------------
 
   /**
    * Process up to 100k+ positions efficiently in sequential batches.
@@ -245,22 +160,15 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
         } else {
           const errMsg = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
           errors.push({ positionId: pos.id, error: errMsg });
-          metrics.calculationErrors++;
-          fireAlert("Calculation failure", { positionId: pos.id, error: errMsg });
+          alert("Calculation failure", { positionId: pos.id, error: errMsg });
         }
       }
     }
 
-    const durationMs = Date.now() - start;
-    metrics.batchRuns++;
-    metrics.totalBatchDurationMs += durationMs;
-
     if (errors.length > 0) {
-      fireAlert(`Batch completed with ${errors.length} failure(s) out of ${positions.length}`, {
+      alert(`Batch completed with ${errors.length} failure(s) out of ${positions.length}`, {
         failureRate: `${((errors.length / positions.length) * 100).toFixed(2)}%`,
       });
-    } else {
-      metrics.lastSuccessfulBatchAt = new Date().toISOString();
     }
 
     return {
@@ -268,13 +176,9 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
       failed: errors.length,
       errors,
       results,
-      durationMs,
+      durationMs: Date.now() - start,
     };
   }
-
-  // -------------------------------------------------------------------------
-  // Backfill
-  // -------------------------------------------------------------------------
 
   /**
    * Backfill: calculate yield for every hour between startDate and endDate.
@@ -300,12 +204,10 @@ export function createYieldService(opts: YieldServiceOptions = {}) {
       const result = await processBatch(eligible, sources, slot);
       batchResults.push(result);
     }
-
-    metrics.backfillRuns++;
     return batchResults;
   }
 
-  return { calculateForPosition, processBatch, backfill, getMetrics, resetMetrics };
+  return { calculateForPosition, processBatch, backfill };
 }
 
 export type YieldService = ReturnType<typeof createYieldService>;

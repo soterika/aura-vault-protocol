@@ -501,4 +501,46 @@ pub trait AuraVaultTrait {
     ///
     /// `Some(message)` for a recognised code, `None` otherwise.
     fn get_vault_error_message(env: Env, code: u32) -> Option<String>;
+
+    // -----------------------------------------------------------------------
+    // Whitelist-only deposit mode (Issue #349)
+    // -----------------------------------------------------------------------
+
+    /// Enable whitelist-only deposit mode. Admin-only.
+    fn enable_whitelist(env: Env, admin: Address) -> Result<(), VaultError>;
+
+    /// Disable whitelist-only deposit mode. Admin-only.
+    fn disable_whitelist(env: Env, admin: Address) -> Result<(), VaultError>;
+
+    /// Add an address to the deposit whitelist. Admin-only.
+    fn add_to_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError>;
+
+    /// Remove an address from the deposit whitelist. Admin-only.
+    fn remove_from_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError>;
+
+    /// Query whether an address is whitelisted. Read-only, no auth required.
+    fn is_whitelisted(env: Env, addr: Address) -> bool;
+
+    // -----------------------------------------------------------------------
+    // Minimum deposit amount (Issue #355)
+    // -----------------------------------------------------------------------
+
+    /// Set the minimum deposit amount. Admin-only.
+    fn set_min_deposit(env: Env, admin: Address, amount: i128) -> Result<(), VaultError>;
+
+    /// Query the minimum deposit amount. Read-only, no auth required.
+    fn min_deposit(env: Env) -> i128;
+
+    // -----------------------------------------------------------------------
+    // Contract metadata (Issue #350)
+    // -----------------------------------------------------------------------
+
+    /// Returns the vault name. Read-only.
+    fn name(env: Env) -> Option<String>;
+
+    /// Returns the vault share symbol. Read-only.
+    fn symbol(env: Env) -> Option<String>;
+
+    /// Returns the contract version integer. Read-only.
+    fn version(env: Env) -> u32;
 }

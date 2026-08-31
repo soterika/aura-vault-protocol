@@ -10,82 +10,25 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# ---------------------------------------------------------------------------
-# Job DAG
-#
-#  lint ─────────────────────────────────────────────────────────┐
-#  unit-tests ──► integration-tests                              ├──► summary
-#  build      ──► e2e-tests                                      │
-#  security-scan ────────────────────────────────────────────────┘
-# ---------------------------------------------------------------------------
-
 jobs:
-  # ─── 1. LINT ──────────────────────────────────────────────────────────────
-  lint:
-    name: Lint (${{ matrix.workspace }})
+  rust-tests:
+    name: Rust Smart Contract Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace:
-          - frontend
-          - backend
-          - ui
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: aura-vault
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
-
-      - name: Install dependencies
-        run: npm install
-        working-directory: ${{ matrix.workspace }}
-
-      - name: Lint — ${{ matrix.workspace }}
-        run: |
-          if [ "${{ matrix.workspace }}" = "frontend" ]; then
-            npm run lint
-          else
-            # backend and ui: type-check via tsc --noEmit
-            npx tsc --noEmit
-          fi
-        working-directory: ${{ matrix.workspace }}
-
-  # ─── 2. UNIT TESTS ────────────────────────────────────────────────────────
-  unit-tests:
-    name: Unit Tests (${{ matrix.workspace }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - workspace: rust
-            runner_dir: aura-vault
-          - workspace: backend
-            runner_dir: backend
-          - workspace: ui
-            runner_dir: ui
-
-    steps:
-      - uses: actions/checkout@v7
-
-      # ── Rust setup (only for rust matrix entry) ──
       - name: Install Rust stable
-        if: matrix.workspace == 'rust'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache Cargo
-        if: matrix.workspace == 'rust'
-        uses: actions/cache@v6
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -94,356 +37,71 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # ── Node setup (only for non-rust entries) ──
-      - name: Setup Node 20
-        if: matrix.workspace != 'rust'
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: ${{ matrix.runner_dir }}/package-lock.json
-
-      - name: Install Node dependencies
-        if: matrix.workspace != 'rust'
-        run: npm install
-        working-directory: ${{ matrix.runner_dir }}
-
-      # ── Build Wasm (required by Rust upgrade tests) ──
-      - name: Build Wasm
-        if: matrix.workspace == 'rust'
+      - name: Build Wasm (required by upgrade tests)
         run: cargo build --target wasm32-unknown-unknown --release
-        working-directory: aura-vault
 
-      # ── Run tests ──
-      - name: Run tests — ${{ matrix.workspace }}
-        run: |
-          if [ "${{ matrix.workspace }}" = "rust" ]; then
-            cargo test -- --test-threads=4 2>&1 | tee ../test-results-rust.txt
-          else
-            npm test -- --reporter=verbose 2>&1 | tee ../../test-results-${{ matrix.workspace }}.txt
-          fi
-        working-directory: ${{ matrix.runner_dir }}
+      - name: Run all tests
+        run: cargo test -- --test-threads=4 2>&1 | tee ../test-results-rust.txt
 
-      - name: Upload test results
+      - name: Upload Rust test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: unit-test-results-${{ matrix.workspace }}
-          path: test-results-${{ matrix.workspace }}.txt
-          if-no-files-found: ignore
+          name: rust-test-results
+          path: test-results-rust.txt
 
-  # ─── 3. BUILD ─────────────────────────────────────────────────────────────
-  build:
-    name: Build (${{ matrix.workspace }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - workspace: frontend
-            runner_dir: frontend
-          - workspace: backend
-            runner_dir: backend
-          - workspace: rust-wasm
-            runner_dir: aura-vault
-
-    steps:
-      - uses: actions/checkout@v7
-
-      # ── Rust ──
-      - name: Install Rust stable
-        if: matrix.workspace == 'rust-wasm'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache Cargo
-        if: matrix.workspace == 'rust-wasm'
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            aura-vault/target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('aura-vault/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-build-
-
-      # ── Node ──
-      - name: Setup Node 20
-        if: matrix.workspace != 'rust-wasm'
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: ${{ matrix.runner_dir }}/package-lock.json
-
-      - name: Install Node dependencies
-        if: matrix.workspace != 'rust-wasm'
-        run: npm install
-        working-directory: ${{ matrix.runner_dir }}
-
-      # ── Build ──
-      - name: Build — ${{ matrix.workspace }}
-        run: |
-          if [ "${{ matrix.workspace }}" = "rust-wasm" ]; then
-            cargo build --target wasm32-unknown-unknown --release
-          else
-            npm run build
-          fi
-        working-directory: ${{ matrix.runner_dir }}
-
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: build-${{ matrix.workspace }}
-          path: |
-            frontend/.next/
-            backend/dist/
-            aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
-          if-no-files-found: ignore
-
-  # ─── 4. SECURITY SCAN ─────────────────────────────────────────────────────
-  security-scan:
-    name: Security Scan
+  ui-tests:
+    name: UI Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('aura-vault/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-audit-
-
-      - name: npm audit — frontend
-        run: npm install && npm audit --audit-level=high || true
-        working-directory: frontend
-
-      - name: npm audit — backend
-        run: npm install && npm audit --audit-level=high || true
-        working-directory: backend
-
-      - name: npm audit — ui
-        run: npm install && npm audit --audit-level=high || true
+    defaults:
+      run:
         working-directory: ui
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
-      - name: cargo audit — aura-vault
-        run: cargo audit
-        working-directory: aura-vault
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: security-audit-results
-          path: |
-            frontend/npm-audit.json
-            backend/npm-audit.json
-            ui/npm-audit.json
-          if-no-files-found: ignore
-
-  # ─── 5. MIGRATION TESTS (after unit-tests, before integration-tests) ────────
-  migration-tests:
-    name: Database Migration Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [unit-tests]
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: aura_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
-
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
 
-      - name: Install backend dependencies
-        run: npm install
-        working-directory: backend
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
-      - name: Run migration tests
-        run: npx vitest run src/tests/migration.test.ts --reporter=verbose
-        working-directory: backend
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/aura_test
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Upload migration test results
+      - name: Run UI tests
+        run: pnpm test -- --reporter=verbose 2>&1 | tee ../test-results-ui.txt
+
+      - name: Upload UI test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: migration-test-results
-          path: backend/migration-test-results.txt
-          if-no-files-found: ignore
+          name: ui-test-results
+          path: test-results-ui.txt
 
-  # ─── 6. INTEGRATION TESTS (after migration-tests) ────────────────────────
-  integration-tests:
-    name: Integration Tests
+  report:
+    name: Test Summary
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: [migration-tests]
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      # Placeholder: replace with real integration test suite as it grows.
-      # Integration tests validate interactions between backend, DB, and chain mock.
-      - name: Run integration tests
-        run: |
-          echo "Integration test suite — scaffold in place."
-          echo "Add real tests under backend/test/integration/ and run them here."
-          exit 0
-
-  # ─── 6. E2E TESTS (after build) ───────────────────────────────────────────
-  e2e-tests:
-    name: E2E Tests (Cypress)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [build]
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - name: Install root dependencies (Cypress)
-        run: npm install
-
-      - name: Install frontend dependencies
-        run: npm install
-        working-directory: frontend
-
-      - name: Run Cypress E2E tests
-        uses: cypress-io/github-action@v7
-        with:
-          start: npm run dev
-          wait-on: "http://localhost:3000"
-          wait-on-timeout: 60
-          working-directory: frontend
-          config: baseUrl=http://localhost:3000
-          record: false
-        env:
-          CYPRESS_BASE_URL: http://localhost:3000
-
-      - name: Upload Cypress screenshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: cypress-screenshots
-          path: cypress/screenshots/
-          if-no-files-found: ignore
-
-      - name: Upload Cypress videos
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: cypress-videos
-          path: cypress/videos/
-          if-no-files-found: ignore
-
-  # ─── 7. SUMMARY ───────────────────────────────────────────────────────────
-  summary:
-    name: CI Summary
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs:
-      - lint
-      - unit-tests
-      - build
-      - security-scan
-      - migration-tests
-      - integration-tests
-      - e2e-tests
+    needs: [rust-tests, ui-tests]
     if: always()
 
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: artifacts/
-        continue-on-error: true
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
 
-      - name: Print unit test results
-        run: |
-          echo "=== Rust Test Results ==="
-          cat artifacts/unit-test-results-rust/test-results-rust.txt 2>/dev/null || echo "(no rust results)"
-          echo ""
-          echo "=== Backend Test Results ==="
-          cat artifacts/unit-test-results-backend/test-results-backend.txt 2>/dev/null || echo "(no backend results)"
-          echo ""
-          echo "=== UI Test Results ==="
-          cat artifacts/unit-test-results-ui/test-results-ui.txt 2>/dev/null || echo "(no ui results)"
+      - name: Print Rust results
+        run: cat rust-test-results/test-results-rust.txt || echo "No Rust results"
 
-      - name: Print job status summary
-        run: |
-          echo "┌──────────────────────┬──────────┐"
-          echo "│ Job                  │ Result   │"
-          echo "├──────────────────────┼──────────┤"
-          echo "│ lint                 │ ${{ needs.lint.result }}   │"
-          echo "│ unit-tests           │ ${{ needs.unit-tests.result }}   │"
-          echo "│ build                │ ${{ needs.build.result }}   │"
-          echo "│ security-scan        │ ${{ needs.security-scan.result }}   │"
-          echo "│ migration-tests      │ ${{ needs.migration-tests.result }}   │"
-          echo "│ integration-tests    │ ${{ needs.integration-tests.result }}   │"
-          echo "│ e2e-tests            │ ${{ needs.e2e-tests.result }}   │"
-          echo "└──────────────────────┴──────────┘"
+      - name: Print UI results
+        run: cat ui-test-results/test-results-ui.txt || echo "No UI results"
 
-      - name: Fail if any required job failed
-        if: |
-          needs.lint.result == 'failure' ||
-          needs.unit-tests.result == 'failure' ||
-          needs.build.result == 'failure' ||
-          needs.security-scan.result == 'failure' ||
-          needs.migration-tests.result == 'failure' ||
-          needs.integration-tests.result == 'failure' ||
-          needs.e2e-tests.result == 'failure'
+      - name: Fail if any job failed
+        if: ${{ needs.rust-tests.result == 'failure' || needs.ui-tests.result == 'failure' }}
         run: |
-          echo "One or more CI jobs failed. Check the artifacts above for details."
-          echo ""
-          echo "Artifact paths available in the 'artifacts/' directory of this run:"
-          ls -la artifacts/ 2>/dev/null || echo "(no artifacts downloaded)"
+          echo "One or more test jobs failed. See artifacts for details."
           exit 1

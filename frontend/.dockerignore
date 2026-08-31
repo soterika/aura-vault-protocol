@@ -1,34 +1,5 @@
-# issue #499: exclude files that should not enter the Docker build context
-
-# Version control
-.git
-.gitignore
-
-# Dependencies (installed fresh inside the container)
 node_modules
-
-# Build outputs (rebuilt inside the container)
 .next
-out
-
-# Test files
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.ts
-**/*.spec.tsx
-src/tests/
-src/test/
-
-# Local environment / secrets
-.env
-.env.*
-!.env.example
-
-# Editor / OS
-.DS_Store
-.vscode
-.idea
-
-# Docs and misc
+.git
 *.md
-README*
+.env*.local

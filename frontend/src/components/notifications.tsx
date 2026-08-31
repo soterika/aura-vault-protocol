@@ -4,29 +4,11 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import { useTranslation } from "react-i18next";
 import "@/lib/i18n";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/** Standard UI notification types */
 export type NotificationType = "success" | "error" | "info" | "warning";
-
-/**
- * Vault-specific event types for protocol-level events.
- * These are surfaced through the same notification system but indicate
- * on-chain / protocol events rather than generic UI feedback.
- */
-export type VaultNotificationType =
-  | "harvest"
-  | "large_deposit"
-  | "vault_paused"
-  | "price_milestone";
-
-/** Union of all notification type values */
-export type AnyNotificationType = NotificationType | VaultNotificationType;
 
 export interface Notification {
   id: string;
-  /** Combined type — UI feedback or vault protocol event */
-  type: AnyNotificationType;
+  type: NotificationType;
   title: string;
   message?: string;
   timestamp: number;
@@ -37,14 +19,12 @@ export interface Notification {
 interface NotificationContextValue {
   notifications: Notification[];
   unreadCount: number;
-  toast: (type: AnyNotificationType, title: string, message?: string) => void;
+  toast: (type: NotificationType, title: string, message?: string) => void;
   markRead: (id: string) => void;
   markAllRead: () => void;
   dismiss: (id: string) => void;
   clearAll: () => void;
 }
-
-// ─── Context ──────────────────────────────────────────────────────────────────
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
@@ -54,12 +34,10 @@ export function useNotifications() {
   return ctx;
 }
 
-// ─── localStorage persistence helpers ────────────────────────────────────────
+const MAX_HISTORY = 50;
+const STORAGE_KEY = "aura_notifications";
 
-export const MAX_HISTORY = 50;
-export const STORAGE_KEY = "aura_notifications";
-
-export function loadHistory(): Notification[] {
+function loadHistory(): Notification[] {
   if (typeof window === "undefined") return [];
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
@@ -68,39 +46,24 @@ export function loadHistory(): Notification[] {
   }
 }
 
-export function saveHistory(notifications: Notification[]) {
+function saveHistory(notifications: Notification[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(-MAX_HISTORY)));
 }
-
-// ─── Badge helper — exported for testing ─────────────────────────────────────
-
-/**
- * Formats an unread count for the badge label.
- * Caps at 99 (shows "99+") above that.
- */
-export function formatBadgeCount(count: number): string {
-  if (count <= 0) return "";
-  if (count > 99) return "99+";
-  if (count > 9) return "9+";
-  return String(count);
-}
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [toasts, setToasts] = useState<Notification[]>([]);
 
-  // Hydrate from localStorage on mount (client-only)
   useEffect(() => {
     const history = loadHistory();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (history.length > 0) {
       setNotifications(history);
     }
   }, []);
 
-  const toast = useCallback((type: AnyNotificationType, title: string, message?: string) => {
+  const toast = useCallback((type: NotificationType, title: string, message?: string) => {
     const notification: Notification = {
       id: crypto.randomUUID(),
       type,
@@ -149,17 +112,20 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <NotificationContext.Provider
-      value={{ notifications, unreadCount, toast, markRead, markAllRead, dismiss, clearAll }}
-    >
+    <NotificationContext.Provider value={{ notifications, unreadCount, toast, markRead, markAllRead, dismiss, clearAll }}>
       {children}
-      {/* Toast container — top-right, polite live region */}
+      {/* Toast container */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm" aria-live="polite">
         {toasts.map((n) => (
           <div
             key={n.id}
             role="status"
-            className={`flex items-start gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm animate-toast-in ${toastClasses(n.type)}`}
+            className={`flex items-start gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm animate-toast-in ${
+              n.type === "success" ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800" :
+              n.type === "error" ? "bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800" :
+              n.type === "warning" ? "bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800" :
+              "bg-blue-50 dark:bg-blue-950/80 border-blue-200 dark:border-blue-800"
+            }`}
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{n.title}</p>
@@ -179,197 +145,56 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Maps notification type to Tailwind toast background/border classes */
-function toastClasses(type: AnyNotificationType): string {
-  switch (type) {
-    case "success":
-      return "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800";
-    case "error":
-      return "bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800";
-    case "warning":
-    case "vault_paused":
-      return "bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800";
-    case "harvest":
-    case "price_milestone":
-      return "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800";
-    case "large_deposit":
-      return "bg-violet-50 dark:bg-violet-950/80 border-violet-200 dark:border-violet-800";
-    default:
-      return "bg-blue-50 dark:bg-blue-950/80 border-blue-200 dark:border-blue-800";
-  }
-}
-
-// ─── NotificationCenter (shared implementation) ───────────────────────────────
-
-interface NotificationPanelProps {
-  /** When true the panel becomes a full-screen overlay (mobile) */
-  fullScreenMobile?: boolean;
-  /** Extra classes for the trigger button */
-  buttonClassName?: string;
-  /** data-testid for the trigger button */
-  buttonTestId?: string;
-}
-
-/**
- * Bell icon + notification panel.
- *
- * Desktop: floating panel anchored below the button.
- * Mobile (<640 px): full-screen overlay when `fullScreenMobile` is true.
- */
-export function NotificationCenter({
-  fullScreenMobile = false,
-  buttonClassName,
-  buttonTestId,
-}: NotificationPanelProps = {}) {
+export function NotificationCenter() {
   const { t } = useTranslation();
   const { notifications, unreadCount, markRead, markAllRead, clearAll } = useNotifications();
   const [open, setOpen] = useState(false);
 
-  const badgeLabel = formatBadgeCount(unreadCount);
-  const ariaLabel =
-    unreadCount > 0
-      ? t("notifications.unread_aria", { count: unreadCount })
-      : t("notifications.title");
-
-  // Panel positioning: full-screen on mobile (<sm) when requested, else floating
-  const panelClasses = fullScreenMobile
-    ? [
-        // Mobile (<640px): cover entire viewport
-        "fixed inset-0 w-screen h-screen rounded-none z-50 flex flex-col",
-        "bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800",
-        // sm+: switch back to floating panel
-        "sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2",
-        "sm:w-80 sm:max-h-96 sm:h-auto sm:rounded-xl sm:border sm:shadow-xl sm:overflow-auto",
-      ].join(" ")
-    : "absolute right-0 top-full mt-2 w-80 max-h-96 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl z-50";
-
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((prev) => !prev)}
-        className={
-          buttonClassName ??
-          "relative p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-        }
-        aria-label={ariaLabel}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        data-testid={buttonTestId}
+        onClick={() => setOpen(!open)}
+        className="relative p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+        aria-label={unreadCount > 0 ? t("notifications.unread_aria", { count: unreadCount }) : t("notifications.title")}
       >
-        {/* Bell SVG */}
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
-
-        {/* Unread badge — capped at 99+ */}
         {unreadCount > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[1rem] h-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center px-0.5"
-            aria-hidden="true"
-          >
-            {badgeLabel}
+          <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center">
+            {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div
-          role="dialog"
-          aria-label={t("notifications.title")}
-          className={panelClasses}
-        >
-          {/* Panel header */}
-          <div className="flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
+        <div className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl z-50">
+          <div className="flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800">
             <h3 className="text-sm font-semibold">{t("notifications.title")}</h3>
-            <div className="flex gap-2 items-center">
-              <button onClick={markAllRead} className="text-xs text-indigo-600 hover:underline">
-                {t("notifications.mark_all_read")}
-              </button>
-              <button onClick={clearAll} className="text-xs text-red-500 hover:underline">
-                {t("notifications.clear")}
-              </button>
-              {/* Close button — always visible on mobile overlay */}
-              <button
-                onClick={() => setOpen(false)}
-                className="ml-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none sm:hidden"
-                aria-label={t("notifications.close", { defaultValue: "Close" })}
-              >
-                &times;
-              </button>
+            <div className="flex gap-2">
+              <button onClick={markAllRead} className="text-xs text-indigo-600 hover:underline">{t("notifications.mark_all_read")}</button>
+              <button onClick={clearAll} className="text-xs text-red-500 hover:underline">{t("notifications.clear")}</button>
             </div>
           </div>
-
-          {/* Notification list */}
-          <div className="overflow-auto flex-1">
-            {notifications.length === 0 ? (
-              <p className="p-6 text-center text-sm text-zinc-400">{t("notifications.empty")}</p>
-            ) : (
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {[...notifications]
-                  .reverse()
-                  .slice(0, 20)
-                  .map((n) => (
-                    <button
-                      key={n.id}
-                      onClick={() => markRead(n.id)}
-                      className={`w-full text-left p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${
-                        !n.read ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className={`text-sm ${!n.read ? "font-medium" : ""}`}>{n.title}</p>
-                        {renderTypeBadge(n.type)}
-                      </div>
-                      {n.message && <p className="text-xs text-zinc-500 mt-0.5">{n.message}</p>}
-                      <p className="text-[10px] text-zinc-400 mt-1">
-                        {new Date(n.timestamp).toLocaleString()}
-                      </p>
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
+          {notifications.length === 0 ? (
+            <p className="p-6 text-center text-sm text-zinc-400">{t("notifications.empty")}</p>
+          ) : (
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {[...notifications].reverse().slice(0, 20).map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => markRead(n.id)}
+                  className={`w-full text-left p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${!n.read ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""}`}
+                >
+                  <p className={`text-sm ${!n.read ? "font-medium" : ""}`}>{n.title}</p>
+                  {n.message && <p className="text-xs text-zinc-500 mt-0.5">{n.message}</p>}
+                  <p className="text-[10px] text-zinc-400 mt-1">{new Date(n.timestamp).toLocaleString()}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
-  );
-}
-
-/** Small pill badge for vault-specific types shown in the notification list */
-function renderTypeBadge(type: AnyNotificationType): React.ReactNode {
-  switch (type) {
-    case "harvest":
-      return <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-semibold shrink-0">HARVEST</span>;
-    case "large_deposit":
-      return <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 font-semibold shrink-0">DEPOSIT</span>;
-    case "vault_paused":
-      return <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-semibold shrink-0">PAUSED</span>;
-    case "price_milestone":
-      return <span className="text-[9px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-semibold shrink-0">MILESTONE</span>;
-    default:
-      return null;
-  }
-}
-
-// ─── NotificationBell (thin wrapper with testid + mobile overlay) ─────────────
-
-/**
- * NotificationBell is a thin wrapper around NotificationCenter that:
- * - Sets data-testid="notification-bell" on the trigger button
- * - Sets a proper aria-label with unread count (handled internally)
- * - Enables the full-screen mobile overlay behavior
- *
- * Use this component in headers / nav bars.
- */
-export function NotificationBell() {
-  return (
-    <NotificationCenter
-      fullScreenMobile
-      buttonTestId="notification-bell"
-    />
   );
 }

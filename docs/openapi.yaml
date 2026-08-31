@@ -77,11 +77,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TokenPair"
+                $ref: "#/components/schemas/EnvelopeSuccess"
               example:
-                accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                expiresIn: 900
+                success: true
+                data:
+                  accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  expiresIn: 900
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
         "400":
           $ref: "#/components/responses/BadRequest"
         "429":
@@ -142,9 +148,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/EnvelopeSuccess"
               example:
                 success: true
+                data:
+                  success: true
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -164,11 +176,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SessionsResponse"
+                $ref: "#/components/schemas/EnvelopeSuccess"
               example:
-                sessions:
-                  - "550e8400-e29b-41d4-a716-446655440000"
-                  - "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                success: true
+                data:
+                  sessions:
+                    - "550e8400-e29b-41d4-a716-446655440000"
+                    - "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -188,9 +206,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SuccessResponse"
+                $ref: "#/components/schemas/EnvelopeSuccess"
               example:
                 success: true
+                data:
+                  success: true
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -213,6 +237,178 @@ paths:
               example:
                 status: "ok"
                 timestamp: "2026-06-25T13:00:00.000Z"
+
+  # ---------------------------------------------------------------------------
+  # Vault Transactions (with Idempotency Support)
+  # ---------------------------------------------------------------------------
+  /api/v1/vault/deposit:
+    post:
+      tags: [Vault]
+      summary: Submit a signed deposit transaction
+      description: |
+        Submits a signed Soroban deposit transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitDeposit
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, address]
+              properties:
+                signedXdr:
+                  type: string
+                  description: Base64-encoded signed Stellar TransactionEnvelope XDR.
+                address:
+                  type: string
+                  example: "GBZXN7PIRZGNMHGA7MUUUF4GWPY5AYPV6LY4UV2GL6VJGIQRXFDNMADI"
+      responses:
+        "200":
+          description: Deposit submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+              description: Set to "true" if the response was served from the idempotency cache.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "deposit" }
+                  address: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+                  envelopeXdr: { type: string }
+                  resultXdr: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
+
+  /api/v1/vault/withdraw:
+    post:
+      tags: [Vault]
+      summary: Submit a signed withdraw transaction
+      description: |
+        Submits a signed Soroban withdraw transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitWithdraw
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, shares, address]
+              properties:
+                signedXdr:
+                  type: string
+                shares:
+                  type: string
+                  example: "1000"
+                address:
+                  type: string
+      responses:
+        "200":
+          description: Withdrawal submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "withdraw" }
+                  address: { type: string }
+                  shares: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
+
+  /api/v1/vault/harvest:
+    post:
+      tags: [Vault]
+      summary: Submit a signed harvest transaction
+      description: |
+        Submits a signed Soroban harvest transaction envelope to Horizon.
+        Supports `Idempotency-Key` header (UUID) for safe network retries.
+      operationId: submitHarvest
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional UUID idempotency key for safe retries (cached for 24 hours in Redis).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr, yieldAmount]
+              properties:
+                signedXdr:
+                  type: string
+                yieldAmount:
+                  type: string
+                  example: "500"
+      responses:
+        "200":
+          description: Harvest submitted successfully
+          headers:
+            X-Idempotent-Replay:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  operation: { type: string, example: "harvest" }
+                  yieldAmount: { type: string }
+                  hash: { type: string }
+                  ledger: { type: integer }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Horizon transaction failed
 
   # ---------------------------------------------------------------------------
   # Portfolio
@@ -1034,6 +1230,115 @@ components:
       description: Maximum number of items to return per page (default 20, max 100).
 
   schemas:
+    # ── Envelope schemas ──────────────────────────────────────────────────────
+
+    ApiMeta:
+      type: object
+      description: Metadata attached to every API response envelope.
+      required: [requestId, timestamp, version]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique identifier for the request, useful for log correlation.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        timestamp:
+          type: string
+          format: date-time
+          description: UTC timestamp when the response was generated.
+          example: "2026-08-29T13:14:38.843Z"
+        version:
+          type: string
+          description: API response schema version.
+          example: "1.0.0"
+
+    EnvelopeSuccess:
+      type: object
+      description: |
+        Standard success response envelope.
+        Every successful response is wrapped in this structure.
+      required: [success, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          example: true
+        data:
+          description: The response payload. Shape varies per endpoint.
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+
+    EnvelopeError:
+      type: object
+      description: |
+        Standard error response envelope.
+        Every error response is wrapped in this structure.
+      required: [success, error, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          example: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Machine-readable error code. One of the following values:
+
+                | Code | Meaning |
+                |---|---|
+                | `INVALID_INPUT` | A required parameter was missing or had an invalid value |
+                | `INTERNAL_ERROR` | An unexpected server-side error occurred |
+                | `INVALID_ADDRESS` | The supplied address failed format validation |
+                | `VAULT_PAUSED` | The vault is paused; no mutating operations are allowed |
+                | `NOT_INITIALIZED` | The vault has not been initialised yet |
+                | `ALREADY_INITIALIZED` | The vault has already been initialised |
+                | `ZERO_AMOUNT` | A zero or negative amount was supplied |
+                | `MATH_OVERFLOW` | An arithmetic operation overflowed |
+                | `INSUFFICIENT_SHARES` | The caller does not hold enough vault shares |
+                | `INSUFFICIENT_UNDERLYING` | The vault cannot cover the redemption |
+                | `BALANCE_MISMATCH` | Actual on-chain balance differs from tracked state (flash-loan guard) |
+                | `TVL_CAP_EXCEEDED` | The deposit would push the vault above its TVL cap |
+                | `INVALID_WITHDRAWAL_FEE` | The withdrawal fee is outside the accepted range |
+                | `FEE_EXCEEDS_MAXIMUM` | The requested fee exceeds the protocol maximum |
+                | `HARVEST_COOLDOWN` | Harvest attempted before the cooldown period has elapsed |
+                | `CIRCUIT_BREAKER_TRIPPED` | The circuit breaker has tripped; operation temporarily disabled |
+                | `ASSET_NOT_FOUND` | The requested asset was not found |
+                | `WEIGHT_MISMATCH` | The supplied asset weights do not sum to 100 % |
+                | `DUPLICATE_ASSET` | The same asset appears more than once in the supplied list |
+              enum:
+                - INVALID_INPUT
+                - INTERNAL_ERROR
+                - INVALID_ADDRESS
+                - VAULT_PAUSED
+                - NOT_INITIALIZED
+                - ALREADY_INITIALIZED
+                - ZERO_AMOUNT
+                - MATH_OVERFLOW
+                - INSUFFICIENT_SHARES
+                - INSUFFICIENT_UNDERLYING
+                - BALANCE_MISMATCH
+                - TVL_CAP_EXCEEDED
+                - INVALID_WITHDRAWAL_FEE
+                - FEE_EXCEEDS_MAXIMUM
+                - HARVEST_COOLDOWN
+                - CIRCUIT_BREAKER_TRIPPED
+                - ASSET_NOT_FOUND
+                - WEIGHT_MISMATCH
+                - DUPLICATE_ASSET
+              example: "INVALID_INPUT"
+            message:
+              type: string
+              description: Human-readable description of the error.
+              example: "positions and sources arrays are required"
+            details:
+              description: Optional additional context (present in development mode or for validation errors).
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+
     PaginatedResponse:
       type: object
       description: Generic wrapper for all cursor-paginated list responses.
@@ -1116,12 +1421,24 @@ components:
           description: List of active session IDs for the authenticated wallet.
 
     SuccessResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-          example: true
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeSuccess"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                success:
+                  type: boolean
+                  example: true
+      example:
+        success: true
+        data:
+          success: true
+        meta:
+          requestId: "550e8400-e29b-41d4-a716-446655440000"
+          timestamp: "2026-08-29T13:14:38.843Z"
+          version: "1.0.0"
 
     HealthResponse:
       type: object
@@ -1129,21 +1446,21 @@ components:
       properties:
         status:
           type: string
-          enum: [ok]
+          enum: [ok, degraded, starting]
           example: ok
+        redis:
+          type: boolean
+          description: Whether Redis is reachable.
+        warmup:
+          type: string
+          description: Current cache warm-up state.
         timestamp:
           type: string
           format: date-time
           description: Server UTC timestamp at time of request.
 
     ErrorResponse:
-      type: object
-      required: [error]
-      properties:
-        error:
-          type: string
-          description: Human-readable error message.
-          example: "walletAddress required"
+      $ref: "#/components/schemas/EnvelopeError"
 
   responses:
     BadRequest:
@@ -1151,53 +1468,102 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/EnvelopeError"
           example:
-            error: "walletAddress required"
+            success: false
+            error:
+              code: "INVALID_INPUT"
+              message: "The information you provided is not valid. Please check and try again."
+            meta:
+              requestId: "550e8400-e29b-41d4-a716-446655440000"
+              timestamp: "2026-08-29T13:14:38.843Z"
+              version: "1.0.0"
 
     Unauthorized:
       description: Missing, invalid, or expired token
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/EnvelopeError"
           examples:
             MissingToken:
               value:
-                error: "Missing token"
+                success: false
+                error:
+                  code: "UNAUTHORIZED"
+                  message: "Missing token"
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
             InvalidToken:
               value:
-                error: "Invalid or expired token"
+                success: false
+                error:
+                  code: "INVALID_TOKEN"
+                  message: "Invalid authentication token. Please log in again."
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
             ExpiredRefresh:
               value:
-                error: "Invalid or expired refresh token"
+                success: false
+                error:
+                  code: "INVALID_TOKEN"
+                  message: "Invalid or expired refresh token"
+                meta:
+                  requestId: "550e8400-e29b-41d4-a716-446655440000"
+                  timestamp: "2026-08-29T13:14:38.843Z"
+                  version: "1.0.0"
 
     RateLimited:
       description: Too many requests — auth rate limit exceeded (20 req / 15 min)
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/EnvelopeError"
           example:
-            error: "Too many auth requests, try again later"
+            success: false
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Too many requests. Please wait a moment and try again."
+            meta:
+              requestId: "550e8400-e29b-41d4-a716-446655440000"
+              timestamp: "2026-08-29T13:14:38.843Z"
+              version: "1.0.0"
 
     NotFound:
       description: Resource not found
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/EnvelopeError"
           example:
-            error: "not found"
+            success: false
+            error:
+              code: "NOT_FOUND"
+              message: "The requested resource was not found."
+            meta:
+              requestId: "550e8400-e29b-41d4-a716-446655440000"
+              timestamp: "2026-08-29T13:14:38.843Z"
+              version: "1.0.0"
 
     InternalError:
       description: Internal server error
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/EnvelopeError"
           example:
-            error: "Internal server error"
+            success: false
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred. Please try again."
+            meta:
+              requestId: "550e8400-e29b-41d4-a716-446655440000"
+              timestamp: "2026-08-29T13:14:38.843Z"
+              version: "1.0.0"
 
   # ── Additional schemas ────────────────────────────────────────────────────
 

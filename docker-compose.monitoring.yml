@@ -86,20 +86,8 @@ services:
     image: prom/alertmanager:v0.27.0
     container_name: aura-alertmanager
     restart: unless-stopped
-    environment:
-      - PAGERDUTY_ROUTING_KEY_CRITICAL=${PAGERDUTY_ROUTING_KEY_CRITICAL:-}
-      - PAGERDUTY_ROUTING_KEY_BLOCKCHAIN=${PAGERDUTY_ROUTING_KEY_BLOCKCHAIN:-}
-      - PAGERDUTY_ROUTING_KEY_PLATFORM=${PAGERDUTY_ROUTING_KEY_PLATFORM:-}
-      - PAGERDUTY_ROUTING_KEY_BACKEND=${PAGERDUTY_ROUTING_KEY_BACKEND:-}
-      - SLACK_API_URL=${SLACK_API_URL:-}
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-      - ./monitoring/alertmanager/templates:/etc/alertmanager/templates
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
-      - "--web.external-url=http://localhost:9093"
-      - "--log.level=info"
     ports:
       - "9093:9093"
     networks:

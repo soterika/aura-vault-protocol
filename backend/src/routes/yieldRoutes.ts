@@ -1,17 +1,14 @@
-import { Router, Request, Response } from "express";
-import { createYieldService, YieldSource, VaultPosition } from "../services/yieldService.js";
-import { getLastRunStats, getRunHistory, isYieldWorkerRunning } from "../services/yieldWorker.js";
-import { parsePagination, paginateArray } from "../middleware/paginationMiddleware.js";
+import { Router, Request, Response } from 'express';
+import { createYieldService, YieldSource, VaultPosition } from '../services/yieldService.js';
+import { getLastRunStats, getRunHistory, isYieldWorkerRunning } from '../services/yieldWorker.js';
+import { parsePagination, paginateArray } from '../middleware/paginationMiddleware.js';
+import { INVALID_INPUT, INTERNAL_ERROR } from '../middleware/errorCodes.js';
 
 const yieldService = createYieldService();
 
 export const yieldRouter = Router();
 
-/**
- * POST /api/v1/yield/calculate
- * Body: { positions: VaultPosition[], sources: YieldSource[], calcDate?: string }
- */
-yieldRouter.post("/calculate", async (req: Request, res: Response): Promise<void> => {
+yieldRouter.post('/calculate', async (req: Request, res: Response): Promise<void> => {
   const { positions, sources, calcDate } = req.body as {
     positions: VaultPosition[];
     sources: YieldSource[];
@@ -19,25 +16,21 @@ yieldRouter.post("/calculate", async (req: Request, res: Response): Promise<void
   };
 
   if (!Array.isArray(positions) || !Array.isArray(sources)) {
-    res.status(400).json({ error: "positions and sources arrays are required" });
+    res.failure(INVALID_INPUT, 'positions and sources arrays are required', 400);
     return;
   }
 
   try {
     const date = calcDate ? new Date(calcDate) : new Date();
     const result = await yieldService.processBatch(positions, sources, date);
-    res.json(result);
+    res.success(result);
   } catch (err) {
-    console.error("[yield/calculate]", err);
-    res.status(500).json({ error: "Yield calculation failed" });
+    console.error('[yield/calculate]', err);
+    res.failure(INTERNAL_ERROR, 'Yield calculation failed', 500);
   }
 });
 
-/**
- * POST /api/v1/yield/backfill
- * Body: { positions: VaultPosition[], sources: YieldSource[], startDate: string, endDate: string }
- */
-yieldRouter.post("/backfill", async (req: Request, res: Response): Promise<void> => {
+yieldRouter.post('/backfill', async (req: Request, res: Response): Promise<void> => {
   const { positions, sources, startDate, endDate } = req.body as {
     positions: VaultPosition[];
     sources: YieldSource[];
@@ -46,32 +39,27 @@ yieldRouter.post("/backfill", async (req: Request, res: Response): Promise<void>
   };
 
   if (!Array.isArray(positions) || !Array.isArray(sources) || !startDate || !endDate) {
-    res.status(400).json({ error: "positions, sources, startDate, and endDate are required" });
+    res.failure(INVALID_INPUT, 'positions, sources, startDate, and endDate are required', 400);
     return;
   }
 
   const start = new Date(startDate);
   const end = new Date(endDate);
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-    res.status(400).json({ error: "Invalid date range" });
+    res.failure(INVALID_INPUT, 'Invalid date range', 400);
     return;
   }
 
   try {
     const results = await yieldService.backfill(positions, sources, start, end);
-    res.json({ slots: results.length, results });
+    res.success({ slots: results.length, results });
   } catch (err) {
-    console.error("[yield/backfill]", err);
-    res.status(500).json({ error: "Backfill failed" });
+    console.error('[yield/backfill]', err);
+    res.failure(INTERNAL_ERROR, 'Backfill failed', 500);
   }
 });
 
-/**
- * GET /api/v1/yield/stats
- * Returns last hourly worker run stats and cursor-paginated run history.
- * Query params: cursor (opaque base64), limit (default 20, max 100)
- */
-yieldRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
+yieldRouter.get('/stats', async (req: Request, res: Response): Promise<void> => {
   const { limit, cursor } = parsePagination(req);
 
   try {
@@ -84,20 +72,20 @@ yieldRouter.get("/stats", async (req: Request, res: Response): Promise<void> => 
       allHistory,
       (item, index) => ({
         id: String(index),
-        timestamp: typeof item.lastRunAt === "string" ? item.lastRunAt : "0",
+        timestamp: typeof item.lastRunAt === 'string' ? item.lastRunAt : '0',
       }),
       limit,
       cursor,
     );
 
-    res.json({
+    res.success({
       workerRunning: isYieldWorkerRunning(),
       lastRun,
       data,
       nextCursor,
     });
   } catch (err) {
-    console.error("[yield/stats]", err);
-    res.status(500).json({ error: "Failed to retrieve yield stats" });
+    console.error('[yield/stats]', err);
+    res.failure(INTERNAL_ERROR, 'Failed to retrieve yield stats', 500);
   }
 });

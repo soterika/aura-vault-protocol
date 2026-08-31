@@ -55,6 +55,27 @@ pub enum DataKey {
     /// Maximum allowed share-price movement per harvest, in basis points.
     /// 0 = check disabled. Covers both up and down movements.
     PriceMovementLimit,
+    // -----------------------------------------------------------------------
+    // Whitelist-only deposit mode (Issue #349)
+    // -----------------------------------------------------------------------
+    /// Whether whitelist-only mode is enabled for deposits.
+    WhitelistEnabled,
+    /// Per-address whitelist status (persistent storage).
+    Whitelist(Address),
+    // -----------------------------------------------------------------------
+    // Minimum deposit amount (Issue #355)
+    // -----------------------------------------------------------------------
+    /// Minimum deposit amount in underlying token units.
+    MinDeposit,
+    // -----------------------------------------------------------------------
+    // Contract metadata (Issue #350)
+    // -----------------------------------------------------------------------
+    /// Vault name (set at initialization).
+    VaultName,
+    /// Vault share symbol (set at initialization).
+    VaultSymbol,
+    /// Contract version integer (set at initialization).
+    VaultVersion,
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -429,4 +450,71 @@ pub struct WithdrawalEntry {
     pub claimable_after: u64,
     /// Whether this entry has already been claimed.
     pub claimed: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Whitelist helpers (Issue #349)
+// ---------------------------------------------------------------------------
+
+pub fn get_whitelist_enabled(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::WhitelistEnabled).unwrap_or(false)
+}
+
+pub fn set_whitelist_enabled(env: &Env, enabled: bool) {
+    env.storage().instance().set(&DataKey::WhitelistEnabled, &enabled);
+}
+
+pub fn is_whitelisted(env: &Env, addr: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Whitelist(addr.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_whitelisted(env: &Env, addr: &Address, whitelisted: bool) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Whitelist(addr.clone()), &whitelisted);
+    let key = DataKey::Whitelist(addr.clone());
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+// ---------------------------------------------------------------------------
+// Minimum deposit helpers (Issue #355)
+// ---------------------------------------------------------------------------
+
+pub fn get_min_deposit(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::MinDeposit).unwrap_or(10_000)
+}
+
+pub fn set_min_deposit(env: &Env, amount: i128) {
+    env.storage().instance().set(&DataKey::MinDeposit, &amount);
+}
+
+// ---------------------------------------------------------------------------
+// Contract metadata helpers (Issue #350)
+// ---------------------------------------------------------------------------
+
+pub fn get_vault_name(env: &Env) -> Option<soroban_sdk::String> {
+    env.storage().instance().get(&DataKey::VaultName)
+}
+
+pub fn set_vault_name(env: &Env, name: &soroban_sdk::String) {
+    env.storage().instance().set(&DataKey::VaultName, name);
+}
+
+pub fn get_vault_symbol(env: &Env) -> Option<soroban_sdk::String> {
+    env.storage().instance().get(&DataKey::VaultSymbol)
+}
+
+pub fn set_vault_symbol(env: &Env, symbol: &soroban_sdk::String) {
+    env.storage().instance().set(&DataKey::VaultSymbol, symbol);
+}
+
+pub fn get_vault_version(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::VaultVersion).unwrap_or(1u32)
+}
+
+pub fn set_vault_version(env: &Env, version: u32) {
+    env.storage().instance().set(&DataKey::VaultVersion, &version);
 }

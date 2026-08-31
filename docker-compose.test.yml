@@ -1,94 +1,64 @@
-# Docker Compose — Integration Test Environment
-#
-# Acceptance Criteria:
-#   ✅ Docker Compose test environment with PostgreSQL + Redis
-#   ✅ Tests run in CI using docker compose up -d
-#   ✅ Database seeded with known state before each test
-#   ✅ Database cleaned up after each test suite
-#
-# Usage:
-#   docker compose -f docker-compose.test.yml up -d
-#   cd backend && DATABASE_URL=... vitest run src/routes/__tests__/integration.postgres.test.ts
-#   docker compose -f docker-compose.test.yml down -v
-
-version: "3.8"
+version: '3.9'
 
 services:
-  # ── PostgreSQL — integration test database ─────────────────────
-  postgres-test:
-    image: postgres:15-alpine
-    container_name: aura-postgres-test
-    restart: "no"
-    ports:
-      - "5433:5432"
+  postgres:
+    image: postgres:16-alpine
+    container_name: aura-vault-postgres-test
     environment:
-      POSTGRES_USER: aura_test
-      POSTGRES_PASSWORD: aura_test_password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: aura_vault_test
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U aura_test -d aura_vault_test"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-    networks:
-      - aura-test-network
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # ── Redis — integration test cache ────────────────────────────
-  redis-test:
+  redis:
     image: redis:7-alpine
-    container_name: aura-redis-test
-    restart: "no"
+    container_name: aura-vault-redis-test
     ports:
-      - "6380:6379"
-    command: redis-server --save "" --appendonly no
+      - "6379:6379"
+    volumes:
+      - redis_test_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 5
-    networks:
-      - aura-test-network
 
-  # ── Backend (test mode) ────────────────────────────────────────
-  backend-test:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: aura-backend-test
-    restart: "no"
-    ports:
-      - "3002:3001"
-    environment:
-      NODE_ENV: test
-      PORT: 3001
-      JWT_SECRET: integration-test-secret-do-not-use-in-production
-      REDIS_URL: redis://redis-test:6379
-      DATABASE_URL: postgres://aura_test:aura_test_password@postgres-test:5432/aura_vault_test
-      # No replica in test — read pool falls back to primary
-      VAULT_CONTRACT_ID: CAURA_VAULT_TEST_INTEGRATION
+    container_name: aura-vault-backend-test
     depends_on:
-      postgres-test:
+      postgres:
         condition: service_healthy
-      redis-test:
+      redis:
         condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/aura_vault_test
+      DATABASE_REPLICA_URL: postgresql://postgres:postgres@postgres:5432/aura_vault_test
+      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ""
+      HORIZON_URL: https://horizon-testnet.stellar.org
+      NODE_ENV: staging
+      CHAOS_ENABLED: 'true'
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/src:/app/src
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 15s
-    networks:
-      - aura-test-network
+      retries: 5
 
 volumes:
   postgres_test_data:
-    driver: local
-
-networks:
-  aura-test-network:
-    driver: bridge
+  redis_test_data:

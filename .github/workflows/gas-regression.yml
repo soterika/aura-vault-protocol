@@ -8,6 +8,9 @@ on:
       - "aura-vault/Cargo.toml"
       - "aura-vault/Cargo.lock"
       - "gas-baselines.json"
+      - "scripts/check-gas.sh"
+      - "scripts/compare_gas.py"
+      - "scripts/run-benchmarks.sh"
   pull_request:
     branches: ["**"]
     paths:
@@ -15,6 +18,9 @@ on:
       - "aura-vault/Cargo.toml"
       - "aura-vault/Cargo.lock"
       - "gas-baselines.json"
+      - "scripts/check-gas.sh"
+      - "scripts/compare_gas.py"
+      - "scripts/run-benchmarks.sh"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,14 +30,14 @@ jobs:
   gas-check:
     name: Gas Regression Check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       pull-requests: write
       contents: read
 
     steps:
       # ── Checkout ────────────────────────────────────────────────────────────
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       # ── Rust toolchain ──────────────────────────────────────────────────────
       - name: Install Rust stable
@@ -41,7 +47,7 @@ jobs:
 
       # ── Cargo cache ─────────────────────────────────────────────────────────
       - name: Cache Cargo registry
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -52,37 +58,122 @@ jobs:
             ${{ runner.os }}-cargo-gas-
             ${{ runner.os }}-cargo-
 
-      # ── Run gas measurement tests ────────────────────────────────────────────
-      - name: Run gas measurement tests
-        id: gas_tests
-        working-directory: aura-vault
-        run: |
-          cargo test gas_ -- --nocapture 2>&1 | tee ../gas-test-output.txt
+      # ── Clean previous measurements ──────────────────────────────────────────
+      - name: Clean previous measurements
+        run: rm -f gas-measurements.json gas-report.json gas-report.md
 
-      # ── Compare against baselines ────────────────────────────────────────────
-      - name: Compare gas against baselines
+      # ── Run gas benchmarks via instruction counter ───────────────────────────
+      # Uses Soroban's env.cost_estimate().budget() to count CPU instructions
+      # and memory bytes. --test-threads=1 ensures a clean budget per function.
+      - name: Run gas benchmarks (Soroban instruction counter)
+        id: gas_measure
+        run: |
+          chmod +x scripts/run-benchmarks.sh
+          GAS_OUTPUT="${GITHUB_WORKSPACE}/gas-measurements.json" \
+            scripts/run-benchmarks.sh --no-compare 2>&1 | tee gas-bench-output.txt
+          echo "Measurements written:"
+          cat gas-measurements.json
+
+      # ── Compare against baselines ─────────────────────────────────────────────
+      - name: Compare gas against baselines (>10% = FAIL)
         id: gas_compare
         run: |
-          chmod +x scripts/check-gas.sh
           set +e
-          ./scripts/check-gas.sh 2>&1 | tee gas-check-output.txt
+          python3 scripts/compare_gas.py \
+            --baselines  gas-baselines.json \
+            --measurements gas-measurements.json \
+            | tee gas-report.md
           GAS_EXIT=${PIPESTATUS[0]}
           set -e
           echo "exit_code=${GAS_EXIT}" >> "$GITHUB_OUTPUT"
+          # Build JSON report for artifact / PR comment
+          python3 - gas-baselines.json gas-measurements.json gas-report.json <<'PYEOF'
+          import json, sys
+          from pathlib import Path
+
+          baseline_path     = sys.argv[1]
+          measurements_path = sys.argv[2]
+          report_path       = sys.argv[3]
+
+          data      = json.loads(Path(baseline_path).read_text())
+          threshold = int(data.get("_threshold_pct", 10))
+          baselines = data["baselines"]
+
+          measurements = {}
+          for line in Path(measurements_path).read_text().splitlines():
+              line = line.strip()
+              if not line:
+                  continue
+              try:
+                  obj = json.loads(line)
+                  measurements[obj["function"]] = {
+                      "cpu_instructions": int(obj["cpu_instructions"]),
+                      "memory_bytes":     int(obj["memory_bytes"]),
+                  }
+              except Exception:
+                  pass
+
+          results = []
+          total_pass = total_fail = total_skip = 0
+
+          for fn in sorted(set(list(baselines.keys()) + list(measurements.keys()))):
+              bl_entry = baselines.get(fn)
+              ms_entry = measurements.get(fn)
+
+              if bl_entry is None or ms_entry is None:
+                  total_skip += 1
+                  results.append({
+                      "function": fn,
+                      "baseline": bl_entry["cpu_instructions"] if bl_entry else None,
+                      "current":  ms_entry["cpu_instructions"] if ms_entry else None,
+                      "delta_percent": None,
+                      "status": "skip",
+                  })
+                  continue
+
+              bl    = bl_entry["cpu_instructions"]
+              cur   = ms_entry["cpu_instructions"]
+              delta = ((cur - bl) / bl * 100.0) if bl else 0.0
+
+              if delta > threshold:
+                  total_fail += 1; status = "fail"
+              else:
+                  total_pass += 1; status = "pass"
+
+              results.append({
+                  "function":      fn,
+                  "baseline":      bl,
+                  "current":       cur,
+                  "delta_percent": round(delta, 2),
+                  "status":        status,
+              })
+
+          report = {
+              "pass":              total_pass,
+              "fail":              total_fail,
+              "skip":              total_skip,
+              "threshold_percent": threshold,
+              "results":           results,
+          }
+          Path(report_path).write_text(json.dumps(report, indent=2) + "\n")
+          PYEOF
+          # Propagate the comparison exit code
           exit $GAS_EXIT
 
-      # ── Always upload artefacts ───────────────────────────────────────────────
-      - name: Upload gas report
+      # ── Publish benchmark results as a CI artifact ────────────────────────────
+      - name: Upload gas benchmark artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: gas-report
+          name: gas-benchmark-results-${{ github.run_id }}
+          retention-days: 90
           path: |
+            gas-measurements.json
             gas-report.json
-            gas-test-output.txt
-            gas-check-output.txt
+            gas-report.md
+            gas-bench-output.txt
 
-      # ── Build markdown comment ────────────────────────────────────────────────
+      # ── Build PR comment ──────────────────────────────────────────────────────
       - name: Build PR comment
         if: always() && github.event_name == 'pull_request'
         id: comment
@@ -97,31 +188,40 @@ jobs:
               print("gas-report.json not found; skipping comment.")
               sys.exit(0)
 
-          threshold = report.get('threshold_percent', 10)
+          threshold  = report.get('threshold_percent', 10)
           total_pass = report.get('pass', 0)
           total_fail = report.get('fail', 0)
           total_skip = report.get('skip', 0)
 
           if total_fail > 0:
-              header = f"## ⛽ Gas Report — ❌ {total_fail} regression(s) detected"
+              header = f"## ⛽ Gas Benchmarks — ❌ {total_fail} regression(s) detected"
           else:
-              header = f"## ⛽ Gas Report — ✅ All functions within threshold"
+              header = f"## ⛽ Gas Benchmarks — ✅ All functions within threshold"
 
           lines = [
               header,
               "",
-              f"> Threshold: **{threshold}%** | ✅ {total_pass} passed · ❌ {total_fail} failed · ⏭ {total_skip} skipped",
+              f"> Threshold: **+{threshold}%** | "
+              f"✅ {total_pass} passed · ❌ {total_fail} failed · ⏭ {total_skip} skipped",
               "",
-              "| Function | Baseline (instrs) | Current (instrs) | Δ% | Status |",
-              "|---|---|---|---|---|",
+              "Measured with Soroban's built-in instruction counter "
+              "(`env.cost_estimate().budget()`). Values are consistent across "
+              "runs on the same host even though they undercount relative to "
+              "on-chain WASM execution.",
+              "",
+              "| Function | Baseline (CPU instrs) | Current (CPU instrs) | Δ% | Status |",
+              "|---|---:|---:|---:|:---:|",
           ]
 
           for r in sorted(report.get('results', []), key=lambda x: x['function']):
-              fn = r['function']
-              baseline = r.get('baseline', '—')
-              current  = r.get('current', '—')
+              fn       = r['function']
+              baseline = r.get('baseline')
+              current  = r.get('current')
               delta    = r.get('delta_percent')
               status   = r.get('status', 'skip')
+
+              bl_str  = f"{baseline:,}" if isinstance(baseline, int) else "—"
+              cur_str = f"{current:,}"  if isinstance(current,  int) else "—"
 
               if status == 'skip':
                   delta_str  = '—'
@@ -133,26 +233,24 @@ jobs:
                   if delta is not None and delta > 0:
                       delta_str  = f"+{delta:.1f}%"
                       status_str = '⚠️ pass↑'
-                  elif delta is not None and delta < 0:
+                  elif delta is not None and delta < -0.5:
                       delta_str  = f"{delta:.1f}%"
                       status_str = '✅ improved'
                   else:
-                      delta_str  = '0%'
+                      delta_str  = f"{delta:.1f}%" if delta is not None else '0%'
                       status_str = '✅ pass'
 
-              lines.append(f"| `{fn}` | {baseline:,} | {current:,} | {delta_str} | {status_str} |")
+              lines.append(f"| `{fn}` | {bl_str} | {cur_str} | {delta_str} | {status_str} |")
 
           lines += [
               "",
               "<details>",
-              "<summary>How to update baselines</summary>",
-              "",
-              "If this regression is intentional (e.g. a new feature):",
+              "<summary>How to update baselines after an intentional change</summary>",
               "",
               "```bash",
-              "./scripts/update-gas-baselines.sh",
+              "./scripts/run-benchmarks.sh --update-baselines",
               "git add gas-baselines.json",
-              'git commit -m "chore: update gas baselines"',
+              'git commit -m "chore: update gas baselines after deposit optimisation"',
               "```",
               "",
               "</details>",
@@ -160,30 +258,27 @@ jobs:
 
           comment_body = "\n".join(lines)
 
-          # Write to GITHUB_OUTPUT (multi-line value via delimiter)
           delimiter = "EOF_GAS_COMMENT"
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"comment_body<<{delimiter}\n")
               f.write(comment_body + "\n")
               f.write(f"{delimiter}\n")
-
-          print("PR comment body written to GITHUB_OUTPUT.")
           PYEOF
 
-      # ── Post / update PR comment ─────────────────────────────────────────────
-      - name: Post gas report comment on PR
+      # ── Post / update sticky PR comment ──────────────────────────────────────
+      - name: Post gas benchmark comment on PR
         if: always() && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: gas-report
           message: ${{ steps.comment.outputs.comment_body }}
 
-      # ── Fail the job if gas check failed ────────────────────────────────────
-      - name: Enforce gas threshold
+      # ── Fail the job when regression threshold is exceeded ───────────────────
+      - name: Enforce gas regression threshold
         if: always()
         run: |
           EXIT="${{ steps.gas_compare.outputs.exit_code }}"
           if [[ "$EXIT" != "0" ]]; then
-            echo "::error::Gas regression threshold exceeded. See the gas report artifact or PR comment for details."
+            echo "::error::Gas regression threshold exceeded (+10%). See the 'gas-benchmark-results' artifact or PR comment for details."
             exit 1
           fi

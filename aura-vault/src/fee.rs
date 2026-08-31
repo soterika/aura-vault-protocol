@@ -1,5 +1,4 @@
 use crate::VaultError;
-use soroban_sdk::{Address, Env};
 
 /// Performance fee in basis points (0-20%, i.e., 0-2000 bps)
 pub const MIN_PERF_FEE_BPS: u32 = 0;     // 0%

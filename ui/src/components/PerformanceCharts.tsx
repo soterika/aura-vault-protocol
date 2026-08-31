@@ -157,10 +157,7 @@ export function PerformanceCharts() {
                 tickFormatter={(v) => `${v}%`}
                 width={45}
               />
-              <Tooltip content={<ChartTooltip />} formatter={(value) => {
-                if (typeof value !== "number") return ["", "APY"];
-                return [`${value}%`, "APY"];
-              }} />
+              <Tooltip content={<ChartTooltip />} formatter={(v: number) => [`${v}%`, "APY"]} />
               <Line
                 type="monotone"
                 dataKey="apy"

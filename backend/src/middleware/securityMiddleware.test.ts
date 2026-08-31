@@ -26,11 +26,22 @@ describe("applySecurityHeaders", () => {
     expect(res.headers["x-frame-options"]).toBe("DENY");
   });
 
-  it("sets Strict-Transport-Security with 1 year max-age", async () => {
+  it("sets Strict-Transport-Security with 2 year max-age", async () => {
     const res = await request(app).get("/test");
     const hsts = res.headers["strict-transport-security"] as string;
-    expect(hsts).toContain("max-age=31536000");
+    expect(hsts).toContain("max-age=63072000");
     expect(hsts).toContain("includeSubDomains");
+  });
+
+  it("sets Strict-Transport-Security with preload directive", async () => {
+    const res = await request(app).get("/test");
+    const hsts = res.headers["strict-transport-security"] as string;
+    expect(hsts).toContain("preload");
+  });
+
+  it("sets Referrer-Policy: strict-origin-when-cross-origin", async () => {
+    const res = await request(app).get("/test");
+    expect(res.headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
   });
 
   it("sets Content-Security-Policy", async () => {

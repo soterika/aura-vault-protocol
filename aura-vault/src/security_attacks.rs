@@ -36,7 +36,7 @@ mod security_attacks {
         let vault = AuraVaultClient::new(&env, &vault_addr);
 
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_addr, &signers);
+        vault.initialize(&admin, &token_addr, &signers, &0_u32);
         // Zero fees so arithmetic is exact in every test.
         vault.set_fees(&admin, &0_u32, &0_u32);
 
@@ -387,7 +387,7 @@ mod security_attacks {
         // Initialize with mock_all_auths so init succeeds.
         env2.mock_all_auths();
         let signers2: Vec<Address> = Vec::new(&env2);
-        vault2.initialize(&admin2, &token2, &signers2);
+        vault2.initialize(&admin2, &token2, &signers2, &0_u32);
         vault2.set_fees(&admin2, &0_u32, &0_u32);
         // Stop mocking auths.
         env2.set_auths(&[]);

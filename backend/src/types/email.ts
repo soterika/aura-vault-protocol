@@ -5,7 +5,7 @@ export type EmailTemplate =
   | 'security-alert'
   | 'welcome'
   | 'gdpr-erasure-confirmation'
-  | 'alert-subscription';
+  | 'portfolio-digest';
 
 export type EmailPriority = 'high' | 'normal' | 'low';
 export type EmailProvider = 'sendgrid' | 'mailgun';

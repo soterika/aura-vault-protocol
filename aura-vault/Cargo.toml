@@ -2,33 +2,19 @@
 name = "aura-vault"
 version = "0.1.0"
 edition = "2021"
-description = "Share-based yield vault smart contract for the Stellar Soroban platform"
-license = "MIT"
-repository = "https://github.com/soterika/aura-vault-protocol"
-documentation = "https://soterika.github.io/aura-vault-protocol"
-
-[package.metadata.docs.rs]
-# Build docs for the host target (docs.rs does not support wasm32)
-targets = []
-# Enable all features so conditional items are documented
-all-features = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = { version = "27", default-features = true }
+soroban-sdk = { version = "22", default-features = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "27", features = ["testutils"] }
-proptest = "=1.11.0"
-# Pin ed25519-dalek to 2.x to stay compatible with soroban-env-host 22.1.3
-# which uses ChaCha20Rng from rand_chacha 0.3 (rand_core 0.6).
-# ed25519-dalek 3.0 requires rand_core 0.10 which is incompatible.
-ed25519-dalek = "=3.0.0"
+soroban-sdk = { version = "22", features = ["testutils"] }
+proptest = "1"
 
 [profile.release]
 overflow-checks = true
-opt-level = 3
+opt-level = "z"
 lto = true
 codegen-units = 1

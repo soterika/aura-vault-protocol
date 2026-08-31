@@ -22,7 +22,6 @@ export const categories: Record<Locale, FAQCategory[]> = {
     { id: "security", label: "Security" },
     { id: "technical", label: "Technical" },
     { id: "fees", label: "Fees & Costs" },
-    { id: "vault-health", label: "Vault Health Score" },
   ],
   es: [
     { id: "getting-started", label: "Primeros pasos" },
@@ -33,7 +32,6 @@ export const categories: Record<Locale, FAQCategory[]> = {
     { id: "security", label: "Seguridad" },
     { id: "technical", label: "Técnico" },
     { id: "fees", label: "Tarifas y costos" },
-    { id: "vault-health", label: "Puntuación de Salud" },
   ],
   fr: [
     { id: "getting-started", label: "Démarrage" },
@@ -44,7 +42,6 @@ export const categories: Record<Locale, FAQCategory[]> = {
     { id: "security", label: "Sécurité" },
     { id: "technical", label: "Technique" },
     { id: "fees", label: "Frais et coûts" },
-    { id: "vault-health", label: "Score de Santé" },
   ],
 };
 
@@ -589,109 +586,4 @@ const fr: FAQItem[] = [
   { id: "fee-4", category: "fees", q: "Qui paie les frais de transaction harvest ?", a: "Le gardien qui soumet la transaction harvest paie les frais de réseau en XLM." },
 ];
 
-// ── Vault Health Score FAQ entries ──────────────────────────────────────────
-
-const vaultHealthFaqEn: FAQItem[] = [
-  {
-    id: "vh-1",
-    category: "vault-health",
-    q: "What is the Vault Health Score?",
-    a: "The Vault Health Score is a letter grade (A–D) that gives you a quick, at-a-glance assessment of the vault's overall health. It aggregates four key signals — TVL, APY consistency, time since last harvest, and audit status — into a single 0–100 score that maps to a grade.",
-  },
-  {
-    id: "vh-2",
-    category: "vault-health",
-    q: "How is the score calculated?",
-    a: `The score is a weighted average of four factors:\n\n• TVL (30 %) — scales from 0 at $0 to 100 at $10 M+. Higher TVL reflects stronger community confidence and deeper liquidity.\n• APY Consistency (25 %) — compares current APY to the 30-day average. Each percentage-point deviation subtracts 10 points, rewarding stable yield generation.\n• Last Harvest (25 %) — scores 100 at harvest-time and decays linearly to 0 at 2 weeks without a harvest. Frequent harvests compound yield and keep net-asset-value accurate.\n• Audit Status (20 %) — fully audited = 100, partial audit = 60, unaudited = 10.\n\nThe weighted total maps to: A (90–100), B (70–89), C (50–69), D (0–49).`,
-  },
-  {
-    id: "vh-3",
-    category: "vault-health",
-    q: "What do the letter grades mean?",
-    a: "A = Excellent — all health signals are strong. B = Good — minor concerns but vault operates well. C = Fair — some signals warrant attention. D = Concern — significant issues detected; review before depositing.",
-  },
-  {
-    id: "vh-4",
-    category: "vault-health",
-    q: "How often is the score updated?",
-    a: "The score is refreshed each time you load the dashboard. You can also manually refresh it using the ↻ button on the Vault Health card. Underlying data (TVL, APY, last harvest) is polled from the backend.",
-  },
-  {
-    id: "vh-5",
-    category: "vault-health",
-    q: "Where can I see the detailed breakdown?",
-    a: "Click 'Health Details' on the Vault Health card to expand a per-factor breakdown with scores, statuses, and explanatory text for each of the four signals.",
-  },
-];
-
-const vaultHealthFaqEs: FAQItem[] = [
-  {
-    id: "vh-1",
-    category: "vault-health",
-    q: "¿Qué es la Puntuación de Salud del Vault?",
-    a: "La Puntuación de Salud del Vault es una calificación de letra (A–D) que proporciona una evaluación rápida del estado general del vault. Agrega cuatro señales clave — TVL, consistencia del APY, tiempo desde la última cosecha y estado de auditoría — en una puntuación de 0 a 100 que se mapea a una calificación.",
-  },
-  {
-    id: "vh-2",
-    category: "vault-health",
-    q: "¿Cómo se calcula la puntuación?",
-    a: "La puntuación es un promedio ponderado de cuatro factores: TVL (30%), Consistencia APY (25%), Última Cosecha (25%) y Estado de Auditoría (20%). El total ponderado se mapea a: A (90–100), B (70–89), C (50–69), D (0–49).",
-  },
-  {
-    id: "vh-3",
-    category: "vault-health",
-    q: "¿Qué significan las calificaciones de letras?",
-    a: "A = Excelente. B = Bueno — problemas menores. C = Regular — algunas señales requieren atención. D = Preocupación — problemas significativos detectados; revisar antes de depositar.",
-  },
-  {
-    id: "vh-4",
-    category: "vault-health",
-    q: "¿Con qué frecuencia se actualiza la puntuación?",
-    a: "La puntuación se actualiza cada vez que cargas el dashboard. También puedes actualizarla manualmente con el botón ↻ en la tarjeta de Salud del Vault.",
-  },
-  {
-    id: "vh-5",
-    category: "vault-health",
-    q: "¿Dónde puedo ver el desglose detallado?",
-    a: "Haz clic en 'Detalles de Salud' en la tarjeta de Salud del Vault para expandir un desglose por factor con puntuaciones, estados y texto explicativo.",
-  },
-];
-
-const vaultHealthFaqFr: FAQItem[] = [
-  {
-    id: "vh-1",
-    category: "vault-health",
-    q: "Qu'est-ce que le Score de Santé du Coffre ?",
-    a: "Le Score de Santé du Coffre est une note alphabétique (A–D) qui vous donne une évaluation rapide de la santé globale du coffre. Il agrège quatre signaux clés — TVL, cohérence du APY, temps depuis la dernière récolte et statut d'audit — en un score de 0 à 100 qui correspond à une note.",
-  },
-  {
-    id: "vh-2",
-    category: "vault-health",
-    q: "Comment le score est-il calculé ?",
-    a: "Le score est une moyenne pondérée de quatre facteurs : TVL (30 %), Cohérence APY (25 %), Dernière Récolte (25 %) et Statut d'Audit (20 %). Le total pondéré donne : A (90–100), B (70–89), C (50–69), D (0–49).",
-  },
-  {
-    id: "vh-3",
-    category: "vault-health",
-    q: "Que signifient les notes alphabétiques ?",
-    a: "A = Excellent. B = Bon — problèmes mineurs. C = Passable — certains signaux méritent attention. D = Préoccupant — problèmes importants détectés ; à examiner avant de déposer.",
-  },
-  {
-    id: "vh-4",
-    category: "vault-health",
-    q: "À quelle fréquence le score est-il mis à jour ?",
-    a: "Le score est rafraîchi à chaque chargement du tableau de bord. Vous pouvez aussi le rafraîchir manuellement avec le bouton ↻ sur la carte Santé du Coffre.",
-  },
-  {
-    id: "vh-5",
-    category: "vault-health",
-    q: "Où puis-je voir la décomposition détaillée ?",
-    a: "Cliquez sur 'Détails de Santé' sur la carte Santé du Coffre pour développer une décomposition par facteur avec scores, statuts et texte explicatif.",
-  },
-];
-
-export const faqData: Record<Locale, FAQItem[]> = {
-  en: [...en, ...vaultHealthFaqEn],
-  es: [...es, ...vaultHealthFaqEs],
-  fr: [...fr, ...vaultHealthFaqFr],
-};
+export const faqData: Record<Locale, FAQItem[]> = { en, es, fr };

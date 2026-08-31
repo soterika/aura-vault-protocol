@@ -1,192 +1,35 @@
 global:
   resolve_timeout: 5m
-  # PagerDuty Events API v2 endpoint
-  pagerduty_url: "https://events.pagerduty.com/v2/enqueue"
-  # Slack API URL from environment secret
-  slack_api_url: "${SLACK_API_URL}"
 
-# ── Templates ─────────────────────────────────────────────────────────────────
-templates:
-  - "/etc/alertmanager/templates/*.tmpl"
-
-# ── Routing tree ──────────────────────────────────────────────────────────────
 route:
-  # Default receiver: silently drop unmatched alerts
-  receiver: "null"
-
-  # Deduplication: same alert within 5 minutes is grouped
-  group_by: ["alertname", "severity", "team", "namespace", "environment"]
+  group_by: ["alertname", "severity"]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
-
+  receiver: "default"
   routes:
-    # ── Critical severity → PagerDuty immediately ──────────────────────────
-    - matchers:
-        - severity = "critical"
-      receiver: pagerduty-critical
-      group_wait: 10s          # Page quickly — within 5-min SLA
-      group_interval: 5m
+    - match:
+        severity: critical
+      receiver: "critical"
       repeat_interval: 1h
-      continue: false
-
-    # ── Blockchain/Vault alerts → dedicated PagerDuty service ─────────────
-    - matchers:
-        - alertname =~ "Vault.*|Transaction.*|ContractIndexer.*"
-      receiver: pagerduty-blockchain
-      group_wait: 15s
-      group_interval: 5m
-      repeat_interval: 1h
-      continue: false
-
-    # ── Team-based routing — platform team ────────────────────────────────
-    - matchers:
-        - team = "platform"
-        - severity = "critical"
-      receiver: platform-pagerduty
-      group_wait: 10s
-      repeat_interval: 1h
-      continue: false
-
-    # ── Team-based routing — backend team ─────────────────────────────────
-    - matchers:
-        - team = "backend"
-        - severity = "critical"
-      receiver: backend-pagerduty
-      group_wait: 10s
-      repeat_interval: 1h
-      continue: false
-
-    # ── Team-based routing — frontend team → Slack only ───────────────────
-    - matchers:
-        - team = "frontend"
-      receiver: frontend-slack
-      group_interval: 15m
-      repeat_interval: 8h
-      continue: false
-
-    # ── Warning severity → Slack (no page) ────────────────────────────────
-    - matchers:
-        - severity = "warning"
-      receiver: slack-warnings
-      group_interval: 15m
+    - match:
+        severity: warning
+      receiver: "default"
       repeat_interval: 4h
-      continue: false
 
-# ── Receivers ─────────────────────────────────────────────────────────────────
 receivers:
-  # Null receiver — swallows unmatched or silenced alerts
-  - name: "null"
+  - name: "default"
+    # Configure webhook, email, or Slack here
+    # webhook_configs:
+    #   - url: "http://host.docker.internal:3000/api/alerts"
 
-  # ── PagerDuty — critical alerts (cross-team) ──────────────────────────────
-  - name: pagerduty-critical
-    pagerduty_configs:
-      - routing_key: "${PAGERDUTY_ROUTING_KEY_CRITICAL}"
-        severity: "{{ if eq .GroupLabels.severity \"critical\" }}critical{{ else }}error{{ end }}"
-        description: '{{ template "pagerduty.description" . }}'
-        client: "Aura Vault AlertManager"
-        client_url: "http://alertmanager:9093"
-        details:
-          firing: "{{ .Alerts.Firing | len }}"
-          resolved: "{{ .Alerts.Resolved | len }}"
-          num_firing: "{{ .Alerts.Firing | len }}"
-          alertname: "{{ .GroupLabels.alertname }}"
-          environment: '{{ .CommonLabels.environment | default "unknown" }}'
-          namespace: '{{ .CommonLabels.namespace | default "unknown" }}'
-          runbook: '{{ (index .Alerts 0).Annotations.runbook_url }}'
-        send_resolved: true
+  - name: "critical"
+    # webhook_configs:
+    #   - url: "http://host.docker.internal:3000/api/alerts/critical"
 
-  # ── PagerDuty — blockchain / vault alerts ────────────────────────────────
-  - name: pagerduty-blockchain
-    pagerduty_configs:
-      - routing_key: "${PAGERDUTY_ROUTING_KEY_BLOCKCHAIN}"
-        severity: "critical"
-        description: '{{ template "pagerduty.description" . }}'
-        client: "Aura Vault AlertManager"
-        client_url: "http://alertmanager:9093"
-        details:
-          alertname: "{{ .GroupLabels.alertname }}"
-          environment: '{{ .CommonLabels.environment | default "unknown" }}'
-          runbook: '{{ (index .Alerts 0).Annotations.runbook_url }}'
-        send_resolved: true
-
-  # ── PagerDuty — platform team ─────────────────────────────────────────────
-  - name: platform-pagerduty
-    pagerduty_configs:
-      - routing_key: "${PAGERDUTY_ROUTING_KEY_PLATFORM}"
-        severity: "critical"
-        description: '{{ template "pagerduty.description" . }}'
-        client: "Aura Vault AlertManager"
-        client_url: "http://alertmanager:9093"
-        details:
-          team: "platform"
-          alertname: "{{ .GroupLabels.alertname }}"
-          environment: '{{ .CommonLabels.environment | default "unknown" }}'
-        send_resolved: true
-
-  # ── PagerDuty — backend team ──────────────────────────────────────────────
-  - name: backend-pagerduty
-    pagerduty_configs:
-      - routing_key: "${PAGERDUTY_ROUTING_KEY_BACKEND}"
-        severity: "critical"
-        description: '{{ template "pagerduty.description" . }}'
-        client: "Aura Vault AlertManager"
-        client_url: "http://alertmanager:9093"
-        details:
-          team: "backend"
-          alertname: "{{ .GroupLabels.alertname }}"
-          environment: '{{ .CommonLabels.environment | default "unknown" }}'
-        send_resolved: true
-
-  # ── Slack — warning alerts ────────────────────────────────────────────────
-  - name: slack-warnings
-    slack_configs:
-      - channel: "#aura-vault-warnings"
-        username: "Aura Vault AlertManager"
-        icon_emoji: ":warning:"
-        color: '{{ template "slack.color" . }}'
-        title: '{{ template "slack.title" . }}'
-        text: '{{ template "slack.text" . }}'
-        actions:
-          - type: button
-            text: "View in AlertManager"
-            url: "http://alertmanager:9093"
-          - type: button
-            text: "Silence"
-            url: '{{ template "slack.silenceURL" . }}'
-        send_resolved: true
-
-  # ── Slack — frontend team ─────────────────────────────────────────────────
-  - name: frontend-slack
-    slack_configs:
-      - channel: "#aura-vault-frontend"
-        username: "Aura Vault AlertManager"
-        icon_emoji: ":rotating_light:"
-        color: '{{ template "slack.color" . }}'
-        title: '{{ template "slack.title" . }}'
-        text: '{{ template "slack.text" . }}'
-        send_resolved: true
-
-# ── Inhibition rules ──────────────────────────────────────────────────────────
 inhibit_rules:
-  # Critical inhibits warning for the same alert
-  - source_matchers:
-      - severity = "critical"
-    target_matchers:
-      - severity = "warning"
-    equal: ["alertname", "namespace", "instance"]
-
-  # ServiceDown inhibits all other alerts for the same instance
-  # (no point paging for high latency on a down service)
-  - source_matchers:
-      - alertname = "ServiceDown"
-    target_matchers:
-      - alertname != "ServiceDown"
-    equal: ["instance", "namespace"]
-
-  # SLABreach inhibits individual metric alerts for the same job
-  - source_matchers:
-      - alertname = "SLABreachAvailability"
-    target_matchers:
-      - alertname =~ "HighErrorRate|HighLatency"
-    equal: ["job"]
+  - source_match:
+      severity: "critical"
+    target_match:
+      severity: "warning"
+    equal: ["alertname"]

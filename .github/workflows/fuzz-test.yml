@@ -43,7 +43,7 @@ jobs:
           cargo tarpaulin --lib --out Html --output-dir coverage
       
       - name: Upload coverage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         if: always()
         with:
           name: coverage-report

@@ -260,4 +260,9 @@ pub enum VaultError {
     /// Oracle data is stale: the `updated_at` timestamp is older than the
     /// configured maximum age.
     OraclePriceStale       = 27,
+    /// Deposit attempted by an address not on the whitelist while whitelist-only
+    /// mode is enabled.
+    NotWhitelisted         = 28,
+    /// Deposit amount is below the configured minimum deposit threshold.
+    BelowMinDeposit        = 29,
 }

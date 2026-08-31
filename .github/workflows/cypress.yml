@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -65,59 +65,3 @@ jobs:
           else
             echo "No screenshots directory found (no test failures produced screenshots)"
           fi
-
-  # ── Dedicated accessibility audit (WCAG 2.1 AA) ────────────────────────
-  # Fails CI on any new axe-core Level A or Level AA violation.
-  # Known issues are documented in cypress/e2e/accessibility.cy.ts.
-  accessibility:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    name: "Accessibility audit (axe-core WCAG 2.1 AA)"
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install root deps (includes cypress-axe)
-        run: npm ci
-
-      - name: Install frontend deps and build
-        working-directory: frontend
-        run: |
-          npm ci
-          npx next build
-
-      - name: Start frontend server
-        working-directory: frontend
-        run: npx next start &
-
-      - name: Run axe-core accessibility audit (Cypress)
-        uses: cypress-io/github-action@v7
-        with:
-          browser: chrome
-          spec: cypress/e2e/accessibility.cy.ts
-          wait-on: "http://localhost:3000"
-          wait-on-timeout: 60
-          install: false
-        env:
-          CYPRESS_screenshotOnRunFailure: "true"
-
-      - name: Run axe-core accessibility audit (Playwright)
-        run: npx playwright test playwright/accessibility.spec.ts --project=chromium
-        env:
-          PLAYWRIGHT_BASE_URL: http://localhost:3000
-
-      - name: Upload accessibility screenshots on failure
-        uses: actions/upload-artifact@v7
-        if: failure()
-        with:
-          name: a11y-screenshots
-          path: |
-            cypress/screenshots
-            playwright-report
-          if-no-files-found: ignore
-

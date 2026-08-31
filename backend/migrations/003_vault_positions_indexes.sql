@@ -25,3 +25,10 @@ WHERE deleted_at IS NULL
 GROUP BY user_id, vault_id;
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP VIEW IF EXISTS active_vault_positions CASCADE;
+DROP INDEX IF EXISTS idx_vault_positions_yield;
+DROP INDEX IF EXISTS idx_vault_positions_vault_user_active;
+COMMIT;

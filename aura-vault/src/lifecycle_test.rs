@@ -42,7 +42,7 @@ mod lifecycle_tests {
 
         // Empty signer list — governance is not exercised in these tests.
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_address, &signers);
+        vault.initialize(&admin, &token_address, &signers, &0_u32);
         // Zero fees so net yield equals gross yield and share maths stays exact.
         vault.set_fees(&admin, &0_u32, &0_u32);
 

@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSecretsManagerRead",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:*:*:secret:aura-vault/*"
+      ]
+    },
+    {
+      "Sid": "AllowRotationLambdaAccess",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:UpdateSecretVersionStage"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:*:*:secret:aura-vault/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "secretsmanager:ResourceTag/rotation": "enabled"
+        }
+      }
+    },
+    {
+      "Sid": "DenySecretsOutsideAuraVault",
+      "Effect": "Deny",
+      "Action": "secretsmanager:*",
+      "NotResource": [
+        "arn:aws:secretsmanager:*:*:secret:aura-vault/*"
+      ]
+    }
+  ]
+}

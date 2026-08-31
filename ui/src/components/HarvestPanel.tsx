@@ -21,11 +21,12 @@ export function HarvestPanel({ onToast }: Props) {
     return "";
   };
 
-  const submit = useCallback(async () => {
+          const submit = useCallback(async () => {
     setTxError(null);
     setLoading(true);
+
     try {
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 100));
       setYieldAmt("");
       onToast({ type: "success", text: `Harvested ${yieldAmt} yield tokens.` });
     } catch (err) {
@@ -51,9 +52,9 @@ export function HarvestPanel({ onToast }: Props) {
       <p className="form-desc">
         As a <TermTooltip term="Keeper" />, inject yield into the vault for all shareholders.
       </p>
-      {loading ? (
-        <Skeleton rows={3} />
-      ) : (
+            {loading ? (
+  <Skeleton rows={3} />
+) : (
         <form onSubmit={handleSubmit} noValidate>
           <div className="field">
             <label htmlFor={`${id}-yield`}>Yield Amount</label>
