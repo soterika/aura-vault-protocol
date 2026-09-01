@@ -40,7 +40,7 @@ mod cross_contract_safety_tests {
         let vault_addr = env.register_contract(None, AuraVault);
         let vault = AuraVaultClient::new(&env, &vault_addr);
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_addr, &signers);
+        vault.initialize(&admin, &token_addr, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
         vault.set_fees(&admin, &0_u32, &0_u32);
         (env, vault, admin, token_addr)
     }

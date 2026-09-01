@@ -57,7 +57,8 @@ mod harvest_cooldown_test;
 #[cfg(test)]
 mod pause_lifecycle_test;
 #[cfg(test)]
-mod circuit_breaker_test;#[cfg(test)]
+mod circuit_breaker_test;
+#[cfg(test)]
 mod event_test;
 #[cfg(test)]
 mod event_snapshots;
@@ -69,8 +70,25 @@ mod cei_fuzz_test;
 mod lifecycle_test;
 #[cfg(test)]
 mod cross_contract_safety_test;
+#[cfg(test)]
+mod issue_346_351_352_348_test;
 
-use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec, Symbol};
+use soroban_sdk::{contract, contractimpl, contractclient, token, Address, Env, Vec, Symbol};
+
+// ---------------------------------------------------------------------------
+// AuraPriceOracle external contract interface (Issue #348)
+//
+// The oracle contract must expose a `price(token)` entry point that returns
+// the current USD price of a token as an i128 scaled to 6 decimal places
+// (micro-USD, where 1_000_000 = $1.00) and the ledger timestamp of the last
+// update.
+// ---------------------------------------------------------------------------
+#[contractclient(name = "OracleClient")]
+pub trait OracleTrait {
+    /// Returns (price_in_micro_usd, updated_at_ledger_timestamp) for `token`.
+    /// `price` is scaled to 6 decimal places (1_000_000 = $1.00).
+    fn price(env: Env, token: Address) -> (i128, u64);
+}
 
 use storage::{
     bump_instance, bump_persistent, get_admin, get_balance, get_layout_version, get_token,
@@ -90,6 +108,8 @@ use storage::{
     get_whitelist_enabled, set_whitelist_enabled, is_whitelisted as storage_is_whitelisted, set_whitelisted,
     get_min_deposit, set_min_deposit,
     get_vault_name, set_vault_name, get_vault_symbol, set_vault_symbol, get_vault_version, set_vault_version,
+    get_oracle_address, set_oracle_address, get_oracle_max_age, set_oracle_max_age,
+    get_price_snapshot as storage_get_price_snapshot, set_price_snapshot,
 };use governance::{
     initialize_governance, create_proposal, vote_on_proposal, execute_proposal,
     get_proposal_status, ProposalStatus, ProposalType,
@@ -982,7 +1002,26 @@ impl AuraVault {
         set_total_deposited(&env, new_total);
         storage::set_total_fee_collected(&env, new_fees);
         // Record harvest timestamp for cooldown enforcement (Issue #471)
-        set_last_harvest_time(&env, env.ledger().timestamp());
+        let now = env.ledger().timestamp();
+        set_last_harvest_time(&env, now);
+
+        // -----------------------------------------------------------------------
+        // Price snapshot — Issue #352
+        //
+        // Compute the share price in underlying token units after this harvest
+        // and store it under PriceSnapshot(timestamp) with a 90-day TTL.
+        //
+        // share_price = new_total * 1_000_000 / total_shares
+        // Scaled to 6 decimal places so callers can compute USD value by
+        // multiplying by the oracle USD price.
+        // -----------------------------------------------------------------------
+        if total_shares > 0 {
+            let share_price = new_total
+                .checked_mul(1_000_000)
+                .and_then(|v| v.checked_div(total_shares))
+                .unwrap_or(0);
+            set_price_snapshot(&env, now, share_price);
+        }
 
         env.events().publish(
             (Symbol::new(&env, "harvest"), caller.clone(), yield_amount),
@@ -2115,9 +2154,9 @@ impl AuraVault {
         get_proposal_status(&env, proposal_id).map(|status| {
             match status {
                 ProposalStatus::Pending => soroban_sdk::String::from_str(&env, "Pending"),
-                ProposalStatus::Approved => soroban_sdk::String::from_str(&env, "Approved"),
+                ProposalStatus::Ready => soroban_sdk::String::from_str(&env, "Approved"),
                 ProposalStatus::Executed => soroban_sdk::String::from_str(&env, "Executed"),
-                ProposalStatus::Rejected => soroban_sdk::String::from_str(&env, "Rejected"),
+                ProposalStatus::Expired => soroban_sdk::String::from_str(&env, "Rejected"),
             }
         })
     }
@@ -2168,9 +2207,21 @@ impl AuraVault {
             21 => Some(VaultError::QueueEntryNotFound.message()),
             22 => Some(VaultError::QueueUnbondingPending.message()),
             23 => Some(VaultError::InvalidWithdrawalFee.message()),
-            24 => Some(VaultError::CircuitBreakerTripped.message()),
+            24 => Some(VaultError::TransferFailed.message()),
+            25 => Some(VaultError::OraclePriceZero.message()),
+            26 => Some(VaultError::OraclePriceTooHigh.message()),
+            27 => Some(VaultError::OraclePriceStale.message()),
             28 => Some(VaultError::NotWhitelisted.message()),
             29 => Some(VaultError::BelowMinDeposit.message()),
+            30 => Some(VaultError::OracleUnavailable.message()),
+            31 => Some(VaultError::CircuitBreakerTripped.message()),
+            32 => Some(VaultError::NotASigner.message()),
+            33 => Some(VaultError::OperationNotFound.message()),
+            34 => Some(VaultError::OperationAlreadyExecuted.message()),
+            35 => Some(VaultError::OperationExpired.message()),
+            36 => Some(VaultError::OperationAlreadySigned.message()),
+            37 => Some(VaultError::ThresholdNotMet.message()),
+            38 => Some(VaultError::InvalidThreshold.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))
@@ -2292,5 +2343,310 @@ impl AuraVault {
     /// Returns the contract version integer. Read-only, no auth required.
     pub fn version(env: Env) -> u32 {
         get_vault_version(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // total_supply — Issue #346
+    //
+    // SEP-41 token interface compatibility: return total outstanding vault
+    // shares.  Reads DataKey::TotalShares (same value as total_shares()).
+    // -----------------------------------------------------------------------
+
+    /// Returns the total number of outstanding vault shares.
+    ///
+    /// This is the SEP-41 token interface `total_supply()` view, backed by
+    /// [`DataKey::TotalShares`].  It is always equal to the sum of all
+    /// `balance_of(addr)` values across current depositors.
+    ///
+    /// Read-only; no authorization required.
+    pub fn total_supply(env: Env) -> i128 {
+        get_total_shares(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // AuraPriceOracle integration — Issue #348
+    // -----------------------------------------------------------------------
+
+    /// Admin: set the AuraPriceOracle contract address for USD pricing.
+    ///
+    /// The oracle must implement `price(token) -> (i128, u64)` returning
+    /// (price_in_micro_usd, updated_at_timestamp).  Setting the oracle to a
+    /// new address takes effect immediately.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    pub fn set_oracle_address(env: Env, admin: Address, oracle: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_oracle_address(&env, &oracle);
+        bump_instance(&env);
+        env.events().publish(
+            (Symbol::new(&env, "oracle_set"), admin),
+            (oracle,),
+        );
+        Ok(())
+    }
+
+    /// Admin: update the maximum oracle price age (staleness window) in seconds.
+    ///
+    /// Prices older than `max_age_secs` are treated as unavailable.
+    /// Default: 3 600 s (1 hour).
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    pub fn set_oracle_max_age(env: Env, admin: Address, max_age_secs: u64) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        set_oracle_max_age(&env, max_age_secs);
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Returns the stored oracle contract address, or `None` if not set.
+    ///
+    /// Read-only; no authorization required.
+    pub fn get_oracle_address(env: Env) -> Option<Address> {
+        get_oracle_address(&env)
+    }
+
+    /// Returns the total vault assets expressed in micro-USD (6 decimal places,
+    /// where 1_000_000 = $1.00), using the configured AuraPriceOracle.
+    ///
+    /// Algorithm:
+    /// ```text
+    /// price_usd  = oracle.price(underlying_token)   // micro-USD per token
+    /// total_usd  = floor(total_assets * price_usd / PRICE_PRECISION)
+    /// ```
+    ///
+    /// **Graceful fallback:** if the oracle is not configured, the call fails,
+    /// or the price fails validation (zero, sanity-cap, stale), the function
+    /// returns `0` and emits an `oracle_unavailable` event.  It never reverts,
+    /// so callers can always safely display a USD value (showing 0 when the
+    /// feed is degraded).
+    ///
+    /// Read-only; no authorization required.
+    pub fn total_assets_usd(env: Env) -> i128 {
+        // Attempt to fetch the oracle address; fall back if not configured.
+        let oracle_addr = match get_oracle_address(&env) {
+            Some(addr) => addr,
+            None => {
+                env.events().publish(
+                    (Symbol::new(&env, "oracle_unavailable"),),
+                    (Symbol::new(&env, "not_configured"),),
+                );
+                return 0;
+            }
+        };
+
+        // Attempt oracle cross-contract call; trap any panic via try_invoke.
+        // Soroban cross-contract calls can panic (not return Result), so we
+        // use the `try_invoke` pattern via the generated client.
+        let oracle = OracleClient::new(&env, &oracle_addr);
+        let token_addr = match get_token(&env) {
+            Some(t) => t,
+            None => {
+                env.events().publish(
+                    (Symbol::new(&env, "oracle_unavailable"),),
+                    (Symbol::new(&env, "no_token"),),
+                );
+                return 0;
+            }
+        };
+
+        // Use try_price to handle oracle failures gracefully without reverting.
+        let (price, updated_at) = match oracle.try_price(&token_addr) {
+            Ok(Ok(result)) => result,
+            _ => {
+                env.events().publish(
+                    (Symbol::new(&env, "oracle_unavailable"),),
+                    (Symbol::new(&env, "call_failed"),),
+                );
+                return 0;
+            }
+        };
+
+        // Validate the returned price using the existing oracle guard.
+        let max_age = get_oracle_max_age(&env);
+        if validate_oracle_price(&env, price, updated_at, max_age).is_err() {
+            env.events().publish(
+                (Symbol::new(&env, "oracle_unavailable"),),
+                (Symbol::new(&env, "invalid_price"), price, updated_at),
+            );
+            return 0;
+        }
+
+        let total = get_total_deposited(&env);
+
+        // Precision: oracle price is in micro-USD (6 decimals).
+        // total_usd = floor(total_assets * price / 1_000_000)
+        total
+            .checked_mul(price)
+            .and_then(|v| v.checked_div(1_000_000))
+            .unwrap_or(0)
+    }
+
+    // -----------------------------------------------------------------------
+    // Harvest cooldown convenience function — Issue #351
+    // -----------------------------------------------------------------------
+
+    /// Returns the earliest ledger timestamp at which the next harvest will
+    /// be permitted, or `0` if a harvest is currently allowed.
+    ///
+    /// - Returns `0` when no cooldown is configured (`cooldown_secs == 0`).
+    /// - Returns `0` when no harvest has been performed yet.
+    /// - Returns `last_harvest_time + cooldown_secs` when inside the cooldown
+    ///   window.  If this value is ≤ `now`, it also returns `0`.
+    ///
+    /// Read-only; no authorization required.
+    pub fn next_harvest_allowed_at(env: Env) -> u64 {
+        let cooldown_secs = get_harvest_cooldown_secs(&env);
+        if cooldown_secs == 0 {
+            return 0;
+        }
+        let last_harvest = get_last_harvest_time(&env);
+        if last_harvest == 0 {
+            return 0;
+        }
+        let next_allowed = last_harvest.saturating_add(cooldown_secs);
+        let now = env.ledger().timestamp();
+        if next_allowed <= now {
+            0
+        } else {
+            next_allowed
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Price snapshots — Issue #352
+    // -----------------------------------------------------------------------
+
+    /// Returns the share-price snapshot recorded at exactly `timestamp`, or
+    /// `None` if no snapshot exists for that timestamp.
+    ///
+    /// Snapshots are stored after every successful harvest and are retained
+    /// for 90 days (TTL-based archival). The value is the share price in
+    /// underlying-token micro-units (scaled ×1 000 000) at the time of harvest.
+    ///
+    /// Read-only; no authorization required.
+    pub fn get_price_snapshot(env: Env, timestamp: u64) -> Option<i128> {
+        storage_get_price_snapshot(&env, timestamp)
+    }
+
+    /// Returns all share-price snapshots recorded between `from` and `to`
+    /// (both inclusive) whose keys are in the supplied `timestamps` list.
+    ///
+    /// Because Soroban persistent storage does not support range iteration,
+    /// callers must supply the list of timestamps they want to query.  The
+    /// backend indexer tracks emitted harvest events to build this list.
+    ///
+    /// Returns a `Vec<(u64, i128)>` of `(timestamp, share_price)` pairs for
+    /// every timestamp in `timestamps` that falls within `[from, to]` and
+    /// has a live snapshot entry.  Timestamps outside the range or without a
+    /// stored snapshot are silently omitted.
+    ///
+    /// Read-only; no authorization required.
+    pub fn list_price_snapshots(
+        env: Env,
+        timestamps: Vec<u64>,
+        from: u64,
+        to: u64,
+    ) -> Vec<(u64, i128)> {
+        let mut results: Vec<(u64, i128)> = Vec::new(&env);
+        for ts in timestamps.iter() {
+            if ts < from || ts > to {
+                continue;
+            }
+            if let Some(price) = storage_get_price_snapshot(&env, ts) {
+                results.push_back((ts, price));
+            }
+        }
+        results
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-sig governance public entry points (Issue #375)
+    // These expose the full multi-sig API on the contract so tests can call them.
+    // -----------------------------------------------------------------------
+
+    /// Propose a new multi-sig operation. Proposer must be a registered signer.
+    ///
+    /// Returns the operation ID.
+    pub fn propose_operation(
+        env: Env,
+        proposer: Address,
+        op_type: governance::OpType,
+    ) -> Result<u64, VaultError> {
+        governance::propose_operation(&env, proposer, op_type)
+    }
+
+    /// Add a signature to a pending multi-sig operation.
+    pub fn sign_operation(
+        env: Env,
+        signer: Address,
+        op_id: u64,
+    ) -> Result<(), VaultError> {
+        governance::sign_operation(&env, signer, op_id)
+    }
+
+    /// Execute an approved multi-sig operation.
+    pub fn execute_operation(
+        env: Env,
+        executor: Address,
+        op_id: u64,
+    ) -> Result<(), VaultError> {
+        governance::execute_multisig_op(&env, executor, op_id)?;
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Read the status of a multi-sig operation. Returns None if not found.
+    pub fn operation_status(env: Env, op_id: u64) -> Option<governance::OpStatus> {
+        governance::get_operation_status(&env, op_id)
+    }
+
+    /// Admin-only: add a signer directly to the multisig signer set.
+    pub fn add_signer(env: Env, admin: Address, new_signer: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        governance::apply_add_signer(&env, &new_signer)?;
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Admin-only: remove a signer from the multisig signer set.
+    pub fn remove_signer(env: Env, admin: Address, target: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        governance::apply_remove_signer(&env, &target)?;
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Admin-only: set the multisig signature threshold.
+    pub fn set_threshold(env: Env, admin: Address, threshold: u32) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+        governance::apply_set_threshold(&env, threshold)?;
+        bump_instance(&env);
+        Ok(())
     }
 }
