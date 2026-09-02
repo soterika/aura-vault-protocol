@@ -76,6 +76,21 @@ pub enum DataKey {
     VaultSymbol,
     /// Contract version integer (set at initialization).
     VaultVersion,
+
+    // -----------------------------------------------------------------------
+    // Two-step admin transfer (Issue #353)
+    // -----------------------------------------------------------------------
+    /// Proposed new admin address waiting for acceptance.
+    PendingAdmin,
+    /// Ledger timestamp after which the pending admin proposal expires (48 h).
+    PendingAdminExpiry,
+
+    // -----------------------------------------------------------------------
+    // Role-based access control (Issue #357)
+    // -----------------------------------------------------------------------
+    /// Per-address role bitmask (persistent storage).
+    /// ADMIN = 1, KEEPER = 2, GUARDIAN = 4.
+    RoleMask(Address),
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -517,4 +532,85 @@ pub fn get_vault_version(env: &Env) -> u32 {
 
 pub fn set_vault_version(env: &Env, version: u32) {
     env.storage().instance().set(&DataKey::VaultVersion, &version);
+}
+
+// ---------------------------------------------------------------------------
+// Two-step admin transfer helpers (Issue #353)
+// ---------------------------------------------------------------------------
+
+/// Pending admin address, if any.
+pub fn get_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::PendingAdmin)
+}
+
+/// Set the pending admin address.
+pub fn set_pending_admin(env: &Env, addr: &Address) {
+    env.storage().instance().set(&DataKey::PendingAdmin, addr);
+}
+
+/// Clear the pending admin (cancel or after acceptance).
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdmin);
+}
+
+/// Expiry timestamp for the pending admin proposal.
+pub fn get_pending_admin_expiry(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::PendingAdminExpiry).unwrap_or(0)
+}
+
+/// Set the expiry timestamp for the pending admin proposal.
+pub fn set_pending_admin_expiry(env: &Env, expiry: u64) {
+    env.storage().instance().set(&DataKey::PendingAdminExpiry, &expiry);
+}
+
+/// Clear the pending admin expiry.
+pub fn clear_pending_admin_expiry(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdminExpiry);
+}
+
+// ---------------------------------------------------------------------------
+// Role-based access control helpers (Issue #357)
+// ---------------------------------------------------------------------------
+
+/// Role bitmask constants.
+pub const ROLE_ADMIN: u32    = 1;
+pub const ROLE_KEEPER: u32   = 2;
+pub const ROLE_GUARDIAN: u32 = 4;
+
+/// 48-hour expiry window for pending admin proposals (in seconds).
+pub const PENDING_ADMIN_EXPIRY_SECS: u64 = 48 * 3600; // 172800
+
+/// Read the role bitmask for `addr`. Returns 0 if no roles are assigned.
+pub fn get_role_mask(env: &Env, addr: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::RoleMask(addr.clone()))
+        .unwrap_or(0)
+}
+
+/// Write the role bitmask for `addr`.
+pub fn set_role_mask(env: &Env, addr: &Address, mask: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::RoleMask(addr.clone()), &mask);
+    let key = DataKey::RoleMask(addr.clone());
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+/// Return `true` if `addr` holds **all** of the bits in `required_mask`.
+pub fn has_role(env: &Env, addr: &Address, required_mask: u32) -> bool {
+    let mask = get_role_mask(env, addr);
+    (mask & required_mask) == required_mask
+}
+
+/// TTL bump for a role-mask persistent entry (if it exists).
+pub fn bump_role_ttl(env: &Env, addr: &Address) {
+    let key = DataKey::RoleMask(addr.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+    }
 }

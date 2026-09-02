@@ -69,6 +69,10 @@ mod cei_fuzz_test;
 mod lifecycle_test;
 #[cfg(test)]
 mod cross_contract_safety_test;
+#[cfg(test)]
+mod admin_rbac_test;
+#[cfg(test)]
+mod share_price_fuzz_test;
 
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec, Symbol};
 
@@ -90,6 +94,13 @@ use storage::{
     get_whitelist_enabled, set_whitelist_enabled, is_whitelisted as storage_is_whitelisted, set_whitelisted,
     get_min_deposit, set_min_deposit,
     get_vault_name, set_vault_name, get_vault_symbol, set_vault_symbol, get_vault_version, set_vault_version,
+    // Two-step admin transfer (Issue #353)
+    get_pending_admin, set_pending_admin, clear_pending_admin,
+    get_pending_admin_expiry, set_pending_admin_expiry, clear_pending_admin_expiry,
+    PENDING_ADMIN_EXPIRY_SECS,
+    // Role-based access control (Issue #357)
+    get_role_mask, set_role_mask, has_role,
+    ROLE_ADMIN, ROLE_KEEPER, ROLE_GUARDIAN,
 };use governance::{
     initialize_governance, create_proposal, vote_on_proposal, execute_proposal,
     get_proposal_status, ProposalStatus, ProposalType,
@@ -270,6 +281,8 @@ impl AuraVault {
         set_vault_name(&env, &name);
         set_vault_symbol(&env, &symbol);
         set_vault_version(&env, 1);
+        // Issue #357: grant ADMIN role to the deployer at initialization
+        set_role_mask(&env, &admin, ROLE_ADMIN);
         initialize_governance(&env, signers)?;
         bump_instance(&env);
         Ok(())
@@ -410,10 +423,20 @@ impl AuraVault {
         set_total_deposited(&env, new_total_deposited);
 
         // Event: topics = (event_name, caller, amount) — indexed for efficient filtering.
-        // data = (new_shares, new_total_shares, new_total_deposited) — contextual payload.
+        // data = (new_shares, new_total_shares, new_total_deposited, share_price, timestamp)
+        // share_price = total_deposited * 10^7 / total_shares  (7 decimal precision, Issue #354)
+        let share_price: i128 = if new_total_shares > 0 {
+            new_total_deposited
+                .checked_mul(10_000_000)
+                .and_then(|v| v.checked_div(new_total_shares))
+                .unwrap_or(0)
+        } else {
+            10_000_000 // 1:1 on empty vault
+        };
+        let timestamp = env.ledger().timestamp();
         env.events().publish(
             (Symbol::new(&env, "deposit"), caller.clone(), amount),
-            (new_shares, new_total_shares, new_total_deposited),
+            (new_shares, new_total_shares, new_total_deposited, share_price, timestamp),
         );
 
         bump_persistent(&env, &caller);
@@ -583,9 +606,20 @@ impl AuraVault {
         assert_outgoing_transfer(&token, &vault_addr, pre_withdraw_balance, redeem_amount)?;
 
         // Event: topics = (event_name, caller, shares) — indexed for efficient filtering.
+        // data = (redeem_amount, new_total_shares, new_total_deposited, share_price, timestamp)
+        // share_price = total_deposited * 10^7 / total_shares  (7 decimal precision, Issue #354)
+        let share_price: i128 = if new_total_shares > 0 {
+            new_total_deposited
+                .checked_mul(10_000_000)
+                .and_then(|v| v.checked_div(new_total_shares))
+                .unwrap_or(0)
+        } else {
+            0 // vault is empty after full withdrawal
+        };
+        let timestamp = env.ledger().timestamp();
         env.events().publish(
             (Symbol::new(&env, "withdraw"), caller.clone(), shares),
-            (redeem_amount, new_total_shares, new_total_deposited),
+            (redeem_amount, new_total_shares, new_total_deposited, share_price, timestamp),
         );
 
         Ok(redeem_amount)
@@ -873,6 +907,11 @@ impl AuraVault {
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
+        }
+
+        // Issue #357: harvest requires KEEPER or ADMIN role
+        if !has_role(&env, &caller, ROLE_KEEPER) && !has_role(&env, &caller, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
         }
 
         let total_shares = get_total_shares(&env);
@@ -1637,11 +1676,12 @@ impl AuraVault {
     ///
     /// [`unpause`]: AuraVault::unpause
     pub fn pause(env: Env, admin: Address) -> Result<(), VaultError> {
-        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
-            return Err(VaultError::UpgradeUnauthorized);
-        }
+        get_admin(&env).ok_or(VaultError::NotInitialized)?;
         admin.require_auth();
+        // Issue #357: pause requires GUARDIAN or ADMIN role
+        if !has_role(&env, &admin, ROLE_GUARDIAN) && !has_role(&env, &admin, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
+        }
         set_paused(&env, true);
         env.events().publish((Symbol::new(&env, "paused"),), ());
         bump_instance(&env);
@@ -1650,26 +1690,27 @@ impl AuraVault {
 
     /// Resume vault operations after a [`pause`].
     ///
-    /// Admin-only. Emits an `unpaused` event. Safe to call when already
-    /// unpaused (idempotent).
+    /// Requires GUARDIAN or ADMIN role. Emits an `unpaused` event.
+    /// Safe to call when already unpaused (idempotent).
     ///
     /// # Parameters
     ///
     /// - `env` — Soroban execution environment.
-    /// - `admin` — Must match the stored admin address and authorise this call.
+    /// - `admin` — Must hold GUARDIAN or ADMIN role and authorise this call.
     ///
     /// # Errors
     ///
     /// - [`VaultError::NotInitialized`] — vault not yet initialised.
-    /// - [`VaultError::UpgradeUnauthorized`] — `admin` does not match stored admin.
+    /// - [`VaultError::Unauthorized`] — caller does not hold GUARDIAN or ADMIN role.
     ///
     /// [`pause`]: AuraVault::pause
     pub fn unpause(env: Env, admin: Address) -> Result<(), VaultError> {
-        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
-            return Err(VaultError::UpgradeUnauthorized);
-        }
+        get_admin(&env).ok_or(VaultError::NotInitialized)?;
         admin.require_auth();
+        // Issue #357: unpause requires GUARDIAN or ADMIN role
+        if !has_role(&env, &admin, ROLE_GUARDIAN) && !has_role(&env, &admin, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
+        }
         set_paused(&env, false);
         env.events().publish((Symbol::new(&env, "unpaused"),), ());
         bump_instance(&env);
@@ -2168,9 +2209,16 @@ impl AuraVault {
             21 => Some(VaultError::QueueEntryNotFound.message()),
             22 => Some(VaultError::QueueUnbondingPending.message()),
             23 => Some(VaultError::InvalidWithdrawalFee.message()),
-            24 => Some(VaultError::CircuitBreakerTripped.message()),
+            24 => Some(VaultError::TransferFailed.message()),
+            25 => Some(VaultError::OraclePriceZero.message()),
+            26 => Some(VaultError::OraclePriceTooHigh.message()),
+            27 => Some(VaultError::OraclePriceStale.message()),
             28 => Some(VaultError::NotWhitelisted.message()),
             29 => Some(VaultError::BelowMinDeposit.message()),
+            30 => Some(VaultError::CircuitBreakerTripped.message()),
+            31 => Some(VaultError::NoPendingAdmin.message()),
+            32 => Some(VaultError::PendingAdminExpired.message()),
+            33 => Some(VaultError::Unauthorized.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))
@@ -2292,5 +2340,218 @@ impl AuraVault {
     /// Returns the contract version integer. Read-only, no auth required.
     pub fn version(env: Env) -> u32 {
         get_vault_version(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Two-step admin transfer (Issue #353)
+    // -----------------------------------------------------------------------
+
+    /// Propose a new admin address. Current admin only.
+    ///
+    /// Sets a pending admin that must call [`accept_admin`] within 48 hours
+    /// to complete the transfer. Only one pending proposal can exist at a time;
+    /// calling this again overwrites the previous proposal.
+    ///
+    /// Emits an `AdminProposed` event with topics `(event_name, current_admin)`
+    /// and data `(new_admin, expiry_timestamp)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    ///
+    /// [`accept_admin`]: AuraVault::accept_admin
+    pub fn propose_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != current_admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        current_admin.require_auth();
+
+        let expiry = env.ledger().timestamp().saturating_add(PENDING_ADMIN_EXPIRY_SECS);
+        set_pending_admin(&env, &new_admin);
+        set_pending_admin_expiry(&env, expiry);
+
+        env.events().publish(
+            (Symbol::new(&env, "AdminProposed"), current_admin),
+            (new_admin, expiry),
+        );
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Accept a pending admin transfer. Must be called by the pending admin.
+    ///
+    /// Completes the two-step admin transfer initiated by [`propose_admin`].
+    /// The caller must be the pending admin, and the proposal must not have
+    /// expired (within 48 hours of the proposal). Grants the new admin the
+    /// ADMIN role and revokes the old admin's ADMIN role.
+    ///
+    /// Emits an `AdminTransferred` event with topics `(event_name, old_admin)`
+    /// and data `(new_admin,)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::NoPendingAdmin`] — no pending proposal exists.
+    /// - [`VaultError::PendingAdminExpired`] — the 48-hour window has elapsed.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the pending admin.
+    ///
+    /// [`propose_admin`]: AuraVault::propose_admin
+    pub fn accept_admin(env: Env, new_admin: Address) -> Result<(), VaultError> {
+        get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        new_admin.require_auth();
+
+        let pending = get_pending_admin(&env).ok_or(VaultError::NoPendingAdmin)?;
+        if pending != new_admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+
+        let expiry = get_pending_admin_expiry(&env);
+        let now = env.ledger().timestamp();
+        if now > expiry {
+            // Clean up expired proposal
+            clear_pending_admin(&env);
+            clear_pending_admin_expiry(&env);
+            return Err(VaultError::PendingAdminExpired);
+        }
+
+        // Transfer admin: revoke old admin's ADMIN role, grant to new admin
+        let old_admin = get_admin(&env).unwrap(); // safe: checked above
+        let old_mask = get_role_mask(&env, &old_admin);
+        set_role_mask(&env, &old_admin, old_mask & !ROLE_ADMIN);
+        set_role_mask(&env, &new_admin, get_role_mask(&env, &new_admin) | ROLE_ADMIN);
+
+        // Effects: write new admin, clear pending
+        set_admin(&env, &new_admin);
+        clear_pending_admin(&env);
+        clear_pending_admin_expiry(&env);
+
+        env.events().publish(
+            (Symbol::new(&env, "AdminTransferred"), old_admin),
+            (new_admin,),
+        );
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Cancel a pending admin transfer. Current admin only.
+    ///
+    /// Clears the pending admin proposal. No-op if there is no pending proposal.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    /// - [`VaultError::NoPendingAdmin`] — no pending proposal to cancel.
+    pub fn cancel_admin(env: Env, current_admin: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != current_admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        current_admin.require_auth();
+
+        if get_pending_admin(&env).is_none() {
+            return Err(VaultError::NoPendingAdmin);
+        }
+
+        clear_pending_admin(&env);
+        clear_pending_admin_expiry(&env);
+
+        env.events().publish(
+            (Symbol::new(&env, "AdminCancelled"), current_admin),
+            (),
+        );
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Return the pending admin address, if any. Read-only.
+    pub fn pending_admin(env: Env) -> Option<Address> {
+        get_pending_admin(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Role-based access control (Issue #357)
+    // -----------------------------------------------------------------------
+
+    /// Grant a role to an address. Admin-only.
+    ///
+    /// `role` is a bitmask constant: `ROLE_ADMIN = 1`, `ROLE_KEEPER = 2`,
+    /// `ROLE_GUARDIAN = 4`. Multiple roles can be combined by passing the OR
+    /// of their bitmasks (e.g. `3` = ADMIN | KEEPER), but doing so is unusual.
+    ///
+    /// Emits a `RoleGranted` event with topics `(event_name, admin)`
+    /// and data `(role, addr)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    pub fn grant_role(env: Env, admin: Address, role: u32, addr: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+
+        let current_mask = get_role_mask(&env, &addr);
+        set_role_mask(&env, &addr, current_mask | role);
+
+        env.events().publish(
+            (Symbol::new(&env, "RoleGranted"), admin),
+            (role, addr),
+        );
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Revoke a role from an address. Admin-only.
+    ///
+    /// The admin cannot revoke their own ADMIN role via this function
+    /// (it would lock the vault). Use the two-step admin transfer to
+    /// change the admin address instead.
+    ///
+    /// Emits a `RoleRevoked` event with topics `(event_name, admin)`
+    /// and data `(role, addr)`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    pub fn revoke_role(env: Env, admin: Address, role: u32, addr: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+
+        let current_mask = get_role_mask(&env, &addr);
+        set_role_mask(&env, &addr, current_mask & !role);
+
+        env.events().publish(
+            (Symbol::new(&env, "RoleRevoked"), admin),
+            (role, addr),
+        );
+        bump_instance(&env);
+        Ok(())
+    }
+
+    /// Return the role bitmask for an address. Read-only.
+    ///
+    /// - `1` = ADMIN
+    /// - `2` = KEEPER
+    /// - `4` = GUARDIAN
+    ///
+    /// Roles are additive: a value of `3` means the address holds both
+    /// ADMIN and KEEPER roles.
+    pub fn get_roles(env: Env, addr: Address) -> u32 {
+        get_role_mask(&env, &addr)
+    }
+
+    /// Return `true` if `addr` holds all roles specified in `role_mask`.
+    /// Read-only.
+    pub fn has_role_query(env: Env, addr: Address, role_mask: u32) -> bool {
+        has_role(&env, &addr, role_mask)
     }
 }

@@ -265,4 +265,94 @@ pub enum VaultError {
     NotWhitelisted         = 28,
     /// Deposit amount is below the configured minimum deposit threshold.
     BelowMinDeposit        = 29,
+
+    // -----------------------------------------------------------------------
+    // 30: Circuit-breaker error (alias; code 24 is TransferFailed in the
+    // existing mapping — this reserves the correct slot for the circuit
+    // breaker that is already referenced in lib.rs)
+    // -----------------------------------------------------------------------
+    /// Share-price movement exceeded the configured circuit-breaker limit.
+    /// The vault has been automatically paused. Admin must call `unpause()`
+    /// after reviewing the price movement.
+    CircuitBreakerTripped  = 30,
+
+    // -----------------------------------------------------------------------
+    // 31–33: Two-step admin transfer (Issue #353)
+    // -----------------------------------------------------------------------
+    /// There is no pending admin proposal to accept or cancel.
+    ///
+    /// **Trigger:** `accept_admin()` or `cancel_admin()` called when no
+    /// pending admin transfer has been proposed.
+    ///
+    /// **Resolution:** Current admin must call `propose_admin(new_admin)`
+    /// before a transfer can be accepted or cancelled.
+    NoPendingAdmin         = 31,
+
+    /// The pending admin proposal has expired (older than 48 hours).
+    ///
+    /// **Trigger:** `accept_admin()` called after the 48-hour acceptance
+    /// window has elapsed.
+    ///
+    /// **Resolution:** Current admin must call `propose_admin(new_admin)`
+    /// again to create a fresh proposal.
+    PendingAdminExpired    = 32,
+
+    // -----------------------------------------------------------------------
+    // 33–35: Role-based access control (Issue #357)
+    // -----------------------------------------------------------------------
+    /// The caller does not hold the required role for this operation.
+    ///
+    /// **Trigger:** `harvest` called by an address that has neither the
+    /// KEEPER nor ADMIN role; or `pause`/`unpause` called by an address
+    /// that has neither the GUARDIAN nor ADMIN role.
+    ///
+    /// **Resolution:** An ADMIN must call `grant_role(role, address)` to
+    /// assign the appropriate role, or the caller must use the correct
+    /// privileged account.
+    Unauthorized           = 33,
+}
+
+impl VaultError {
+    /// Return a human-readable English description of this error variant.
+    ///
+    /// The returned `&'static str` is stable across releases so that
+    /// off-chain indexers and wallet UIs can display it without a separate
+    /// lookup table.
+    pub fn message(self) -> &'static str {
+        match self {
+            VaultError::NotInitialized           => "Vault has not been initialised yet.",
+            VaultError::AlreadyInitialized       => "Vault has already been initialised.",
+            VaultError::InsufficientShares       => "Caller does not hold enough shares to withdraw.",
+            VaultError::InsufficientUnderlying   => "Vault cannot cover the redemption amount.",
+            VaultError::ZeroAmount               => "Amount must be greater than zero.",
+            VaultError::MathOverflow             => "Arithmetic overflow in share formula.",
+            VaultError::InvalidAddress           => "Address is not valid or not on the whitelist.",
+            VaultError::ZeroShares               => "Harvest not allowed when total shares is zero.",
+            VaultError::UpgradeUnauthorized      => "Caller is not the vault admin.",
+            VaultError::StorageLayoutMismatch    => "Storage layout version mismatch — migration required.",
+            VaultError::VaultPaused              => "Vault is paused — all mutating operations are halted.",
+            VaultError::BalanceMismatch          => "Flash-loan guard: actual balance differs from tracked state.",
+            VaultError::TimelockNotExpired       => "Governance timelock has not yet elapsed.",
+            VaultError::NotApproved              => "Governance proposal has not reached approval threshold.",
+            VaultError::AlreadyVoted             => "Signer has already voted on this proposal.",
+            VaultError::TvlCapExceeded           => "Deposit would push total assets above the TVL cap.",
+            VaultError::YieldTooSmall            => "Yield amount is too small to distribute.",
+            VaultError::DistributionAccuracyError => "Yield distribution accuracy check failed.",
+            VaultError::HarvestCooldown          => "Harvest attempted before the cooldown period has elapsed.",
+            VaultError::WithdrawalQueued         => "Withdrawal is queued; call claim_queued_withdrawal after unbonding.",
+            VaultError::QueueEntryNotFound       => "Withdrawal queue entry not found or already claimed.",
+            VaultError::QueueUnbondingPending    => "Unbonding period has not elapsed yet.",
+            VaultError::InvalidWithdrawalFee     => "Withdrawal fee exceeds the maximum allowed (5%).",
+            VaultError::TransferFailed           => "Token transfer did not move the expected amount.",
+            VaultError::OraclePriceZero          => "Oracle price is zero — feed may be broken.",
+            VaultError::OraclePriceTooHigh       => "Oracle price exceeds sanity cap — possible manipulation.",
+            VaultError::OraclePriceStale         => "Oracle price is stale — data is older than the max age.",
+            VaultError::NotWhitelisted           => "Address is not on the deposit whitelist.",
+            VaultError::BelowMinDeposit          => "Deposit amount is below the configured minimum.",
+            VaultError::CircuitBreakerTripped    => "Share-price movement exceeded limit; vault auto-paused.",
+            VaultError::NoPendingAdmin           => "No pending admin proposal exists.",
+            VaultError::PendingAdminExpired      => "Pending admin proposal has expired (48-hour window elapsed).",
+            VaultError::Unauthorized             => "Caller does not hold the required role for this operation.",
+        }
+    }
 }

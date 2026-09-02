@@ -401,6 +401,8 @@ fn test_harvest_by_non_admin_keeper_succeeds() {
 
     let keeper = Address::generate(&env);
     mint(&env, &token, &admin, &keeper, 1_000);
+    // Issue #357: grant KEEPER role before harvesting
+    vault.grant_role(&admin, &2_u32, &keeper);
     vault.harvest(&keeper, &1_000);
     // setup() sets fees to 0, so full 1_000 is credited
     assert_eq!(vault.total_assets(), 1_001_000);

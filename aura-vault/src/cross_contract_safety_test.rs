@@ -256,6 +256,7 @@ mod cross_contract_safety_tests {
         mint(&env, &token, &admin, &depositor, 1_000_000);
         mint(&env, &token, &admin, &keeper, 100_000);
         vault.deposit(&depositor, &1_000_000);
+        vault.grant_role(&admin, &2_u32, &keeper); // Issue #357: grant KEEPER role
         vault.harvest(&keeper, &100_000);
         assert_eq!(vault.total_assets(), 1_100_000);
     }
@@ -360,6 +361,7 @@ mod cross_contract_safety_tests {
         mint(&env, &token, &admin, &depositor, 1_000_000);
         mint(&env, &token, &admin, &keeper, 100_000);
         vault.deposit(&depositor, &1_000_000);
+        vault.grant_role(&admin, &2_u32, &keeper); // Issue #357: grant KEEPER role
         vault.harvest(&keeper, &100_000);
 
         let fees = vault.total_fees_collected();
