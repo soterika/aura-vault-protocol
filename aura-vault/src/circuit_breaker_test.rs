@@ -33,7 +33,7 @@ mod circuit_breaker_tests {
         let vault_addr = env.register_contract(None, AuraVault);
         let vault = AuraVaultClient::new(&env, &vault_addr);
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_addr, &signers);
+        vault.initialize(&admin, &token_addr, &signers, &0_u32);
         // Zero performance fee — makes yield_after_fee == yield_amount, so
         // share-price math is straightforward in tests.
         vault.set_fees(&admin, &0_u32, &0_u32);

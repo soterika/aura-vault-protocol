@@ -265,4 +265,45 @@ pub enum VaultError {
     NotWhitelisted         = 28,
     /// Deposit amount is below the configured minimum deposit threshold.
     BelowMinDeposit        = 29,
+    /// A reentrant call was detected and blocked by the reentrancy guard. Issue #345.
+    Reentrancy             = 30,
 }
+
+impl VaultError {
+    /// Return the human-readable English error message for this error.
+    pub fn message(&self) -> &'static str {
+        match self {
+            VaultError::NotInitialized => "Vault has not been initialized",
+            VaultError::AlreadyInitialized => "Vault is already initialized",
+            VaultError::InsufficientShares => "Insufficient share balance for withdrawal",
+            VaultError::InsufficientUnderlying => "Vault underlying balance cannot cover withdrawal",
+            VaultError::ZeroAmount => "Amount is zero or rounds to zero",
+            VaultError::MathOverflow => "Arithmetic overflow",
+            VaultError::InvalidAddress => "Invalid address or token not whitelisted",
+            VaultError::ZeroShares => "Vault has no shares",
+            VaultError::UpgradeUnauthorized => "Caller is not authorized to perform admin action",
+            VaultError::StorageLayoutMismatch => "Storage layout version mismatch",
+            VaultError::VaultPaused => "Vault is paused",
+            VaultError::BalanceMismatch => "Token balance mismatch (flash-loan guard tripped)",
+            VaultError::TimelockNotExpired => "Governance timelock has not expired",
+            VaultError::NotApproved => "Governance proposal not approved",
+            VaultError::AlreadyVoted => "Signer has already voted on this proposal",
+            VaultError::TvlCapExceeded => "Deposit exceeds vault TVL cap",
+            VaultError::YieldTooSmall => "Yield amount is too small to distribute",
+            VaultError::DistributionAccuracyError => "Yield distribution accuracy error",
+            VaultError::HarvestCooldown => "Harvest attempted before cooldown elapsed",
+            VaultError::WithdrawalQueued => "Withdrawal queued due to threshold",
+            VaultError::QueueEntryNotFound => "Withdrawal queue entry not found",
+            VaultError::QueueUnbondingPending => "Withdrawal unbonding period is pending",
+            VaultError::InvalidWithdrawalFee => "Invalid withdrawal fee",
+            VaultError::TransferFailed => "Token transfer failed",
+            VaultError::OraclePriceZero => "Oracle price is zero",
+            VaultError::OraclePriceTooHigh => "Oracle price is too high",
+            VaultError::OraclePriceStale => "Oracle price is stale",
+            VaultError::NotWhitelisted => "Caller is not whitelisted for deposit",
+            VaultError::BelowMinDeposit => "Deposit amount is below minimum deposit threshold",
+            VaultError::Reentrancy => "Reentrancy detected: contract call is not reentrant",
+        }
+    }
+}
+

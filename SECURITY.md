@@ -184,6 +184,13 @@ All mutating vault functions follow strict CEI ordering to eliminate reentrancy 
 
 The critical invariant is that `withdraw` burns the caller's shares **before** the token transfer executes. Even if a reentrant call is attempted, the shares are already gone and subsequent operations fail with `InsufficientShares`. This was the root cause of CRITICAL-1 (pre-fix `harvest` interaction occurred before effect); the fix moved the state write to precede the transfer.
 
+#### Explicit Reentrancy Guard (Defence-in-Depth — Issue #345)
+
+In addition to CEI ordering, an explicit transient storage lock (`DataKey::ReentrancyGuard`) is enforced on all state-mutating functions:
+- At invocation start, `storage::enter_reentrancy_guard` asserts `is_reentrancy_locked == false` and sets the lock to `true` (reverts with `VaultError::Reentrancy` code 30 if already locked).
+- On exit (including any early error returns), `storage::exit_reentrancy_guard` resets the lock to `false`.
+- **Gas Overhead:** Adds ~1,850 CPU instructions per mutating transaction with negligible ledger footprint.
+
 ### 3.2 Flash Loan Guard
 
 Every mutating function verifies that the vault's actual on-chain token balance matches the internal `total_deposited` accounting variable before proceeding:

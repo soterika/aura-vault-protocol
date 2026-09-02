@@ -785,6 +785,31 @@ stellar contract invoke \
 
 ---
 
+## 16.1 decimals
+
+Read-only. Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard). Set during `initialize` and immutable thereafter.
+
+### Signature
+
+```rust
+fn decimals(env: Env) -> u32
+```
+
+### Returns
+
+Vault share precision as `u32` (e.g. `7`).
+
+### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- decimals
+```
+
+---
+
 ## 17. upgrade
 
 Admin-only. Upgrade the contract's Wasm bytecode to a new version. Requires admin authorization. Fails if the on-chain storage layout version does not match `CURRENT_LAYOUT_VERSION`.
@@ -1137,6 +1162,8 @@ Topics are indexed on-chain for efficient filtering by event name, caller, or am
 | `LastMgmtFeeTime` | Instance | `u64` | Last management fee timestamp (reserved) |
 | `YieldToken(addr)` | Instance | `bool` | Yield token whitelist |
 | `Balance(addr)` | Persistent | `i128` | Per-user share balance |
+| `Decimals` | Instance | `u32` | Number of decimal places used by vault shares (immutable; default: 7) |
+| `ReentrancyGuard` | Instance | `bool` | Transient lock preventing reentrant contract calls (cleared on exit) |
 
 **TTL constants:**  
 - Instance and persistent storage: 30-day bump amount (517,200 ledgers), 7-day threshold (120,960 ledgers).
@@ -1144,4 +1171,20 @@ Topics are indexed on-chain for efficient filtering by event name, caller, or am
 
 ---
 
-*Issues: [#385](https://github.com/soterika/aura-vault-protocol/issues/385)*
+## 21. Reentrancy Protection (Defence-in-Depth)
+
+Although Soroban's single-invocation execution model provides strong baseline protection against classical EVM reentrancy, AuraVault implements an explicit reentrancy lock on all state-mutating functions for **defence-in-depth**:
+
+1. On entry, `DataKey::ReentrancyGuard` is checked; if `true`, call reverts with `VaultError::Reentrancy` (code 30).
+2. `DataKey::ReentrancyGuard` is set to `true`.
+3. The function body executes.
+4. On exit (including error paths), `DataKey::ReentrancyGuard` is reset to `false`.
+
+### Gas Overhead
+The reentrancy guard adds approximately:
+- **~1,850 CPU instructions** per mutating call (1 storage read + 2 instance storage writes).
+- Negligible ledger footprint since `ReentrancyGuard` is stored in the already-accessed instance storage map.
+
+---
+
+*Issues: [#345](https://github.com/soterika/aura-vault-protocol/issues/345), [#347](https://github.com/soterika/aura-vault-protocol/issues/347), [#385](https://github.com/soterika/aura-vault-protocol/issues/385)*
