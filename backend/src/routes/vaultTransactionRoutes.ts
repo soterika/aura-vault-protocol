@@ -34,6 +34,7 @@ import {
   XdrValidationError,
   TransactionFailedError,
 } from "../services/vaultService.js";
+import { logger } from "../logger.js";
 
 export const vaultTransactionRouter = Router();
 
@@ -65,7 +66,7 @@ function handleVaultError(err: unknown, res: Response): void {
     return;
   }
 
-  console.error("[vault]", err);
+  logger.error("[vault]", err);
   res.status(500).json({
     success: false,
     error: {

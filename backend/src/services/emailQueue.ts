@@ -4,6 +4,7 @@ import { NS } from '../cache.js';
 import { sendEmail } from './emailService.js';
 import { MAX_ATTACHMENT_BYTES } from '../types/email.js';
 import type { EmailJob, EmailPriority, EnqueueOptions } from '../types/email.js';
+import { logger } from "../logger.js";
 
 // ─── Priority → Redis key ─────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ async function promoteRetryJobs(): Promise<void> {
     await redis.zrem(RETRY_KEY, jobJson);
   }
 
-  console.log(`[EmailQueue] Promoted ${due.length} retry job(s)`);
+  logger.info(`[EmailQueue] Promoted ${due.length} retry job(s)`);
 }
 
 // ─── Failure handler ──────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ async function handleFailure(job: EmailJob, err: unknown): Promise<void> {
 
   if (job.attempts >= job.maxAttempts) {
     await redis.lpush(DEAD_KEY, JSON.stringify(job));
-    console.error(
+    logger.error(
       `[EmailQueue] Job ${job.id} dead-lettered after ${job.attempts} attempt(s):`,
       (err as Error).message
     );
@@ -95,7 +96,7 @@ async function handleFailure(job: EmailJob, err: unknown): Promise<void> {
   const nextRetry = Date.now() + delay;
 
   await redis.zadd(RETRY_KEY, nextRetry, JSON.stringify(job));
-  console.warn(
+  logger.warn(
     `[EmailQueue] Job ${job.id} will retry in ${delay / 1000}s ` +
     `(attempt ${job.attempts}/${job.maxAttempts})`
   );
@@ -127,7 +128,7 @@ async function workerLoop(): Promise<void> {
     try {
       job = JSON.parse(jobJson) as EmailJob;
     } catch {
-      console.error('[EmailQueue] Failed to parse job JSON, skipping');
+      logger.error('[EmailQueue] Failed to parse job JSON, skipping');
       continue;
     }
 
@@ -139,12 +140,12 @@ async function workerLoop(): Promise<void> {
       await redis.del(`${NS.EMAIL_INFLIGHT}:${job.id}`);
 
       if (result.success) {
-        console.log(
+        logger.info(
           `[EmailQueue] Delivered job ${job.id} via ${result.provider} (msgId: ${result.messageId})`
         );
       } else {
         // Blocked (unsubscribed / hard-bounce) — not a failure worth retrying
-        console.warn(`[EmailQueue] Job ${job.id} suppressed: ${result.error}`);
+        logger.warn(`[EmailQueue] Job ${job.id} suppressed: ${result.error}`);
       }
     } catch (err) {
       await handleFailure(job, err);
@@ -155,16 +156,16 @@ async function workerLoop(): Promise<void> {
 export function startEmailWorker(): void {
   if (running) return;
   running = true;
-  console.log('[EmailQueue] Worker started');
+  logger.info('[EmailQueue] Worker started');
   workerLoop().catch((err) => {
-    console.error('[EmailQueue] Worker crashed:', err);
+    logger.error('[EmailQueue] Worker crashed:', err);
     running = false;
   });
 }
 
 export function stopEmailWorker(): void {
   running = false;
-  console.log('[EmailQueue] Worker stopping after current job');
+  logger.info('[EmailQueue] Worker stopping after current job');
 }
 
 // ─── Queue stats ──────────────────────────────────────────────────────────────

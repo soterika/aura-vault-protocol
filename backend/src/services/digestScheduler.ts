@@ -20,6 +20,7 @@
 import { enqueueEmail } from './emailQueue.js';
 import { isBlocked } from './emailService.js';
 import { getUserPreferences } from './userPreferencesService.js';
+import { logger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,7 +148,7 @@ async function runTick(loadRecipients: RecipientLoader): Promise<void> {
   try {
     recipients = await loadRecipients();
   } catch (err) {
-    console.error('[DigestScheduler] Failed to load recipients:', err);
+    logger.error('[DigestScheduler] Failed to load recipients:', err);
     return;
   }
 
@@ -160,12 +161,12 @@ async function runTick(loadRecipients: RecipientLoader): Promise<void> {
 
   const failed = results.filter((r) => r.status === 'rejected');
   if (failed.length > 0) {
-    console.error(
+    logger.error(
       `[DigestScheduler] ${failed.length}/${candidates.length} recipient(s) failed to enqueue`
     );
   }
 
-  console.log(
+  logger.info(
     `[DigestScheduler] Digest run complete — ${candidates.length - failed.length} enqueued, ` +
     `${recipients.length - candidates.length} skipped (zero value)`
   );

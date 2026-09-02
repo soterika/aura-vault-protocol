@@ -61,6 +61,10 @@ services:
     volumes:
       - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
       - /var/log:/var/log:ro
+      # Mount Docker socket so Promtail can discover containers via docker_sd_configs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Mount Docker container log directory so Promtail can read stdout logs
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
       - loki

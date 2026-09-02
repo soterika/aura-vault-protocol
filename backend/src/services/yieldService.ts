@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 /**
  * Yield Calculation Service
  *
@@ -89,7 +90,7 @@ export function totalCompoundYield(
 
 export function createYieldService(opts: YieldServiceOptions = {}) {
   const batchSize = opts.batchSize ?? 500;
-  const alert = opts.onAlert ?? ((msg, meta) => console.error(`[YieldService] ALERT: ${msg}`, meta ?? ""));
+  const alert = opts.onAlert ?? ((msg, meta) => logger.error(`[YieldService] ALERT: ${msg}`, meta ?? ""));
 
   /**
    * Calculate yield for a single position at the given date.

@@ -1,4 +1,5 @@
 import Redis, { Cluster } from "ioredis";
+import { logger } from "./logger.js";
 
 let client: Redis | Cluster | null = null;
 
@@ -32,10 +33,10 @@ function createClient(): Redis | Cluster {
 export function getRedis(): Redis | Cluster {
   if (!client) {
     client = createClient();
-    client.on("error", (err) => console.error("[Redis] Error:", err.message));
-    client.on("connect", () => console.log("[Redis] Connected"));
-    client.on("ready", () => console.log("[Redis] Ready"));
-    client.on("reconnecting", () => console.log("[Redis] Reconnecting..."));
+    client.on("error", (err) => logger.error({ err: err.message }, "[Redis] Error"));
+    client.on("connect", () => logger.info("[Redis] Connected"));
+    client.on("ready", () => logger.info("[Redis] Ready"));
+    client.on("reconnecting", () => logger.warn("[Redis] Reconnecting..."));
   }
   return client;
 }

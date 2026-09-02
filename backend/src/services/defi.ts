@@ -1,4 +1,5 @@
 import { cacheGet, cacheSet, NS } from "../cache.js";
+import { logger } from "../logger.js";
 
 const PRICE_TTL = parseInt(process.env.CACHE_DEFI_PRICE_TTL || "30", 10);
 const POOL_TTL = parseInt(process.env.CACHE_DEFI_POOL_TTL || "60", 10);
@@ -60,7 +61,7 @@ export async function getPools(): Promise<PoolData[]> {
 }
 
 export async function warmCache(): Promise<void> {
-  console.log("[Cache] Warming DeFi data...");
+  logger.info("[Cache] Warming DeFi data...");
   try {
     await Promise.all([
       getPools(),
@@ -69,8 +70,8 @@ export async function warmCache(): Promise<void> {
       getAssetPrice("BTC"),
       getAssetPrice("ETH"),
     ]);
-    console.log("[Cache] Warm-up complete");
+    logger.info("[Cache] Warm-up complete");
   } catch (err) {
-    console.error("[Cache] Warm-up failed:", err);
+    logger.error("[Cache] Warm-up failed:", err);
   }
 }

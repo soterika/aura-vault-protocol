@@ -3,6 +3,7 @@ import { createYieldService, YieldSource, VaultPosition } from '../services/yiel
 import { getLastRunStats, getRunHistory, isYieldWorkerRunning } from '../services/yieldWorker.js';
 import { parsePagination, paginateArray } from '../middleware/paginationMiddleware.js';
 import { INVALID_INPUT, INTERNAL_ERROR } from '../middleware/errorCodes.js';
+import { logger } from "../logger.js";
 
 const yieldService = createYieldService();
 
@@ -25,7 +26,7 @@ yieldRouter.post('/calculate', async (req: Request, res: Response): Promise<void
     const result = await yieldService.processBatch(positions, sources, date);
     res.success(result);
   } catch (err) {
-    console.error('[yield/calculate]', err);
+    logger.error('[yield/calculate]', err);
     res.failure(INTERNAL_ERROR, 'Yield calculation failed', 500);
   }
 });
@@ -54,7 +55,7 @@ yieldRouter.post('/backfill', async (req: Request, res: Response): Promise<void>
     const results = await yieldService.backfill(positions, sources, start, end);
     res.success({ slots: results.length, results });
   } catch (err) {
-    console.error('[yield/backfill]', err);
+    logger.error('[yield/backfill]', err);
     res.failure(INTERNAL_ERROR, 'Backfill failed', 500);
   }
 });
@@ -85,7 +86,7 @@ yieldRouter.get('/stats', async (req: Request, res: Response): Promise<void> => 
       nextCursor,
     });
   } catch (err) {
-    console.error('[yield/stats]', err);
+    logger.error('[yield/stats]', err);
     res.failure(INTERNAL_ERROR, 'Failed to retrieve yield stats', 500);
   }
 });

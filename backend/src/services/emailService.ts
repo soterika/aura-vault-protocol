@@ -16,6 +16,7 @@ import type {
   DnsVerificationResult,
   EmailAttachment,
 } from '../types/email.js';
+import { logger } from "../logger.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -276,7 +277,7 @@ export async function sendEmail(job: EmailJob): Promise<EmailResult> {
         : await sendViaMailgun(msg);
       return { success: true, messageId, provider };
     } catch (err) {
-      console.error(`[Email] ${provider} failed:`, (err as Error).message);
+      logger.error(`[Email] ${provider} failed:`, (err as Error).message);
     }
   }
 

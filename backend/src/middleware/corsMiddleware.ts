@@ -23,6 +23,7 @@
 
 import cors, { type CorsOptions } from 'cors';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import { logger } from '../logger.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ export function buildAllowedOrigins(): (string | RegExp)[] {
 
   if (raw === '' || raw === '*') {
     if (isProduction) {
-      console.warn(
+      logger.warn(
         '[cors] CORS_ORIGINS is not set (or is "*") in production — ' +
         'defaulting to deny-all. Set CORS_ORIGINS to your frontend domain(s).'
       );

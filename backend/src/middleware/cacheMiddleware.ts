@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 import crypto from "crypto";
 import { Request, Response, NextFunction } from "express";
 import { cacheGet, cacheSet, NS } from "../cache.js";
@@ -36,7 +37,7 @@ export function cacheMiddleware(ttlSeconds: number) {
           cacheKey,
           { status: res.statusCode, body },
           ttlSeconds
-        ).catch((err) => console.error("[Cache] Failed to store response:", err));
+        ).catch((err) => logger.error({ err }, "[Cache] Failed to store response"));
       }
       res.set("X-Cache", "MISS");
       return originalJson(body);

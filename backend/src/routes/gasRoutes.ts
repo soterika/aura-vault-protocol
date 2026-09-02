@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createGasPriceService } from '../services/gasService.js';
 import { parsePagination, paginateArray, MAX_LIMIT } from '../middleware/paginationMiddleware.js';
 import { INTERNAL_ERROR } from '../middleware/errorCodes.js';
+import { logger } from "../logger.js";
 
 const gasService = createGasPriceService();
 
@@ -26,7 +27,7 @@ gasRouter.get('/prices', async (req: Request, res: Response): Promise<void> => {
     const estimate = await gasService.estimate(chainId, gasLimit, forceRefresh);
     res.success(estimate);
   } catch (err) {
-    console.error('[gas]', err);
+    logger.error('[gas]', err);
     res.failure(INTERNAL_ERROR, 'Unable to estimate gas prices', 500);
   }
 });
@@ -48,7 +49,7 @@ gasRouter.get('/history', async (req: Request, res: Response): Promise<void> => 
     );
     res.success({ chainId, data, nextCursor });
   } catch (err) {
-    console.error('[gas-history]', err);
+    logger.error('[gas-history]', err);
     res.failure(INTERNAL_ERROR, 'Unable to load gas history', 500);
   }
 });
@@ -58,7 +59,7 @@ gasRouter.get('/metrics', async (_req: Request, res: Response): Promise<void> =>
     const metrics = gasService.getMetrics();
     res.success(metrics);
   } catch (err) {
-    console.error('[gas-metrics]', err);
+    logger.error('[gas-metrics]', err);
     res.failure(INTERNAL_ERROR, 'Unable to load metrics', 500);
   }
 });

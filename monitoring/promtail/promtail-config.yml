@@ -1,38 +1,155 @@
+# Promtail configuration — ships logs from the aura-vault-backend to Loki
+#
+# Log flow:
+#   Backend (Pino JSON → stdout)
+#   → Docker captures stdout to /var/lib/docker/containers/<id>/<id>-json.log
+#   → Promtail reads those files and forwards to Loki
+#   → Grafana queries Loki using LogQL
+#
+# Pino JSON fields mapped to Loki labels:
+#   level      → log severity label (info / warn / error / fatal)
+#   service    → always "aura-vault-backend"
+#   correlationId → available as a structured field in log lines
+
 server:
   http_listen_port: 9080
+  grpc_listen_port: 0
 
 positions:
   filename: /tmp/positions.yaml
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
+    # Batch logs before sending to reduce round-trips
+    batchwait: 1s
+    batchsize: 1048576  # 1 MiB
+    # Retry on transient Loki errors
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
 
 scrape_configs:
+  # ── Backend container stdout ─────────────────────────────────────────────────
+  # Reads Docker JSON log files for the aura-vault-backend container.
+  # Mount /var/lib/docker/containers into the Promtail container as read-only.
+  - job_name: aura-vault-backend
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+        filters:
+          - name: name
+            values: [aura-vault-backend]
+
+    relabel_configs:
+      # Use the container name as the service label
+      - source_labels: [__meta_docker_container_name]
+        target_label: service
+        regex: /(.+)
+        replacement: $1
+      # Carry the Docker image tag as a version label
+      - source_labels: [__meta_docker_container_image]
+        target_label: image
+      # Keep the container ID for debugging
+      - source_labels: [__meta_docker_container_id]
+        target_label: container_id
+
+    pipeline_stages:
+      # 1. Unwrap the Docker JSON envelope:  { "log": "{...pino json...}\n", "stream": "stdout", "time": "..." }
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            timestamp: time
+
+      # 2. Parse the inner Pino JSON log line
+      - json:
+          source: output
+          expressions:
+            level: level
+            msg: msg
+            correlationId: correlationId
+            service: service
+            err: err
+            pid: pid
+
+      # 3. Promote Pino level, service, and correlationId to Loki labels
+      #    (keep label cardinality low — don't label high-cardinality fields like correlationId)
+      - labels:
+          level:
+          service:
+          stream:
+
+      # 4. Parse the Pino ISO timestamp as the official log timestamp
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          fallback_formats:
+            - RFC3339
+
+      # 5. Use the inner "msg" field as the log line content for display
+      - output:
+          source: output
+
+      # 6. Drop trace-level health-check noise in production to reduce storage cost
+      #    (comment out if you want all traces in Loki)
+      - match:
+          selector: '{level="trace"}'
+          stages:
+            - drop:
+                drop_counter_reason: trace_level_dropped
+
+  # ── System logs (fallback) ───────────────────────────────────────────────────
   - job_name: system
     static_configs:
       - targets:
           - localhost
         labels:
           job: varlogs
-          __path__: /var/log/*.log
+          service: system
+          __path__: /var/log/syslog
 
-  - job_name: aura-vault
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+\s+\S+\s+\S+)\s+(?P<host>\S+)\s+(?P<process>[^:]+):\s+(?P<message>.*)$'
+      - labels:
+          host:
+          process:
+      - timestamp:
+          source: timestamp
+          format: "Jan _2 15:04:05"
+
+  # ── File-based fallback for non-Docker deployments ───────────────────────────
+  # Used when running the backend directly (not in Docker).
+  # Redirect Pino stdout to a file:  node dist/index.js >> /var/log/aura-vault/app.log
+  - job_name: aura-vault-file
     static_configs:
       - targets:
           - localhost
         labels:
-          job: aura-vault
-          service: aura-vault-protocol
+          job: aura-vault-file
+          service: aura-vault-backend
           __path__: /var/log/aura-vault/*.log
 
     pipeline_stages:
+      # Each line is a Pino JSON object
       - json:
           expressions:
             level: level
-            message: msg
-            timestamp: timestamp
+            msg: msg
+            correlationId: correlationId
+            service: service
+            time: time
+
       - labels:
           level:
+          service:
+
       - timestamp:
-          source: timestamp
-          format: RFC3339
+          source: time
+          format: RFC3339Nano
+          fallback_formats:
+            - RFC3339
+
+      - output:
+          source: msg

@@ -9,6 +9,7 @@
 import helmet from "helmet";
 import cors, { type CorsOptions } from "cors";
 import { type Application } from "express";
+import { logger } from "../logger.js";
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ function buildAllowedOrigins(): (string | RegExp)[] {
   const raw = process.env.CORS_ORIGIN ?? "";
   if (raw.trim() === "" || raw.trim() === "*") {
     if (process.env.NODE_ENV === "production") {
-      console.warn(
+      logger.warn(
         "[security] CORS_ORIGIN is not set in production — defaulting to deny all."
       );
       return [];
