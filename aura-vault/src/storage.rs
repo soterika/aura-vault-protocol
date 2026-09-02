@@ -1,4 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, Env, Vec};
+use crate::errors::VaultError;
 
 #[contracttype]
 pub enum DataKey {
@@ -68,7 +69,7 @@ pub enum DataKey {
     /// Minimum deposit amount in underlying token units.
     MinDeposit,
     // -----------------------------------------------------------------------
-    // Contract metadata (Issue #350)
+    // Contract metadata (Issue #350, Issue #347)
     // -----------------------------------------------------------------------
     /// Vault name (set at initialization).
     VaultName,
@@ -76,6 +77,24 @@ pub enum DataKey {
     VaultSymbol,
     /// Contract version integer (set at initialization).
     VaultVersion,
+    /// Vault share decimals (set at initialization, immutable). Issue #347.
+    Decimals,
+    // -----------------------------------------------------------------------
+    // Reentrancy guard (Issue #345)
+    // -----------------------------------------------------------------------
+    /// Reentrancy guard lock flag.
+    ReentrancyGuard,
+    // ---------------------------------------------------------------------------
+    // Multi-sig admin operations (Issue #375)
+    // ---------------------------------------------------------------------------
+    /// Ordered list of current multi-sig signers
+    MultiSigSigners,
+    /// M (threshold) — number of signatures required to execute an operation
+    MultiSigThreshold,
+    /// Monotonically increasing operation counter
+    MultiSigOpCount,
+    /// Per-signer vote record — prevents double-signing. Tuple: (op_id, signer).
+    MultiSigVote(u64, Address),
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -518,3 +537,103 @@ pub fn get_vault_version(env: &Env) -> u32 {
 pub fn set_vault_version(env: &Env, version: u32) {
     env.storage().instance().set(&DataKey::VaultVersion, &version);
 }
+
+// ---------------------------------------------------------------------------
+// Vault share decimals helpers (Issue #347)
+// ---------------------------------------------------------------------------
+
+pub fn get_decimals(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::Decimals).unwrap_or(7u32)
+}
+
+pub fn set_decimals(env: &Env, decimals: u32) {
+    env.storage().instance().set(&DataKey::Decimals, &decimals);
+}
+
+// ---------------------------------------------------------------------------
+// Reentrancy guard helpers (Issue #345)
+// ---------------------------------------------------------------------------
+
+pub fn is_reentrancy_locked(env: &Env) -> bool {
+    env.storage().instance().get(&DataKey::ReentrancyGuard).unwrap_or(false)
+}
+
+pub fn set_reentrancy_lock(env: &Env, locked: bool) {
+    env.storage().instance().set(&DataKey::ReentrancyGuard, &locked);
+}
+
+pub fn enter_reentrancy_guard(env: &Env) -> Result<(), VaultError> {
+    if is_reentrancy_locked(env) {
+        return Err(VaultError::Reentrancy);
+    }
+    set_reentrancy_lock(env, true);
+    Ok(())
+}
+
+pub fn exit_reentrancy_guard(env: &Env) {
+    set_reentrancy_lock(env, false);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-sig storage helpers (Issue #375)
+// ---------------------------------------------------------------------------
+
+/// Default threshold is 2-of-N (overridden after signer set grows).
+pub const DEFAULT_THRESHOLD: u32 = 2;
+/// Operations expire 72 hours after proposal.
+pub const MULTISIG_EXPIRY_SECS: u64 = 72 * 60 * 60;
+
+pub fn get_multisig_signers(env: &Env) -> Vec<Address> {
+    env.storage()
+        .instance()
+        .get(&DataKey::MultiSigSigners)
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_multisig_signers(env: &Env, signers: &Vec<Address>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultiSigSigners, signers);
+}
+
+pub fn get_multisig_threshold(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MultiSigThreshold)
+        .unwrap_or(DEFAULT_THRESHOLD)
+}
+
+pub fn set_multisig_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultiSigThreshold, &threshold);
+}
+
+pub fn get_multisig_op_count(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MultiSigOpCount)
+        .unwrap_or(0)
+}
+
+pub fn set_multisig_op_count(env: &Env, count: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultiSigOpCount, &count);
+}
+
+pub fn has_multisig_signed(env: &Env, op_id: u64, signer: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get::<DataKey, bool>(&DataKey::MultiSigVote(op_id, signer.clone()))
+        .unwrap_or(false)
+}
+
+pub fn record_multisig_vote(env: &Env, op_id: u64, signer: &Address) {
+    env.storage().instance().set(
+        &DataKey::MultiSigVote(op_id, signer.clone()),
+        &true,
+    );
+}
+
+

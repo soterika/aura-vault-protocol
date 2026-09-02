@@ -35,6 +35,28 @@ export interface VaultStatsResponse extends VaultStatsData {
 export const vaultRouter = Router();
 
 /**
+ * GET /api/v1/vault/decimals?vaultId=<id>
+ * Returns the share decimals precision (e.g. 7 for Stellar standard).
+ */
+vaultRouter.get("/decimals", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const vaultIdParam = req.query.vaultId as string | undefined;
+    const vault = await resolveVault(vaultIdParam).catch(() => null);
+    res.json(successResponse({
+      decimals: 7,
+      symbol: vault?.symbol ?? "AVS",
+      name: vault?.name ?? "Aura Vault Share",
+      ...(vault?.id && { vault_id: vault.id }),
+      ...(vault?.contract_id && { contract_id: vault.contract_id }),
+    }));
+  } catch (err) {
+    console.error("[vault/decimals]", err);
+    res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve vault decimals"));
+  }
+});
+
+
+/**
  * GET /api/v1/vault/stats?vaultId=<id>
  * Serves vault stats from cache when available, otherwise fetches live data.
  * When vaultId is omitted, the default vault is used (backwards compatible).

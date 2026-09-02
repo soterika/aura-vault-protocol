@@ -25,7 +25,7 @@ fn setup() -> (Env, AuraVaultClient<'static>, Address, Address) {
 
     // Empty signer list — governance not used in basic tests
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers);
+    vault.initialize(&admin, &token_address, &signers, &0_u32);
     // Zero fees so share arithmetic remains exact
     vault.set_fees(&admin, &0_u32, &0_u32);
 
@@ -48,7 +48,7 @@ fn setup_multisig() -> (Env, AuraVaultClient<'static>, std::vec::Vec<Address>, A
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
 
-    vault.initialize(&admin, &token_address, &signers_sdk);
+    vault.initialize(&admin, &token_address, &signers_sdk, &0_u32);
 
     (env, vault, signers_std, admin, token_address)
 }
@@ -685,7 +685,7 @@ fn setup_multisig_3of3() -> (Env, AuraVaultClient<'static>, std::vec::Vec<Addres
     let token_address = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
-    vault.initialize(&admin, &token_address, &signers_sdk);
+    vault.initialize(&admin, &token_address, &signers_sdk, &0_u32);
 
     (env, vault, signers_std, admin, token_address)
 }

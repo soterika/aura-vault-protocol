@@ -17,7 +17,6 @@
 /// Note: Soroban's deterministic, single-threaded execution model means "concurrent"
 /// calls are tested through arbitrarily interleaved sequential operations, which is
 /// the correct model for on-chain concurrency.
-#![cfg(test)]
 
 extern crate std;
 

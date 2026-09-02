@@ -41,11 +41,12 @@ pub trait AuraVaultTrait {
     ///   tokens are deposited into and withdrawn from the vault.
     /// - `signers` — Ordered list of addresses authorised to create and vote
     ///   on governance proposals. Must be non-empty.
+    /// - `decimals` — Vault share decimal precision (e.g. 7 for Stellar standard). Set at initialization and immutable thereafter.
     ///
     /// # Errors
     ///
     /// - [`VaultError::AlreadyInitialized`] — vault has already been initialised.
-    fn initialize(env: Env, admin: Address, underlying_token: Address, signers: Vec<Address>) -> Result<(), VaultError>;
+    fn initialize(env: Env, admin: Address, underlying_token: Address, signers: Vec<Address>, decimals: u32) -> Result<(), VaultError>;
 
     /// Deposit underlying tokens and receive proportional vault shares.
     ///
@@ -543,4 +544,7 @@ pub trait AuraVaultTrait {
 
     /// Returns the contract version integer. Read-only.
     fn version(env: Env) -> u32;
+
+    /// Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard). Read-only.
+    fn decimals(env: Env) -> u32;
 }
