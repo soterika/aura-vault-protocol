@@ -3,6 +3,7 @@
 extern crate std;
 
 use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
+use soroban_sdk::testutils::Ledger as _;
 use soroban_sdk::token::StellarAssetClient;
 
 use crate::{AuraVault, AuraVaultClient, VaultError};
@@ -25,7 +26,7 @@ fn setup() -> (Env, AuraVaultClient<'static>, Address, Address) {
 
     // Empty signer list — governance not used in basic tests
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     // Zero fees so share arithmetic remains exact
     vault.set_fees(&admin, &0_u32, &0_u32);
 
@@ -48,7 +49,7 @@ fn setup_multisig() -> (Env, AuraVaultClient<'static>, std::vec::Vec<Address>, A
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
 
-    vault.initialize(&admin, &token_address, &signers_sdk);
+    vault.initialize(&admin, &token_address, &signers_sdk, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
 
     (env, vault, signers_std, admin, token_address)
 }
@@ -65,7 +66,7 @@ fn mint(env: &Env, token: &Address, admin: &Address, recipient: &Address, amount
 fn test_double_init_returns_already_initialized() {
     let (env, vault, admin, token) = setup();
     let signers: Vec<Address> = Vec::new(&env);
-    let result = vault.try_initialize(&admin, &token, &signers);
+    let result = vault.try_initialize(&admin, &token, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     assert_eq!(result, Err(Ok(VaultError::AlreadyInitialized)));
 }
 
@@ -687,7 +688,7 @@ fn setup_multisig_3of3() -> (Env, AuraVaultClient<'static>, std::vec::Vec<Addres
     let token_address = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
-    vault.initialize(&admin, &token_address, &signers_sdk);
+    vault.initialize(&admin, &token_address, &signers_sdk, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
 
     (env, vault, signers_std, admin, token_address)
 }

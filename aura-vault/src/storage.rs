@@ -76,21 +76,20 @@ pub enum DataKey {
     VaultSymbol,
     /// Contract version integer (set at initialization).
     VaultVersion,
-
     // -----------------------------------------------------------------------
-    // Two-step admin transfer (Issue #353)
+    // AuraPriceOracle integration (Issue #348)
     // -----------------------------------------------------------------------
-    /// Proposed new admin address waiting for acceptance.
-    PendingAdmin,
-    /// Ledger timestamp after which the pending admin proposal expires (48 h).
-    PendingAdminExpiry,
-
+    /// Oracle contract address for underlying token USD price.
+    OracleAddress,
+    /// Maximum age (seconds) for an oracle price before it is treated as stale.
+    /// Default: ORACLE_DEFAULT_MAX_AGE_SECS (3600 s = 1 hour).
+    OracleMaxAge,
     // -----------------------------------------------------------------------
-    // Role-based access control (Issue #357)
+    // Price snapshots (Issue #352)
     // -----------------------------------------------------------------------
-    /// Per-address role bitmask (persistent storage).
-    /// ADMIN = 1, KEEPER = 2, GUARDIAN = 4.
-    RoleMask(Address),
+    /// Share-price snapshot stored after every harvest.
+    /// Key = ledger timestamp (u64), Value = share price in micro-USD (i128).
+    PriceSnapshot(u64),
 }
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
@@ -535,82 +534,131 @@ pub fn set_vault_version(env: &Env, version: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Two-step admin transfer helpers (Issue #353)
+// AuraPriceOracle helpers (Issue #348)
 // ---------------------------------------------------------------------------
 
-/// Pending admin address, if any.
-pub fn get_pending_admin(env: &Env) -> Option<Address> {
-    env.storage().instance().get(&DataKey::PendingAdmin)
+/// Oracle contract address for the underlying token USD price.
+pub fn get_oracle_address(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::OracleAddress)
 }
 
-/// Set the pending admin address.
-pub fn set_pending_admin(env: &Env, addr: &Address) {
-    env.storage().instance().set(&DataKey::PendingAdmin, addr);
+pub fn set_oracle_address(env: &Env, oracle: &Address) {
+    env.storage().instance().set(&DataKey::OracleAddress, oracle);
 }
 
-/// Clear the pending admin (cancel or after acceptance).
-pub fn clear_pending_admin(env: &Env) {
-    env.storage().instance().remove(&DataKey::PendingAdmin);
+/// Maximum price age in seconds before staleness rejection.
+/// Default: 3600 (1 hour) — matches ORACLE_DEFAULT_MAX_AGE_SECS.
+pub fn get_oracle_max_age(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::OracleMaxAge)
+        .unwrap_or(3_600)
 }
 
-/// Expiry timestamp for the pending admin proposal.
-pub fn get_pending_admin_expiry(env: &Env) -> u64 {
-    env.storage().instance().get(&DataKey::PendingAdminExpiry).unwrap_or(0)
-}
-
-/// Set the expiry timestamp for the pending admin proposal.
-pub fn set_pending_admin_expiry(env: &Env, expiry: u64) {
-    env.storage().instance().set(&DataKey::PendingAdminExpiry, &expiry);
-}
-
-/// Clear the pending admin expiry.
-pub fn clear_pending_admin_expiry(env: &Env) {
-    env.storage().instance().remove(&DataKey::PendingAdminExpiry);
+pub fn set_oracle_max_age(env: &Env, secs: u64) {
+    env.storage().instance().set(&DataKey::OracleMaxAge, &secs);
 }
 
 // ---------------------------------------------------------------------------
-// Role-based access control helpers (Issue #357)
+// Price snapshot helpers (Issue #352)
 // ---------------------------------------------------------------------------
 
-/// Role bitmask constants.
-pub const ROLE_ADMIN: u32    = 1;
-pub const ROLE_KEEPER: u32   = 2;
-pub const ROLE_GUARDIAN: u32 = 4;
+/// 90-day TTL constants for price snapshots.
+pub const SNAPSHOT_TTL_LEDGERS: u32 = DAY_IN_LEDGERS * 90;
+pub const SNAPSHOT_TTL_THRESHOLD: u32 = DAY_IN_LEDGERS * 7;
 
-/// 48-hour expiry window for pending admin proposals (in seconds).
-pub const PENDING_ADMIN_EXPIRY_SECS: u64 = 48 * 3600; // 172800
-
-/// Read the role bitmask for `addr`. Returns 0 if no roles are assigned.
-pub fn get_role_mask(env: &Env, addr: &Address) -> u32 {
+/// Store a share-price snapshot at the given timestamp.
+pub fn set_price_snapshot(env: &Env, timestamp: u64, price: i128) {
+    let key = DataKey::PriceSnapshot(timestamp);
+    env.storage().persistent().set(&key, &price);
     env.storage()
         .persistent()
-        .get(&DataKey::RoleMask(addr.clone()))
+        .extend_ttl(&key, SNAPSHOT_TTL_THRESHOLD, SNAPSHOT_TTL_LEDGERS);
+}
+
+/// Retrieve a share-price snapshot for a given timestamp.
+pub fn get_price_snapshot(env: &Env, timestamp: u64) -> Option<i128> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PriceSnapshot(timestamp))
+}
+
+// ---------------------------------------------------------------------------
+// Multi-sig governance helpers (Issue #375)
+// ---------------------------------------------------------------------------
+
+/// Expiry duration for multi-sig operations (72 hours in seconds).
+pub const MULTISIG_EXPIRY_SECS: u64 = 72 * 3_600;
+
+/// Keys for multi-sig governance data (stored in instance storage).
+#[contracttype]
+pub enum MultisigStorageKey {
+    /// Ordered list of authorized governance signers.
+    Signers,
+    /// Required number of signatures (M of N).
+    Threshold,
+    /// Monotonically increasing operation counter.
+    OpCount,
+    /// Per-operation vote record: (op_id, signer) → bool
+    Voted(u64, soroban_sdk::Address),
+}
+
+/// Get the current list of multisig signers.
+pub fn get_multisig_signers(env: &Env) -> soroban_sdk::Vec<soroban_sdk::Address> {
+    env.storage()
+        .instance()
+        .get(&MultisigStorageKey::Signers)
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+/// Set the multisig signer list.
+pub fn set_multisig_signers(env: &Env, signers: &soroban_sdk::Vec<soroban_sdk::Address>) {
+    env.storage()
+        .instance()
+        .set(&MultisigStorageKey::Signers, signers);
+}
+
+/// Get the signature threshold (M).
+pub fn get_multisig_threshold(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&MultisigStorageKey::Threshold)
+        .unwrap_or(1)
+}
+
+/// Set the signature threshold.
+pub fn set_multisig_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&MultisigStorageKey::Threshold, &threshold);
+}
+
+/// Get the current operation count (used to assign new IDs).
+pub fn get_multisig_op_count(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&MultisigStorageKey::OpCount)
         .unwrap_or(0)
 }
 
-/// Write the role bitmask for `addr`.
-pub fn set_role_mask(env: &Env, addr: &Address, mask: u32) {
+/// Update the operation count.
+pub fn set_multisig_op_count(env: &Env, count: u64) {
     env.storage()
-        .persistent()
-        .set(&DataKey::RoleMask(addr.clone()), &mask);
-    let key = DataKey::RoleMask(addr.clone());
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        .instance()
+        .set(&MultisigStorageKey::OpCount, &count);
 }
 
-/// Return `true` if `addr` holds **all** of the bits in `required_mask`.
-pub fn has_role(env: &Env, addr: &Address, required_mask: u32) -> bool {
-    let mask = get_role_mask(env, addr);
-    (mask & required_mask) == required_mask
+/// Check if a signer has already voted on an operation.
+pub fn has_multisig_signed(env: &Env, op_id: u64, signer: &soroban_sdk::Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&MultisigStorageKey::Voted(op_id, signer.clone()))
+        .unwrap_or(false)
 }
 
-/// TTL bump for a role-mask persistent entry (if it exists).
-pub fn bump_role_ttl(env: &Env, addr: &Address) {
-    let key = DataKey::RoleMask(addr.clone());
-    if env.storage().persistent().has(&key) {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
-    }
+/// Record a signer's vote for an operation.
+pub fn record_multisig_vote(env: &Env, op_id: u64, signer: &soroban_sdk::Address) {
+    env.storage()
+        .instance()
+        .set(&MultisigStorageKey::Voted(op_id, signer.clone()), &true);
 }

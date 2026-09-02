@@ -265,94 +265,80 @@ pub enum VaultError {
     NotWhitelisted         = 28,
     /// Deposit amount is below the configured minimum deposit threshold.
     BelowMinDeposit        = 29,
+    /// Oracle contract call failed or returned an unexpected error; the vault
+    /// has fallen back to returning 0 for the USD value.  This error is only
+    /// used in events, not returned from `total_assets_usd`.
+    OracleUnavailable      = 30,
+    /// Share-price movement exceeded the configured circuit-breaker threshold.
+    /// The vault auto-pauses when this occurs.
+    CircuitBreakerTripped  = 31,
 
     // -----------------------------------------------------------------------
-    // 30: Circuit-breaker error (alias; code 24 is TransferFailed in the
-    // existing mapping — this reserves the correct slot for the circuit
-    // breaker that is already referenced in lib.rs)
+    // 32–38: Multi-sig governance errors (Issue #375)
     // -----------------------------------------------------------------------
-    /// Share-price movement exceeded the configured circuit-breaker limit.
-    /// The vault has been automatically paused. Admin must call `unpause()`
-    /// after reviewing the price movement.
-    CircuitBreakerTripped  = 30,
 
-    // -----------------------------------------------------------------------
-    // 31–33: Two-step admin transfer (Issue #353)
-    // -----------------------------------------------------------------------
-    /// There is no pending admin proposal to accept or cancel.
-    ///
-    /// **Trigger:** `accept_admin()` or `cancel_admin()` called when no
-    /// pending admin transfer has been proposed.
-    ///
-    /// **Resolution:** Current admin must call `propose_admin(new_admin)`
-    /// before a transfer can be accepted or cancelled.
-    NoPendingAdmin         = 31,
-
-    /// The pending admin proposal has expired (older than 48 hours).
-    ///
-    /// **Trigger:** `accept_admin()` called after the 48-hour acceptance
-    /// window has elapsed.
-    ///
-    /// **Resolution:** Current admin must call `propose_admin(new_admin)`
-    /// again to create a fresh proposal.
-    PendingAdminExpired    = 32,
-
-    // -----------------------------------------------------------------------
-    // 33–35: Role-based access control (Issue #357)
-    // -----------------------------------------------------------------------
-    /// The caller does not hold the required role for this operation.
-    ///
-    /// **Trigger:** `harvest` called by an address that has neither the
-    /// KEEPER nor ADMIN role; or `pause`/`unpause` called by an address
-    /// that has neither the GUARDIAN nor ADMIN role.
-    ///
-    /// **Resolution:** An ADMIN must call `grant_role(role, address)` to
-    /// assign the appropriate role, or the caller must use the correct
-    /// privileged account.
-    Unauthorized           = 33,
+    /// Caller is not in the registered multisig signer set.
+    NotASigner             = 32,
+    /// The referenced multisig operation does not exist.
+    OperationNotFound      = 33,
+    /// The multisig operation has already been executed.
+    OperationAlreadyExecuted = 34,
+    /// The multisig operation's validity period has passed.
+    OperationExpired       = 35,
+    /// Signer has already signed this multisig operation.
+    OperationAlreadySigned = 36,
+    /// Not enough signatures to execute the multisig operation.
+    ThresholdNotMet        = 37,
+    /// Proposed threshold is zero or exceeds the signer count.
+    InvalidThreshold       = 38,
 }
 
 impl VaultError {
-    /// Return a human-readable English description of this error variant.
+    /// Return a short human-readable English description for this error code.
     ///
-    /// The returned `&'static str` is stable across releases so that
-    /// off-chain indexers and wallet UIs can display it without a separate
-    /// lookup table.
+    /// Used by [`AuraVault::get_vault_error_message`] to expose descriptions
+    /// on-chain so wallet and explorer UIs can display them without a
+    /// separate message table.
     pub fn message(self) -> &'static str {
         match self {
-            VaultError::NotInitialized           => "Vault has not been initialised yet.",
-            VaultError::AlreadyInitialized       => "Vault has already been initialised.",
-            VaultError::InsufficientShares       => "Caller does not hold enough shares to withdraw.",
-            VaultError::InsufficientUnderlying   => "Vault cannot cover the redemption amount.",
-            VaultError::ZeroAmount               => "Amount must be greater than zero.",
-            VaultError::MathOverflow             => "Arithmetic overflow in share formula.",
-            VaultError::InvalidAddress           => "Address is not valid or not on the whitelist.",
-            VaultError::ZeroShares               => "Harvest not allowed when total shares is zero.",
-            VaultError::UpgradeUnauthorized      => "Caller is not the vault admin.",
-            VaultError::StorageLayoutMismatch    => "Storage layout version mismatch — migration required.",
-            VaultError::VaultPaused              => "Vault is paused — all mutating operations are halted.",
-            VaultError::BalanceMismatch          => "Flash-loan guard: actual balance differs from tracked state.",
-            VaultError::TimelockNotExpired       => "Governance timelock has not yet elapsed.",
-            VaultError::NotApproved              => "Governance proposal has not reached approval threshold.",
-            VaultError::AlreadyVoted             => "Signer has already voted on this proposal.",
-            VaultError::TvlCapExceeded           => "Deposit would push total assets above the TVL cap.",
-            VaultError::YieldTooSmall            => "Yield amount is too small to distribute.",
-            VaultError::DistributionAccuracyError => "Yield distribution accuracy check failed.",
-            VaultError::HarvestCooldown          => "Harvest attempted before the cooldown period has elapsed.",
-            VaultError::WithdrawalQueued         => "Withdrawal is queued; call claim_queued_withdrawal after unbonding.",
-            VaultError::QueueEntryNotFound       => "Withdrawal queue entry not found or already claimed.",
-            VaultError::QueueUnbondingPending    => "Unbonding period has not elapsed yet.",
-            VaultError::InvalidWithdrawalFee     => "Withdrawal fee exceeds the maximum allowed (5%).",
-            VaultError::TransferFailed           => "Token transfer did not move the expected amount.",
-            VaultError::OraclePriceZero          => "Oracle price is zero — feed may be broken.",
-            VaultError::OraclePriceTooHigh       => "Oracle price exceeds sanity cap — possible manipulation.",
-            VaultError::OraclePriceStale         => "Oracle price is stale — data is older than the max age.",
-            VaultError::NotWhitelisted           => "Address is not on the deposit whitelist.",
-            VaultError::BelowMinDeposit          => "Deposit amount is below the configured minimum.",
-            VaultError::CircuitBreakerTripped    => "Share-price movement exceeded limit; vault auto-paused.",
-            VaultError::NoPendingAdmin           => "No pending admin proposal exists.",
-            VaultError::PendingAdminExpired      => "Pending admin proposal has expired (48-hour window elapsed).",
-            VaultError::Unauthorized             => "Caller does not hold the required role for this operation.",
+            VaultError::NotInitialized            => "Vault not initialized",
+            VaultError::AlreadyInitialized        => "Vault already initialized",
+            VaultError::InsufficientShares        => "Insufficient share balance",
+            VaultError::InsufficientUnderlying    => "Insufficient underlying balance",
+            VaultError::ZeroAmount                => "Amount must be greater than zero",
+            VaultError::MathOverflow              => "Arithmetic overflow",
+            VaultError::InvalidAddress            => "Invalid or unwhitelisted address",
+            VaultError::ZeroShares                => "No shares outstanding",
+            VaultError::UpgradeUnauthorized       => "Caller is not the admin",
+            VaultError::StorageLayoutMismatch     => "Storage layout version mismatch",
+            VaultError::VaultPaused               => "Vault is paused",
+            VaultError::BalanceMismatch           => "Balance mismatch (flash-loan guard)",
+            VaultError::TimelockNotExpired        => "Governance timelock not expired",
+            VaultError::NotApproved               => "Proposal not approved",
+            VaultError::AlreadyVoted              => "Already voted on this proposal",
+            VaultError::TvlCapExceeded            => "TVL cap exceeded",
+            VaultError::YieldTooSmall             => "Yield too small to distribute",
+            VaultError::DistributionAccuracyError => "Distribution accuracy check failed",
+            VaultError::HarvestCooldown           => "Harvest cooldown not elapsed",
+            VaultError::WithdrawalQueued          => "Withdrawal queued; await unbonding",
+            VaultError::QueueEntryNotFound        => "Queue entry not found",
+            VaultError::QueueUnbondingPending     => "Unbonding period not elapsed",
+            VaultError::InvalidWithdrawalFee      => "Withdrawal fee exceeds maximum",
+            VaultError::TransferFailed            => "Token transfer assertion failed",
+            VaultError::OraclePriceZero           => "Oracle price is zero",
+            VaultError::OraclePriceTooHigh        => "Oracle price exceeds sanity cap",
+            VaultError::OraclePriceStale          => "Oracle price is stale",
+            VaultError::NotWhitelisted            => "Address not on deposit whitelist",
+            VaultError::BelowMinDeposit           => "Deposit below minimum amount",
+            VaultError::OracleUnavailable         => "Oracle unavailable; returning fallback value",
+            VaultError::CircuitBreakerTripped     => "Circuit breaker tripped: share price moved too much",
+            VaultError::NotASigner                => "Caller is not a governance signer",
+            VaultError::OperationNotFound         => "Multisig operation not found",
+            VaultError::OperationAlreadyExecuted  => "Multisig operation already executed",
+            VaultError::OperationExpired          => "Multisig operation has expired",
+            VaultError::OperationAlreadySigned    => "Signer has already signed this operation",
+            VaultError::ThresholdNotMet           => "Signature threshold not met",
+            VaultError::InvalidThreshold          => "Invalid signature threshold",
         }
     }
 }

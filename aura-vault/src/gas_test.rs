@@ -44,7 +44,7 @@ fn setup() -> (Env, AuraVaultClient<'static>, Address, Address) {
     let vault = AuraVaultClient::new(&env, &vault_address);
 
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers, &0_u32);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     (env, vault, admin, token_address)
@@ -103,7 +103,7 @@ fn gas_initialize() {
     let signers: Vec<Address> = Vec::new(&env);
 
     measure(&env, "initialize", || {
-        vault.initialize(&admin, &token, &signers, &0_u32);
+        vault.initialize(&admin, &token, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     });
 }
 

@@ -37,7 +37,7 @@ fn setup_with_precision(
     let vault = AuraVaultClient::new(&env, &vault_address);
 
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers, &precision);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     (env, vault, admin, token_address)
@@ -149,7 +149,7 @@ fn test_382_deposit_requires_caller_auth() {
     // Initialise using mock_all_auths temporarily
     env.mock_all_auths();
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers, &0_u32);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     // Mint tokens to `user`
@@ -194,7 +194,7 @@ fn test_382_withdraw_requires_caller_auth() {
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers, &0_u32);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     StellarAssetClient::new(&env, &token_address).mint(&user, &1_000_000);
@@ -255,7 +255,7 @@ fn test_382_harvest_requires_caller_auth() {
     let vault_address = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_address);
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers, &0_u32);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     // Seed the vault

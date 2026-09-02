@@ -32,7 +32,7 @@ fn setup() -> (Env, AuraVaultClient<'static>, Address, Address) {
     let vault = AuraVaultClient::new(&env, &vault_address);
 
     let signers: Vec<Address> = Vec::new(&env);
-    vault.initialize(&admin, &token_address, &signers);
+    vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
     // Zero fees so arithmetic is exact
     vault.set_fees(&admin, &0_u32, &0_u32);
 
