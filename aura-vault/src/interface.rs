@@ -15,14 +15,19 @@ use crate::errors::VaultError;
 ///
 /// | Function | Event topic | Event data |
 /// |---|---|---|
-/// | `deposit` | `("deposit", caller, amount)` | `(new_shares, total_shares, total_deposited)` |
-/// | `withdraw` | `("withdraw", caller, shares)` | `(redeem_amount, total_shares, total_deposited)` |
+/// | `deposit` | `("deposit", caller, amount)` | `(new_shares, total_shares, total_deposited, share_price, timestamp)` |
+/// | `withdraw` | `("withdraw", caller, shares)` | `(redeem_amount, total_shares, total_deposited, share_price, timestamp)` |
 /// | `harvest` | `("harvest", caller, yield_amount)` | `(yield_after_fee, fee_amount, total_deposited)` |
 /// | `harvest_token` | `("harvest_token", caller, alt_token)` | `(yield_amount, net_underlying, fee_amount)` |
 /// | `pause` | `("paused",)` | `()` |
 /// | `unpause` | `("unpaused",)` | `()` |
 /// | `upgrade` | `("upgrade", admin)` | `(old_version, new_version)` |
 /// | `withdraw_fees` | `("fees_withdrawn", admin)` | `(fees, treasury)` |
+/// | `propose_admin` | `("AdminProposed", admin)` | `(new_admin, expiry_timestamp)` |
+/// | `accept_admin` | `("AdminTransferred", old_admin)` | `(new_admin,)` |
+/// | `cancel_admin` | `("AdminCancelled", admin)` | `()` |
+/// | `grant_role` | `("RoleGranted", admin)` | `(role, addr)` |
+/// | `revoke_role` | `("RoleRevoked", admin)` | `(role, addr)` |
 /// | Any mismatch | `("suspicious",)` | `("balance_mismatch", actual, tracked)` |
 #[allow(dead_code)]
 pub trait AuraVaultTrait {
@@ -545,6 +550,90 @@ pub trait AuraVaultTrait {
     fn version(env: Env) -> u32;
 
     // -----------------------------------------------------------------------
+    // Two-step admin transfer (Issue #353)
+    // -----------------------------------------------------------------------
+    // Deposit event updated (Issue #354):
+    //   ("deposit", caller, amount) → (new_shares, total_shares, total_deposited, share_price, timestamp)
+    // Withdraw event updated (Issue #354):
+    //   ("withdraw", caller, shares) → (redeem_amount, total_shares, total_deposited, share_price, timestamp)
+    // share_price = total_deposited * 10^7 / total_shares  (7 decimal precision)
+    //
+    // Admin transfer events:
+    //   propose_admin  → ("AdminProposed",   current_admin) → (new_admin, expiry_timestamp)
+    //   accept_admin   → ("AdminTransferred", old_admin)    → (new_admin,)
+    //   cancel_admin   → ("AdminCancelled",  current_admin) → ()
+
+    /// Propose a new admin address (current admin only).
+    ///
+    /// Sets a pending admin that must call [`accept_admin`] within 48 hours.
+    /// Calling this again while a proposal is open overwrites the previous one.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`]
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    fn propose_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), VaultError>;
+
+    /// Accept a pending admin transfer (pending admin only).
+    ///
+    /// Must be called by the pending admin within 48 hours of the proposal.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`]
+    /// - [`VaultError::NoPendingAdmin`] — no pending proposal exists.
+    /// - [`VaultError::PendingAdminExpired`] — acceptance window has elapsed.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the pending admin.
+    fn accept_admin(env: Env, new_admin: Address) -> Result<(), VaultError>;
+
+    /// Cancel a pending admin transfer (current admin only).
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`]
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the current admin.
+    /// - [`VaultError::NoPendingAdmin`] — no pending proposal to cancel.
+    fn cancel_admin(env: Env, current_admin: Address) -> Result<(), VaultError>;
+
+    /// Return the pending admin address, if any. Read-only.
+    fn pending_admin(env: Env) -> Option<Address>;
+
+    // -----------------------------------------------------------------------
+    // Role-based access control (Issue #357)
+    // -----------------------------------------------------------------------
+    // Role constants (bitmask): ADMIN = 1, KEEPER = 2, GUARDIAN = 4
+    //
+    // harvest  → requires KEEPER (2) or ADMIN (1) role
+    // pause    → requires GUARDIAN (4) or ADMIN (1) role
+    // unpause  → requires GUARDIAN (4) or ADMIN (1) role
+    //
+    // RBAC events:
+    //   grant_role  → ("RoleGranted",  admin) → (role, addr)
+    //   revoke_role → ("RoleRevoked",  admin) → (role, addr)
+
+    /// Grant a role to an address. Admin-only.
+    ///
+    /// `role` is a bitmask: `1` = ADMIN, `2` = KEEPER, `4` = GUARDIAN.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`]
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    fn grant_role(env: Env, admin: Address, role: u32, addr: Address) -> Result<(), VaultError>;
+
+    /// Revoke a role from an address. Admin-only.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`]
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    fn revoke_role(env: Env, admin: Address, role: u32, addr: Address) -> Result<(), VaultError>;
+
+    /// Return the role bitmask for an address. Read-only.
+    fn get_roles(env: Env, addr: Address) -> u32;
+
+    /// Return `true` if `addr` holds all bits in `role_mask`. Read-only.
+    fn has_role_query(env: Env, addr: Address, role_mask: u32) -> bool;
     // Total supply — Issue #346
     // -----------------------------------------------------------------------
 
@@ -630,3 +719,4 @@ pub trait AuraVaultTrait {
     /// Read-only; no authorization required.
     fn list_price_snapshots(env: Env, timestamps: Vec<u64>, from: u64, to: u64) -> Vec<(u64, i128)>;
 }
+

@@ -290,6 +290,8 @@ impl AuraVault {
         set_vault_name(&env, &name);
         set_vault_symbol(&env, &symbol);
         set_vault_version(&env, 1);
+        // Issue #357: grant ADMIN role to the deployer at initialization
+        set_role_mask(&env, &admin, ROLE_ADMIN);
         initialize_governance(&env, signers)?;
         bump_instance(&env);
         Ok(())
@@ -430,10 +432,20 @@ impl AuraVault {
         set_total_deposited(&env, new_total_deposited);
 
         // Event: topics = (event_name, caller, amount) — indexed for efficient filtering.
-        // data = (new_shares, new_total_shares, new_total_deposited) — contextual payload.
+        // data = (new_shares, new_total_shares, new_total_deposited, share_price, timestamp)
+        // share_price = total_deposited * 10^7 / total_shares  (7 decimal precision, Issue #354)
+        let share_price: i128 = if new_total_shares > 0 {
+            new_total_deposited
+                .checked_mul(10_000_000)
+                .and_then(|v| v.checked_div(new_total_shares))
+                .unwrap_or(0)
+        } else {
+            10_000_000 // 1:1 on empty vault
+        };
+        let timestamp = env.ledger().timestamp();
         env.events().publish(
             (Symbol::new(&env, "deposit"), caller.clone(), amount),
-            (new_shares, new_total_shares, new_total_deposited),
+            (new_shares, new_total_shares, new_total_deposited, share_price, timestamp),
         );
 
         bump_persistent(&env, &caller);
@@ -603,9 +615,20 @@ impl AuraVault {
         assert_outgoing_transfer(&token, &vault_addr, pre_withdraw_balance, redeem_amount)?;
 
         // Event: topics = (event_name, caller, shares) — indexed for efficient filtering.
+        // data = (redeem_amount, new_total_shares, new_total_deposited, share_price, timestamp)
+        // share_price = total_deposited * 10^7 / total_shares  (7 decimal precision, Issue #354)
+        let share_price: i128 = if new_total_shares > 0 {
+            new_total_deposited
+                .checked_mul(10_000_000)
+                .and_then(|v| v.checked_div(new_total_shares))
+                .unwrap_or(0)
+        } else {
+            0 // vault is empty after full withdrawal
+        };
+        let timestamp = env.ledger().timestamp();
         env.events().publish(
             (Symbol::new(&env, "withdraw"), caller.clone(), shares),
-            (redeem_amount, new_total_shares, new_total_deposited),
+            (redeem_amount, new_total_shares, new_total_deposited, share_price, timestamp),
         );
 
         Ok(redeem_amount)
@@ -893,6 +916,11 @@ impl AuraVault {
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
+        }
+
+        // Issue #357: harvest requires KEEPER or ADMIN role
+        if !has_role(&env, &caller, ROLE_KEEPER) && !has_role(&env, &caller, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
         }
 
         let total_shares = get_total_shares(&env);
@@ -1676,11 +1704,12 @@ impl AuraVault {
     ///
     /// [`unpause`]: AuraVault::unpause
     pub fn pause(env: Env, admin: Address) -> Result<(), VaultError> {
-        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
-            return Err(VaultError::UpgradeUnauthorized);
-        }
+        get_admin(&env).ok_or(VaultError::NotInitialized)?;
         admin.require_auth();
+        // Issue #357: pause requires GUARDIAN or ADMIN role
+        if !has_role(&env, &admin, ROLE_GUARDIAN) && !has_role(&env, &admin, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
+        }
         set_paused(&env, true);
         env.events().publish((Symbol::new(&env, "paused"),), ());
         bump_instance(&env);
@@ -1689,26 +1718,27 @@ impl AuraVault {
 
     /// Resume vault operations after a [`pause`].
     ///
-    /// Admin-only. Emits an `unpaused` event. Safe to call when already
-    /// unpaused (idempotent).
+    /// Requires GUARDIAN or ADMIN role. Emits an `unpaused` event.
+    /// Safe to call when already unpaused (idempotent).
     ///
     /// # Parameters
     ///
     /// - `env` — Soroban execution environment.
-    /// - `admin` — Must match the stored admin address and authorise this call.
+    /// - `admin` — Must hold GUARDIAN or ADMIN role and authorise this call.
     ///
     /// # Errors
     ///
     /// - [`VaultError::NotInitialized`] — vault not yet initialised.
-    /// - [`VaultError::UpgradeUnauthorized`] — `admin` does not match stored admin.
+    /// - [`VaultError::Unauthorized`] — caller does not hold GUARDIAN or ADMIN role.
     ///
     /// [`pause`]: AuraVault::pause
     pub fn unpause(env: Env, admin: Address) -> Result<(), VaultError> {
-        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
-            return Err(VaultError::UpgradeUnauthorized);
-        }
+        get_admin(&env).ok_or(VaultError::NotInitialized)?;
         admin.require_auth();
+        // Issue #357: unpause requires GUARDIAN or ADMIN role
+        if !has_role(&env, &admin, ROLE_GUARDIAN) && !has_role(&env, &admin, ROLE_ADMIN) {
+            return Err(VaultError::Unauthorized);
+        }
         set_paused(&env, false);
         env.events().publish((Symbol::new(&env, "unpaused"),), ());
         bump_instance(&env);

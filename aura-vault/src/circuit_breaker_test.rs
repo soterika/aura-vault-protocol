@@ -44,6 +44,11 @@ mod circuit_breaker_tests {
         StellarAssetClient::new(env, token).mint(to, &amount);
     }
 
+    /// Grant KEEPER role (bitmask 2) to an address — required by Issue #357.
+    fn grant_keeper(vault: &AuraVaultClient, admin: &Address, keeper: &Address) {
+        vault.grant_role(admin, &2_u32, keeper);
+    }
+
     /// Seed the vault with one depositor so harvest doesn't fail with ZeroShares.
     /// Returns the seeded amount (= total_assets after seeding).
     fn seed_vault(
@@ -106,6 +111,7 @@ mod circuit_breaker_tests {
 
         // Inject yield equal to full TVL — 100% price movement
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, seed);
         vault.harvest(&keeper, &seed); // must not panic / error
         assert_eq!(vault.total_assets(), seed * 2);
@@ -129,6 +135,7 @@ mod circuit_breaker_tests {
         // delta * 10_000 == seed * 2000  → NOT strictly greater → should pass
         let yield_exact = seed * 2000 / 10_000; // = 200_000
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_exact);
         vault.harvest(&keeper, &yield_exact); // must succeed
         assert!(!vault.is_paused());
@@ -147,6 +154,7 @@ mod circuit_breaker_tests {
         // 10 % yield — well below limit
         let yield_10pct = seed / 10; // 100_000
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_10pct);
         vault.harvest(&keeper, &yield_10pct);
         assert!(!vault.is_paused());
@@ -169,6 +177,7 @@ mod circuit_breaker_tests {
         // 21 % yield — one basis point over the limit
         let yield_21pct = seed * 21 / 100; // 210_000
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_21pct);
 
         let result = vault.try_harvest(&keeper, &yield_21pct);
@@ -185,6 +194,7 @@ mod circuit_breaker_tests {
         vault.set_price_movement_limit(&admin, &500_u32);
 
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, seed * 10);
         let result = vault.try_harvest(&keeper, &(seed * 10));
         assert_eq!(result, Err(Ok(VaultError::CircuitBreakerTripped)));
@@ -204,6 +214,7 @@ mod circuit_breaker_tests {
 
         let yield_21pct = seed * 21 / 100;
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_21pct);
 
         // Trip the breaker
@@ -226,6 +237,7 @@ mod circuit_breaker_tests {
 
         // Trip the breaker
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, seed);
         let _ = vault.try_harvest(&keeper, &(seed * 21 / 100));
 
@@ -244,6 +256,7 @@ mod circuit_breaker_tests {
         vault.set_price_movement_limit(&admin, &2000_u32);
 
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, seed);
         let _ = vault.try_harvest(&keeper, &(seed * 21 / 100));
 
@@ -267,6 +280,7 @@ mod circuit_breaker_tests {
 
         // Trip the breaker
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, seed);
         let _ = vault.try_harvest(&keeper, &(seed * 21 / 100));
         assert!(vault.is_paused());
@@ -317,6 +331,7 @@ mod circuit_breaker_tests {
         // 11 % — just over limit
         let yield_over = seed * 11 / 100; // 110_000
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_over);
         let result = vault.try_harvest(&keeper, &yield_over);
         assert_eq!(result, Err(Ok(VaultError::CircuitBreakerTripped)));
@@ -347,6 +362,7 @@ mod circuit_breaker_tests {
 
         let yield_21pct = seed * 21 / 100;
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_21pct);
 
         let assets_before = vault.total_assets();
@@ -372,6 +388,7 @@ mod circuit_breaker_tests {
 
         let yield_30pct = seed * 30 / 100;
         let keeper = Address::generate(&env);
+        grant_keeper(&vault, &admin, &keeper); // Issue #357
         mint(&env, &token, &admin, &keeper, yield_30pct * 2);
 
         // Harvest at 30 % — below 50 % limit → succeeds

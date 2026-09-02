@@ -123,6 +123,8 @@ mod security_attacks {
         vault.deposit(&seeder, &1);
 
         // Inflate share price via legitimate harvest (1 share now worth 1e9 + 1 tokens).
+        // Issue #357: seeder must hold KEEPER role to harvest
+        vault.grant_role(&admin, &2_u32, &seeder);
         mint(&env, &token, &admin, &seeder, 1_000_000_000);
         vault.harvest(&seeder, &1_000_000_000);
 
