@@ -265,4 +265,80 @@ pub enum VaultError {
     NotWhitelisted         = 28,
     /// Deposit amount is below the configured minimum deposit threshold.
     BelowMinDeposit        = 29,
+    /// Oracle contract call failed or returned an unexpected error; the vault
+    /// has fallen back to returning 0 for the USD value.  This error is only
+    /// used in events, not returned from `total_assets_usd`.
+    OracleUnavailable      = 30,
+    /// Share-price movement exceeded the configured circuit-breaker threshold.
+    /// The vault auto-pauses when this occurs.
+    CircuitBreakerTripped  = 31,
+
+    // -----------------------------------------------------------------------
+    // 32–38: Multi-sig governance errors (Issue #375)
+    // -----------------------------------------------------------------------
+
+    /// Caller is not in the registered multisig signer set.
+    NotASigner             = 32,
+    /// The referenced multisig operation does not exist.
+    OperationNotFound      = 33,
+    /// The multisig operation has already been executed.
+    OperationAlreadyExecuted = 34,
+    /// The multisig operation's validity period has passed.
+    OperationExpired       = 35,
+    /// Signer has already signed this multisig operation.
+    OperationAlreadySigned = 36,
+    /// Not enough signatures to execute the multisig operation.
+    ThresholdNotMet        = 37,
+    /// Proposed threshold is zero or exceeds the signer count.
+    InvalidThreshold       = 38,
+}
+
+impl VaultError {
+    /// Return a short human-readable English description for this error code.
+    ///
+    /// Used by [`AuraVault::get_vault_error_message`] to expose descriptions
+    /// on-chain so wallet and explorer UIs can display them without a
+    /// separate message table.
+    pub fn message(self) -> &'static str {
+        match self {
+            VaultError::NotInitialized            => "Vault not initialized",
+            VaultError::AlreadyInitialized        => "Vault already initialized",
+            VaultError::InsufficientShares        => "Insufficient share balance",
+            VaultError::InsufficientUnderlying    => "Insufficient underlying balance",
+            VaultError::ZeroAmount                => "Amount must be greater than zero",
+            VaultError::MathOverflow              => "Arithmetic overflow",
+            VaultError::InvalidAddress            => "Invalid or unwhitelisted address",
+            VaultError::ZeroShares                => "No shares outstanding",
+            VaultError::UpgradeUnauthorized       => "Caller is not the admin",
+            VaultError::StorageLayoutMismatch     => "Storage layout version mismatch",
+            VaultError::VaultPaused               => "Vault is paused",
+            VaultError::BalanceMismatch           => "Balance mismatch (flash-loan guard)",
+            VaultError::TimelockNotExpired        => "Governance timelock not expired",
+            VaultError::NotApproved               => "Proposal not approved",
+            VaultError::AlreadyVoted              => "Already voted on this proposal",
+            VaultError::TvlCapExceeded            => "TVL cap exceeded",
+            VaultError::YieldTooSmall             => "Yield too small to distribute",
+            VaultError::DistributionAccuracyError => "Distribution accuracy check failed",
+            VaultError::HarvestCooldown           => "Harvest cooldown not elapsed",
+            VaultError::WithdrawalQueued          => "Withdrawal queued; await unbonding",
+            VaultError::QueueEntryNotFound        => "Queue entry not found",
+            VaultError::QueueUnbondingPending     => "Unbonding period not elapsed",
+            VaultError::InvalidWithdrawalFee      => "Withdrawal fee exceeds maximum",
+            VaultError::TransferFailed            => "Token transfer assertion failed",
+            VaultError::OraclePriceZero           => "Oracle price is zero",
+            VaultError::OraclePriceTooHigh        => "Oracle price exceeds sanity cap",
+            VaultError::OraclePriceStale          => "Oracle price is stale",
+            VaultError::NotWhitelisted            => "Address not on deposit whitelist",
+            VaultError::BelowMinDeposit           => "Deposit below minimum amount",
+            VaultError::OracleUnavailable         => "Oracle unavailable; returning fallback value",
+            VaultError::CircuitBreakerTripped     => "Circuit breaker tripped: share price moved too much",
+            VaultError::NotASigner                => "Caller is not a governance signer",
+            VaultError::OperationNotFound         => "Multisig operation not found",
+            VaultError::OperationAlreadyExecuted  => "Multisig operation already executed",
+            VaultError::OperationExpired          => "Multisig operation has expired",
+            VaultError::OperationAlreadySigned    => "Signer has already signed this operation",
+            VaultError::ThresholdNotMet           => "Signature threshold not met",
+            VaultError::InvalidThreshold          => "Invalid signature threshold",
+        }
+    }
 }
