@@ -5,6 +5,7 @@ export const NS = {
   AUTH_BLACKLIST: "auth:blacklist",
   AUTH_REFRESH: "auth:refresh",
   AUTH_SESSIONS: "auth:sessions",
+  AUTH_SESSIONS_TOKENS: "auth:sessions:tokens", // per-session refresh token tracking for bulk logout
   API: "api",
   GAS_PRICE: "gas:price",
   GAS_HISTORY: "gas:history",
@@ -24,6 +25,8 @@ export const NS = {
   // Yield worker
   YIELD_STATS: "yield:stats",
   YIELD_HISTORY: "yield:history",
+  // Vault simulation
+  VAULT_SIMULATE: "vault:simulate",
 } as const;
 
 export type Namespace = (typeof NS)[keyof typeof NS];

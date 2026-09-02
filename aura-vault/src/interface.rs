@@ -501,4 +501,132 @@ pub trait AuraVaultTrait {
     ///
     /// `Some(message)` for a recognised code, `None` otherwise.
     fn get_vault_error_message(env: Env, code: u32) -> Option<String>;
+
+    // -----------------------------------------------------------------------
+    // Whitelist-only deposit mode (Issue #349)
+    // -----------------------------------------------------------------------
+
+    /// Enable whitelist-only deposit mode. Admin-only.
+    fn enable_whitelist(env: Env, admin: Address) -> Result<(), VaultError>;
+
+    /// Disable whitelist-only deposit mode. Admin-only.
+    fn disable_whitelist(env: Env, admin: Address) -> Result<(), VaultError>;
+
+    /// Add an address to the deposit whitelist. Admin-only.
+    fn add_to_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError>;
+
+    /// Remove an address from the deposit whitelist. Admin-only.
+    fn remove_from_whitelist(env: Env, admin: Address, addr: Address) -> Result<(), VaultError>;
+
+    /// Query whether an address is whitelisted. Read-only, no auth required.
+    fn is_whitelisted(env: Env, addr: Address) -> bool;
+
+    // -----------------------------------------------------------------------
+    // Minimum deposit amount (Issue #355)
+    // -----------------------------------------------------------------------
+
+    /// Set the minimum deposit amount. Admin-only.
+    fn set_min_deposit(env: Env, admin: Address, amount: i128) -> Result<(), VaultError>;
+
+    /// Query the minimum deposit amount. Read-only, no auth required.
+    fn min_deposit(env: Env) -> i128;
+
+    // -----------------------------------------------------------------------
+    // Contract metadata (Issue #350)
+    // -----------------------------------------------------------------------
+
+    /// Returns the vault name. Read-only.
+    fn name(env: Env) -> Option<String>;
+
+    /// Returns the vault share symbol. Read-only.
+    fn symbol(env: Env) -> Option<String>;
+
+    /// Returns the contract version integer. Read-only.
+    fn version(env: Env) -> u32;
+
+    // -----------------------------------------------------------------------
+    // Total supply — Issue #346
+    // -----------------------------------------------------------------------
+
+    /// Returns the total outstanding vault shares (SEP-41 `total_supply`).
+    ///
+    /// Reads [`DataKey::TotalShares`] and is always equal to the sum of all
+    /// `balance_of(addr)` values across current depositors.
+    ///
+    /// Read-only; no authorization required.
+    fn total_supply(env: Env) -> i128;
+
+    // -----------------------------------------------------------------------
+    // AuraPriceOracle integration — Issue #348
+    // -----------------------------------------------------------------------
+
+    /// Admin: set the AuraPriceOracle contract address for USD pricing.
+    ///
+    /// The oracle must implement `price(token) -> (i128, u64)` returning
+    /// (price_in_micro_usd, updated_at_timestamp).
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    fn set_oracle_address(env: Env, admin: Address, oracle: Address) -> Result<(), VaultError>;
+
+    /// Admin: update the maximum oracle price age (staleness window) in seconds.
+    ///
+    /// Prices older than `max_age_secs` are treated as unavailable.
+    /// Default: 3 600 s (1 hour).
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::NotInitialized`] — vault not yet initialised.
+    /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
+    fn set_oracle_max_age(env: Env, admin: Address, max_age_secs: u64) -> Result<(), VaultError>;
+
+    /// Returns the configured oracle contract address, or `None` if not set.
+    ///
+    /// Read-only; no authorization required.
+    fn get_oracle_address(env: Env) -> Option<Address>;
+
+    /// Returns total vault assets in micro-USD (6 decimal places, 1_000_000 = $1.00).
+    ///
+    /// Queries the configured AuraPriceOracle for the underlying token price.
+    /// Returns `0` (with an `oracle_unavailable` event) if the oracle is
+    /// unconfigured, unreachable, or returns a stale/invalid price.
+    ///
+    /// Read-only; no authorization required. Never reverts.
+    fn total_assets_usd(env: Env) -> i128;
+
+    // -----------------------------------------------------------------------
+    // Harvest cooldown convenience function — Issue #351
+    // -----------------------------------------------------------------------
+
+    /// Returns the earliest ledger timestamp at which the next harvest will be
+    /// permitted, or `0` if a harvest is currently allowed immediately.
+    ///
+    /// Returns `0` when the cooldown is disabled or no harvest has occurred yet.
+    ///
+    /// Read-only; no authorization required.
+    fn next_harvest_allowed_at(env: Env) -> u64;
+
+    // -----------------------------------------------------------------------
+    // Price snapshots — Issue #352
+    // -----------------------------------------------------------------------
+
+    /// Returns the share-price snapshot stored at exactly `timestamp`, or
+    /// `None` if no snapshot exists (never stored or TTL expired).
+    ///
+    /// Snapshots are stored after every successful harvest and retained for
+    /// 90 days.  The value is share price scaled ×1 000 000.
+    ///
+    /// Read-only; no authorization required.
+    fn get_price_snapshot(env: Env, timestamp: u64) -> Option<i128>;
+
+    /// Returns share-price snapshots for the given `timestamps` that fall
+    /// within `[from, to]` (both inclusive).
+    ///
+    /// Each entry is `(timestamp, share_price)`.  Timestamps without a stored
+    /// snapshot or outside the range are silently omitted.
+    ///
+    /// Read-only; no authorization required.
+    fn list_price_snapshots(env: Env, timestamps: Vec<u64>, from: u64, to: u64) -> Vec<(u64, i128)>;
 }

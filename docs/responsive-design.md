@@ -6,14 +6,14 @@ Mobile-first design guidelines and viewport specifications for all Aura frontend
 
 ## Breakpoints
 
-| Name | Min width | Semantic meaning | Target devices |
-|---|---|---|---|
-| `xs` | 320px | Single-column mobile experience with touch-first controls | Small phones (iPhone SE) |
-| `sm` | 480px | Expanded mobile layout with slightly more horizontal breathing room | Large phones |
-| `md` | 768px | Tablet or landscape phone experience with two-column content | Tablets, landscape phones |
-| `lg` | 1024px | Desktop-adjacent layout with persistent navigation | Small laptops, large tablets |
-| `xl` | 1280px | Full desktop workspace with multi-column panels | Desktops |
-| `2xl` | 1440px | Large-display layout with more information density | Large monitors |
+| Name | Min width | Target devices |
+|---|---|---|
+| `xs` | 320px | Small phones (iPhone SE) |
+| `sm` | 480px | Large phones |
+| `md` | 768px | Tablets, landscape phones |
+| `lg` | 1024px | Small laptops, large tablets |
+| `xl` | 1280px | Desktops |
+| `2xl` | 1440px | Large monitors |
 
 CSS custom media queries:
 
@@ -26,15 +26,6 @@ CSS custom media queries:
 ```
 
 ---
-
-## Mobile-first CSS methodology
-
-All UI work should start from the smallest supported viewport and add complexity only when the layout clearly benefits from more space. In practice:
-
-- Base styles target `xs` first and assume a single-column, touch-friendly layout.
-- Use `min-width` media queries to progressively enhance the experience at `sm`, `md`, `lg`, and above.
-- Prefer flexible grids and container-based spacing over fixed pixel widths.
-- Avoid introducing desktop-only layout assumptions into the base styles.
 
 ## Layout Behavior per Viewport
 
@@ -162,9 +153,9 @@ Mobile column priority (hide lowest-priority columns first as viewport shrinks):
 
 ---
 
-## Device testing matrix
+## Testing Checklist
 
-Before any release, verify on these target profiles using a mix of real devices and emulators:
+Before any release, verify on these target profiles:
 
 | Device profile | Viewport | OS |
 |---|---|---|

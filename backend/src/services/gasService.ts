@@ -40,14 +40,6 @@ export interface GasEstimateResponse {
   standard: GasTierQuote;
   fast: GasTierQuote;
   history: GasHistoryEntry[];
-  accuracy?: {
-    estimationScore: number; // 0-100, higher is better
-    historicalErrorRate: number; // percentage deviation from actual
-  };
-  performance?: {
-    fetchDurationMs: number;
-    cacheHitRate: number;
-  };
 }
 
 export interface GasRpcClient {
@@ -235,8 +227,6 @@ export class GasPriceService {
   private readonly clock: () => number;
   private readonly rpc: GasRpcClient;
   private readonly store: GasPriceStore;
-  private cacheHits = 0;
-  private cacheMisses = 0;
 
   constructor(deps: GasServiceDeps) {
     this.cacheTtlMs = deps.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
@@ -248,25 +238,12 @@ export class GasPriceService {
   }
 
   async estimate(chainId: number, gasLimit = this.defaultGasLimit, forceRefresh = false): Promise<GasEstimateResponse> {
-    const fetchStart = this.clock();
-    
     if (!forceRefresh) {
       const cached = await this.store.readCached(chainId);
       if (cached) {
-        this.cacheHits++;
-        const cacheHitRate = this.cacheHits / (this.cacheHits + this.cacheMisses);
-        return { 
-          ...cached, 
-          cached: true,
-          performance: {
-            fetchDurationMs: this.clock() - fetchStart,
-            cacheHitRate,
-          }
-        };
+        return { ...cached, cached: true };
       }
     }
-    
-    this.cacheMisses++;
 
     let payload: GasEstimateResponse;
     try {
@@ -274,16 +251,6 @@ export class GasPriceService {
     } catch (err) {
       payload = await this.buildFallback(chainId, gasLimit, err);
     }
-
-    // Calculate accuracy metrics
-    const accuracy = await this.calculateAccuracy(chainId, payload);
-    const cacheHitRate = this.cacheHits / (this.cacheHits + this.cacheMisses);
-    
-    payload.accuracy = accuracy;
-    payload.performance = {
-      fetchDurationMs: this.clock() - fetchStart,
-      cacheHitRate,
-    };
 
     await this.store.writeCached(chainId, payload, this.cacheTtlMs);
     await this.store.appendHistory(chainId, this.toHistoryEntry(payload), this.historyLimit);
@@ -490,57 +457,6 @@ export class GasPriceService {
       lowWei: response.low.maxFeePerGasWei,
       standardWei: response.standard.maxFeePerGasWei,
       fastWei: response.fast.maxFeePerGasWei,
-    };
-  }
-
-  /**
-   * Calculate accuracy metrics by comparing recent estimates with actual gas prices
-   */
-  private async calculateAccuracy(
-    chainId: number,
-    current: GasEstimateResponse
-  ): Promise<{ estimationScore: number; historicalErrorRate: number }> {
-    const history = await this.store.readHistory(chainId, Math.min(10, this.historyLimit));
-    
-    if (history.length < 2) {
-      return { estimationScore: 100, historicalErrorRate: 0 };
-    }
-
-    // Compare previous estimates with actual observed prices
-    let totalError = 0;
-    let comparisons = 0;
-
-    for (let i = 0; i < history.length - 1; i++) {
-      const estimate = BigInt(history[i].standardWei);
-      const actual = BigInt(history[i + 1].gasPriceWei);
-      
-      if (actual > 0n) {
-        const error = Number(estimate > actual ? estimate - actual : actual - estimate);
-        const errorPercent = (error / Number(actual)) * 100;
-        totalError += errorPercent;
-        comparisons++;
-      }
-    }
-
-    const historicalErrorRate = comparisons > 0 ? totalError / comparisons : 0;
-    // Estimation score: 100 - error rate, capped at 0-100 range
-    const estimationScore = Math.max(0, Math.min(100, 100 - historicalErrorRate));
-
-    return { estimationScore, historicalErrorRate };
-  }
-
-  /**
-   * Get service metrics for monitoring
-   */
-  getMetrics() {
-    const totalRequests = this.cacheHits + this.cacheMisses;
-    const cacheHitRate = totalRequests > 0 ? this.cacheHits / totalRequests : 0;
-    
-    return {
-      cacheHits: this.cacheHits,
-      cacheMisses: this.cacheMisses,
-      totalRequests,
-      cacheHitRate: `${(cacheHitRate * 100).toFixed(2)}%`,
     };
   }
 }

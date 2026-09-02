@@ -55,6 +55,25 @@ All mutating functions return `Result<_, VaultError>`. The following error codes
 | 10 | `StorageLayoutMismatch` | On-chain layout version does not match `CURRENT_LAYOUT_VERSION` |
 | 11 | `VaultPaused` | Mutating operation called while the vault is paused |
 | 12 | `BalanceMismatch` | Flash loan guard: actual token balance ≠ `total_deposited` |
+| 13 | `TimelockNotExpired` | Governance timelock has not elapsed |
+| 14 | `NotApproved` | Proposal has not reached required signature threshold |
+| 15 | `AlreadyVoted` | Signer already voted on this proposal |
+| 16 | `TvlCapExceeded` | Deposit would exceed the configured TVL cap |
+| 17 | `YieldTooSmall` | Yield rounds to zero per share — accumulate more before distributing |
+| 18 | `DistributionAccuracyError` | Rounding error exceeds 0.01% accuracy threshold |
+| 19 | `HarvestCooldown` | Harvest attempted before the cooldown period has elapsed |
+| 20 | `WithdrawalQueued` | Withdrawal queued; call `claim_queued_withdrawal` after unbonding |
+| 21 | `QueueEntryNotFound` | Queue entry does not exist or was already claimed |
+| 22 | `QueueUnbondingPending` | Queue entry is still within the unbonding period |
+| 23 | `InvalidWithdrawalFee` | Withdrawal fee exceeds the 5% maximum |
+| 24 | `TransferFailed` | Token transfer amount assertion failed (fee-on-transfer guard) |
+| 25 | `OraclePriceZero` | Oracle returned a zero price |
+| 26 | `OraclePriceTooHigh` | Oracle price exceeds sanity cap (possible manipulation) |
+| 27 | `OraclePriceStale` | Oracle price is older than the configured `max_age_secs` |
+| 28 | `NotWhitelisted` | Deposit attempted by an address not on the whitelist |
+| 29 | `BelowMinDeposit` | Deposit amount is below the configured minimum |
+| 30 | `OracleUnavailable` | Oracle unavailable; `total_assets_usd` returned fallback value 0 |
+| 31 | `CircuitBreakerTripped` | Share price moved more than the configured limit; vault auto-paused |
 
 ---
 
@@ -1145,3 +1164,283 @@ Topics are indexed on-chain for efficient filtering by event name, caller, or am
 ---
 
 *Issues: [#385](https://github.com/soterika/aura-vault-protocol/issues/385)*
+
+---
+
+## 21. total_supply _(Issue #346)_
+
+Returns the total outstanding vault shares. Satisfies the SEP-41 token interface `total_supply()` requirement.
+
+### Signature
+
+```rust
+fn total_supply(env: Env) -> i128
+```
+
+### Returns
+
+The total number of shares currently outstanding (`DataKey::TotalShares`). Equals the sum of all `balance_of(addr)` values across active depositors. Always matches `total_shares()`.
+
+### Notes
+
+- Read-only; no authorization required.
+- Returns `0` before any deposits have been made.
+
+### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- total_supply
+```
+
+---
+
+## 22. AuraPriceOracle Integration _(Issue #348)_
+
+The vault can be configured with an external AuraPriceOracle contract to provide USD-denominated values of vault assets. The oracle must expose a `price(token) -> (i128, u64)` entry point returning `(price_in_micro_usd, updated_at_timestamp)`.
+
+**Price precision:** prices are in micro-USD with 6 decimal places. `1_000_000` = $1.00.
+
+### 22.1 set_oracle_address
+
+Admin-only. Stores the oracle contract address. Emits `oracle_set` event.
+
+```rust
+fn set_oracle_address(env: Env, admin: Address, oracle: Address) -> Result<(), VaultError>
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `admin` | `Address` | Must match stored admin and authorize the call |
+| `oracle` | `Address` | AuraPriceOracle contract address |
+
+#### Errors
+
+| Error | Condition |
+|---|---|
+| `NotInitialized` | Vault not yet initialized |
+| `UpgradeUnauthorized` | Caller is not the admin |
+
+#### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --source admin-keypair \
+  --network testnet \
+  -- set_oracle_address \
+  --admin GADMIN_ADDRESS \
+  --oracle GORACLE_ADDRESS
+```
+
+---
+
+### 22.2 set_oracle_max_age
+
+Admin-only. Sets the maximum age (in seconds) for an oracle price to be considered fresh. Prices older than this are treated as stale and trigger the `OracleUnavailable` fallback.
+
+```rust
+fn set_oracle_max_age(env: Env, admin: Address, max_age_secs: u64) -> Result<(), VaultError>
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `max_age_secs` | `3600` | Maximum price age in seconds (1 hour default) |
+
+---
+
+### 22.3 get_oracle_address
+
+Read-only. Returns the configured oracle address, or `None` if not set.
+
+```rust
+fn get_oracle_address(env: Env) -> Option<Address>
+```
+
+---
+
+### 22.4 total_assets_usd
+
+Read-only. Returns the total vault assets expressed in **micro-USD** (6 decimal places, `1_000_000 = $1.00`).
+
+```rust
+fn total_assets_usd(env: Env) -> i128
+```
+
+#### Computation
+
+```
+price_usd  = oracle.price(underlying_token)   // micro-USD per underlying unit
+total_usd  = floor(total_assets × price_usd / 1_000_000)
+```
+
+#### Graceful fallback
+
+If any of the following conditions are true, the function returns `0` and emits an `oracle_unavailable` event — it **never reverts**:
+
+- No oracle address configured
+- Oracle cross-contract call fails
+- Oracle returns a zero or sanity-cap-exceeding price (`OraclePriceZero`, `OraclePriceTooHigh`)
+- Oracle price timestamp is older than `oracle_max_age_secs` (`OraclePriceStale`)
+
+#### Events emitted on fallback
+
+```
+topics: ("oracle_unavailable",)
+data:   ("not_configured" | "call_failed" | "invalid_price", ...)
+```
+
+#### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- total_assets_usd
+# Returns: 50000000000  (= $50,000.00 with 6 decimal places)
+```
+
+---
+
+## 23. Harvest Cooldown _(Issue #351)_
+
+The vault enforces a configurable minimum time between harvests. These functions were added to satisfy the full Issue #351 acceptance criteria.
+
+### 23.1 next_harvest_allowed_at
+
+Read-only convenience function. Returns the earliest ledger timestamp at which the next harvest call will succeed.
+
+```rust
+fn next_harvest_allowed_at(env: Env) -> u64
+```
+
+#### Return values
+
+| Condition | Returns |
+|---|---|
+| No cooldown configured (`cooldown_secs == 0`) | `0` (harvest always allowed) |
+| No harvest has occurred yet (`last_harvest_time == 0`) | `0` (first harvest always allowed) |
+| Inside cooldown window | `last_harvest_time + cooldown_secs` |
+| Cooldown window already elapsed | `0` (harvest allowed now) |
+
+#### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- next_harvest_allowed_at
+# Returns 0 if harvest is allowed, or a future timestamp if still cooling down.
+```
+
+See also: [`set_harvest_cooldown`](#set_harvest_cooldown), [`last_harvest_time`](#last_harvest_time), [`reset_harvest_cooldown`](#reset_harvest_cooldown).
+
+---
+
+## 24. Price Snapshots _(Issue #352)_
+
+After every successful harvest, the vault stores a share-price snapshot at the harvest timestamp. Snapshots are retained for **90 days** via Soroban's TTL-based archival and are used by the backend indexer to compute APY charts.
+
+**Share price formula stored:**
+
+```
+snapshot_price = floor(total_assets × 1_000_000 / total_shares)
+```
+
+The value is an integer scaled by `1_000_000` — multiply by the oracle USD price and divide by `1_000_000` to get the USD value per share.
+
+### 24.1 get_price_snapshot
+
+Read-only. Returns the share-price snapshot for a specific harvest timestamp, or `None` if no snapshot exists.
+
+```rust
+fn get_price_snapshot(env: Env, timestamp: u64) -> Option<i128>
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `timestamp` | `u64` | Ledger timestamp of a past harvest (from a `harvest` event) |
+
+#### Returns
+
+`Some(share_price)` where `share_price` is scaled ×1 000 000, or `None` if the snapshot does not exist or its 90-day TTL has expired.
+
+#### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- get_price_snapshot \
+  --timestamp 1751500000
+# Returns: 1050000  (= 1.05 underlying tokens per share)
+```
+
+---
+
+### 24.2 list_price_snapshots
+
+Read-only. Returns share-price snapshots for a supplied list of timestamps filtered to the `[from, to]` range.
+
+```rust
+fn list_price_snapshots(
+    env: Env,
+    timestamps: Vec<u64>,
+    from: u64,
+    to: u64,
+) -> Vec<(u64, i128)>
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|---|---|---|
+| `timestamps` | `Vec<u64>` | List of harvest timestamps to query (from indexer/events) |
+| `from` | `u64` | Start of range (inclusive) |
+| `to` | `u64` | End of range (inclusive) |
+
+#### Returns
+
+`Vec<(timestamp, share_price)>` — one entry per timestamp that is (a) within `[from, to]` and (b) has a live snapshot in storage. Entries are returned in the order they appear in `timestamps`. Timestamps outside the range or without a stored snapshot are silently omitted.
+
+#### Notes
+
+- Soroban persistent storage does not support range iteration. Callers must supply the timestamps they want to query, typically from backend indexer records of past `harvest` events.
+- The backend APY chart service reads harvest events to build the timestamp list and calls this function to retrieve share prices.
+
+#### Example
+
+```bash
+stellar contract invoke \
+  --id CONTRACT_ID \
+  --network testnet \
+  -- list_price_snapshots \
+  --timestamps '[1751400000, 1751490000, 1751580000]' \
+  --from 1751400000 \
+  --to 1751580000
+# Returns: [(1751400000, 1020000), (1751490000, 1035000), (1751580000, 1051000)]
+```
+
+#### Events
+
+Snapshots are stored silently — no event is emitted for snapshot writes. They are derived from the `harvest` event's timestamp.
+
+---
+
+## Updated Storage Layout
+
+The following keys were added as part of Issues #346, #348, #351, #352:
+
+| Key | Storage type | Type | Description |
+|---|---|---|---|
+| `OracleAddress` | Instance | `Address` | AuraPriceOracle contract address (Issue #348) |
+| `OracleMaxAge` | Instance | `u64` | Max oracle price age in seconds; default 3600 (Issue #348) |
+| `PriceSnapshot(u64)` | Persistent | `i128` | Share price at each harvest timestamp; 90-day TTL (Issue #352) |
+
+**PriceSnapshot TTL:** 90-day bump amount (`17280 * 90` ledgers), 7-day threshold.

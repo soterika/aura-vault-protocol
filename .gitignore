@@ -3,10 +3,6 @@ Cargo.lock
 .DS_Store
 *.wasm
 
-# Node
-node_modules/
-package-lock.json
-
 *storybook.log
 storybook-static
 
@@ -15,3 +11,7 @@ storybook-static
 .env.*
 !.env.example
 !*.env.example
+
+dist/
+backend/dist/
+backend/node_modules/

@@ -49,8 +49,8 @@ Usage:
 # 1. Review incident logs
 ls -lt combined.log | head -20
 
-# 2. Check backup status
-du -sh /backups/vault-state-*
+# 2. Check backup status (S3)
+aws s3 ls s3://BACKUP_BUCKET/postgres-backups/ | sort | tail -5
 
 # 3. Verify monitoring alerts
 # Open Grafana dashboard, check alert status
@@ -61,6 +61,28 @@ grep "failed\|error" combined.log | wc -l
 # 5. Update documentation if needed
 git log --oneline docs/ | head -10
 ```
+
+### Checking Backup Health
+
+```bash
+# List recent backups in S3
+aws s3 ls s3://BACKUP_BUCKET/postgres-backups/ --region us-east-1 | sort | tail -7
+
+# Verify backup metric in Prometheus
+curl -s http://prometheus:9090/api/v1/query \
+  --data-urlencode 'query=backup_last_success_timestamp_seconds'
+
+# Manually trigger a backup (K8s)
+kubectl create job --from=cronjob/postgres-backup manual-$(date +%Y%m%d) -n aura-vault
+
+# Run a restore integrity check
+BACKUP_BUCKET="..." BACKUP_ENCRYPTION_KEY="..." \
+  PGHOST=localhost PGPASSWORD="..." \
+  ./scripts/restore-test.sh
+```
+
+See [docs/backup-recovery.md](docs/backup-recovery.md) for full runbooks including
+the break-glass production restore procedure.
 
 ## Common Issues & Solutions
 

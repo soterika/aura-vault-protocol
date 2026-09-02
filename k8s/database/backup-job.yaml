@@ -1,3 +1,40 @@
+# =============================================================================
+# postgres-backup CronJob — AES-256 encrypted daily backups to S3
+#
+# Schedule: 02:00 UTC daily (matches existing terraform/backup.tf schedule)
+# Retention: managed by S3 lifecycle policy (see terraform/s3-backup-lifecycle.json)
+#
+# Required Secrets (backend-secrets):
+#   DB_PASSWORD            — PostgreSQL password
+#   BACKUP_ENCRYPTION_KEY  — AES-256 passphrase (min 32 chars)
+#
+# Required ConfigMap (backup-config):
+#   BACKUP_BUCKET     — S3 bucket name
+#   AWS_REGION        — AWS region (default: us-east-1)
+#   PUSHGATEWAY_URL   — Prometheus Pushgateway endpoint (optional)
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+  namespace: aura-vault
+  labels:
+    app: postgres-backup
+    component: config
+data:
+  AWS_REGION: "us-east-1"
+  PGHOST: "postgres-service"
+  PGPORT: "5432"
+  PGUSER: "aura"
+  PGDATABASE: "aura_vault"
+  BACKUP_PREFIX: "postgres-backups"
+  # Set BACKUP_BUCKET to your actual S3 bucket name, e.g. "aura-vault-db-backups-prod"
+  BACKUP_BUCKET: ""
+  # Pushgateway URL for Prometheus metrics (optional)
+  # e.g. "http://prometheus-pushgateway:9091"
+  PUSHGATEWAY_URL: ""
+  ENVIRONMENT: "production"
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -5,82 +42,178 @@ metadata:
   namespace: aura-vault
   labels:
     app: postgres-backup
+    component: backup
+    managed-by: kustomize
+  annotations:
+    description: "Daily PostgreSQL backup with AES-256 encryption to S3"
 spec:
+  # 02:00 UTC daily — matches terraform/backup.tf cron(0 2 * * ? *)
   schedule: "0 2 * * *"
+  # Prevent overlapping runs (e.g. if a large backup takes >24h it won't stack)
   concurrencyPolicy: Forbid
+  # Keep the last 3 successful + 3 failed job records for debugging
   successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  # If a scheduled run is missed by more than 2h, skip it (avoids storm on restart)
+  startingDeadlineSeconds: 7200
   jobTemplate:
     spec:
-      backoffLimit: 3
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600   # hard timeout: 1h
       template:
         metadata:
           labels:
             app: postgres-backup
+            component: backup
+          annotations:
+            prometheus.io/scrape: "false"
         spec:
-          serviceAccountName: postgres
+          serviceAccountName: postgres-backup
+          automountServiceAccountToken: true
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
+            runAsGroup: 999
             fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
           restartPolicy: OnFailure
+          initContainers:
+            # Verify the S3 bucket is accessible before attempting backup
+            - name: preflight-check
+              image: amazon/aws-cli:2.15.0
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              env:
+                - name: AWS_DEFAULT_REGION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: backup-config
+                      key: AWS_REGION
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Checking S3 bucket access..."
+                  if [ -z "$BACKUP_BUCKET" ]; then
+                    echo "ERROR: BACKUP_BUCKET is not configured"
+                    exit 1
+                  fi
+                  aws s3 ls "s3://${BACKUP_BUCKET}/" --region "${AWS_REGION}" > /dev/null 2>&1 || {
+                    echo "ERROR: Cannot access s3://${BACKUP_BUCKET}/"
+                    exit 1
+                  }
+                  echo "S3 bucket accessible: s3://${BACKUP_BUCKET}/"
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
           containers:
             - name: postgres-backup
+              # Pin to specific digest in production for supply-chain safety
               image: postgres:16-alpine
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: false
                 capabilities:
-                  drop:
-                    - ALL
+                  drop: ["ALL"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
               env:
-                - name: PGHOST
-                  value: "postgres-service"
-                - name: PGPORT
-                  value: "5432"
-                - name: PGUSER
-                  value: "aura"
-                - name: PGDATABASE
-                  value: "aura_vault"
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: backend-secrets
                       key: DB_PASSWORD
+                - name: BACKUP_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backend-secrets
+                      key: BACKUP_ENCRYPTION_KEY
+                - name: AWS_DEFAULT_REGION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: backup-config
+                      key: AWS_REGION
               volumeMounts:
-                - name: backup-storage
-                  mountPath: /backups
+                - name: backup-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
               command:
                 - /bin/sh
                 - -c
                 - |
-                  set -e
-                  BACKUP_DIR="/backups"
-                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-                  BACKUP_FILE="$BACKUP_DIR/aura_vault_$TIMESTAMP.sql.gz"
-
-                  echo "Starting backup at $(date)"
-                  pg_dump -h $PGHOST -p $PGPORT -U $PGUSER -d $PGDATABASE | gzip > "$BACKUP_FILE"
-
-                  if [ $? -eq 0 ]; then
-                    echo "Backup completed successfully: $BACKUP_FILE"
-                    ls -lh "$BACKUP_FILE"
-
-                    # Keep only last 7 days of backups
-                    find $BACKUP_DIR -name "aura_vault_*.sql.gz" -type f -mtime +7 -delete
-                    echo "Cleaned up old backups older than 7 days"
-                  else
-                    echo "Backup failed"
-                    exit 1
-                  fi
+                  # Install aws-cli (needed since we use the postgres image, not aws-cli image)
+                  apk add --no-cache aws-cli openssl curl > /dev/null 2>&1
+                  chmod +x /scripts/backup-postgres.sh
+                  exec /scripts/backup-postgres.sh
               resources:
                 requests:
-                  cpu: "100m"
+                  cpu: "200m"
                   memory: "256Mi"
                 limits:
-                  cpu: "500m"
-                  memory: "512Mi"
+                  cpu: "1000m"
+                  memory: "1Gi"
           volumes:
-            - name: backup-storage
-              persistentVolumeClaim:
-                claimName: postgres-backup-pvc
+            - name: backup-script
+              configMap:
+                name: backup-script
+                defaultMode: 0555
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 2Gi
+---
+# ServiceAccount for the backup job — bound to IRSA for S3 access
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-backup
+  namespace: aura-vault
+  labels:
+    app: postgres-backup
+  annotations:
+    # IRSA: set this to the ARN of the IAM role that has S3 write access
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/aura-vault-backup-role
+---
+# RBAC: minimal permissions — the backup job only needs to read secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgres-backup
+  namespace: aura-vault
+  labels:
+    app: postgres-backup
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["backend-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postgres-backup
+  namespace: aura-vault
+  labels:
+    app: postgres-backup
+subjects:
+  - kind: ServiceAccount
+    name: postgres-backup
+    namespace: aura-vault
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: postgres-backup

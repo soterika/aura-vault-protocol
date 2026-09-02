@@ -208,7 +208,7 @@ mod prop_sequence_tests {
         let vault_addr = env.register_contract(None, AuraVault);
         let vault = AuraVaultClient::new(env, &vault_addr);
         let signers: SdkVec<Address> = SdkVec::new(env);
-        vault.initialize(&admin, &token_addr, &signers);
+        vault.initialize(&admin, &token_addr, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
         vault.set_fees(&admin, &0_u32, &0_u32);
 
         let actors: std::vec::Vec<Address> = (0..num_actors)
@@ -348,7 +348,7 @@ mod prop_sequence_tests {
             let vault_addr = env.register_contract(None, AuraVault);
             let vault = AuraVaultClient::new(&env, &vault_addr);
             let signers: SdkVec<Address> = SdkVec::new(&env);
-            vault.initialize(&admin, &token, &signers);
+            vault.initialize(&admin, &token, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
             vault.set_fees(&admin, &0_u32, &0_u32);
 
             // Seed the vault so harvest doesn't fail with ZeroShares

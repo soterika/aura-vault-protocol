@@ -4,7 +4,6 @@ import { Skeleton } from "./Skeleton";
 import { ErrorMessage } from "./ErrorMessage";
 import { translateError, type UserError } from "../lib/errors";
 import { useInlineLiveRegion } from "./LiveRegion";
-import { TermTooltip } from "./Tooltip";
 
 interface Props {
   onToast: (msg: ToastMessage) => void;
@@ -83,8 +82,7 @@ export function DepositForm({ onToast }: Props) {
               autoComplete="off"
             />
             <p id={`${id}-hint`} className="field-hint" aria-hidden={!!fieldError}>
-              Enter the token amount to deposit. You will receive{" "}
-              <TermTooltip term="Vault Shares" /> proportional to your contribution.
+              Enter the token amount to deposit into the vault.
             </p>
             {fieldError && (
               <p id={`${id}-err`} role="alert" className="field-error">

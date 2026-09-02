@@ -3,9 +3,6 @@ import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OnboardingFlow, hasCompletedOnboarding } from "./components/OnboardingFlow";
 import { Skeleton } from "./components/Skeleton";
-import { VaultStats } from "./components/VaultStats";
-import { IconMoon, IconSun } from "./components/Icons";
-import { useTheme } from "./components/ThemeProvider";
 import type { ToastMessage } from "./components/Toast";
 
 const DepositForm = lazy(() => import("./components/DepositForm").then((m) => ({ default: m.DepositForm })));
@@ -46,7 +43,6 @@ export default function App() {
 
         <header className="app-header" role="banner">
           <h1>Aura Vault</h1>
-          <ThemeToggle />
         </header>
 
         <main id="main" className="app-main">
@@ -67,8 +63,6 @@ export default function App() {
               ))}
             </div>
           </nav>
-
-          <VaultStats />
 
           <div
             id={`panel-${tab}`}

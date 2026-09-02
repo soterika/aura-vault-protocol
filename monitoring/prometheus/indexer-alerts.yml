@@ -1,0 +1,43 @@
+groups:
+  - name: event-indexer
+    rules:
+      # Warning: indexer lag exceeds 10 seconds
+      - alert: EventIndexerLagHigh
+        expr: indexer_lag_seconds > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Event indexer lag is high ({{ $value | humanizeDuration }})"
+          description: >
+            The Aura Vault event indexer is more than 10 seconds behind the
+            on-chain ledger. This may indicate a database bottleneck or a
+            burst of events during a high-volume harvest period.
+            Current lag: {{ $value | humanizeDuration }}.
+
+      # Critical: indexer lag has been sustained above 30 seconds
+      - alert: EventIndexerLagCritical
+        expr: indexer_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Event indexer lag is critically high ({{ $value | humanizeDuration }})"
+          description: >
+            The Aura Vault event indexer is more than 30 seconds behind the
+            on-chain ledger for the last 5 minutes. Downstream consumers
+            (portfolio balances, analytics) may be returning stale data.
+            Current lag: {{ $value | humanizeDuration }}.
+
+      # Warning: indexer has stopped processing events
+      - alert: EventIndexerStalled
+        expr: rate(indexer_events_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Event indexer has not processed any events in the last 10 minutes"
+          description: >
+            No events have been indexed in the last 10 minutes. This may be
+            normal during quiet periods or may indicate that the indexer
+            has crashed or lost its connection to the Horizon/RPC source.

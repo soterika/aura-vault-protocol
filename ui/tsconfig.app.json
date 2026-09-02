@@ -10,8 +10,7 @@
     "noUnusedParameters": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vite/client", "vitest/globals"]
+    "types": ["vitest/globals"]
   },
-  "include": ["src"],
-  "exclude": ["src/tests", "src/stories", "src/**/*.k6.ts"]
+  "include": ["src"]
 }

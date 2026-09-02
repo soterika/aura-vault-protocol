@@ -27,14 +27,14 @@ export default function VaultActions() {
   const { markComplete } = useOnboarding();
 
   useEffect(() => {
-    fetch("/api/vault/balance_of?address=mock")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.balance) setBalance(d.balance);
-      })
-      .catch(() => {});
-  }, []);
-
+   useEffect(() => {
+  fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/vault/balance_of?address=mock`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (d?.balance) setBalance(d.balance);
+    })
+    .catch(() => {});
+}, []);
   /**
    * Called when TransactionModal closes.
    * Accepts an optional outcome so we can animate the button.

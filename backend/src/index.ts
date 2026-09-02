@@ -1,3 +1,7 @@
+// ── OpenTelemetry — must be initialised before all other imports ─────────────
+import { initTracing, tracingMiddleware, shutdownTracing } from "./tracing.js";
+initTracing();
+
 import express from "express";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
@@ -19,8 +23,8 @@ import {
 } from "./auth.js";
 import { pingRedis, disconnectRedis } from "./redis.js";
 import { webhookRouter } from "./webhook.js";
-import portfolioRouter from "./portfolio.js";
 import { emailRouter } from "./routes/emailRoutes.js";
+import { notificationRouter } from "./routes/notificationRoutes.js";
 import { gasRouter } from "./routes/gasRoutes.js";
 import { yieldRouter } from "./routes/yieldRoutes.js";
 import { queueRouter } from "./routes/queueRoutes.js";
@@ -31,13 +35,14 @@ import { runCacheWarmup, getWarmupStatus } from "./services/cacheWarmup.js";
 import { startEmailWorker, stopEmailWorker } from "./services/emailQueue.js";
 import { startYieldWorker, stopYieldWorker } from "./services/yieldWorker.js";
 import { vaultRouter } from "./routes/vaultRoutes.js";
+import { vaultTransactionRouter } from "./routes/vaultTransactionRoutes.js";
 import { userPreferencesRouter } from "./routes/userPreferencesRoutes.js";
 import { leaderboardRouter } from "./routes/leaderboardRoutes.js";
-import { applySecurityHeaders } from "./middleware/securityMiddleware.js";
+import { swaggerRouter } from "./routes/swaggerRoutes.js";
 import {
-  createCorsMiddleware,
-  corsPreflightHandler,
-} from "./middleware/corsMiddleware.js";
+  applySecurityHeaders,
+  applyCors,
+} from "./middleware/securityMiddleware.js";
 import {
   correlationIdMiddleware,
   createRequestLogger,
@@ -47,29 +52,45 @@ import {
   loginSchema,
   refreshSchema,
 } from "./validation.js";
+import { getDegradationStatus, degradationStatusMiddleware } from "./middleware/degradationMiddleware.js";
+import {
+  getCircuitBreakerState,
+  getCircuitBreakerStats,
+} from "./services/horizonCircuitBreakerService.js";
+import {
+  getDatabaseCircuitBreakerState,
+  getDatabaseCircuitBreakerStats,
+} from "./services/databaseCircuitBreakerService.js";
+import {
+  getRedisCircuitBreakerState,
+  getRedisCircuitBreakerStats,
+} from "./services/redisCircuitBreakerService.js";
 
 const app = express();
 
-// ── A05 Security Misconfiguration: handle CORS preflight before any auth/rate-limit ──
-app.options(/.*/, corsPreflightHandler());
-
-app.use(express.json());
-app.use(loggingMiddleware());
-app.use(globalIpRateLimiter(["/api/health"]));
+// ── OpenTelemetry tracing middleware ─────────────────────────────────────────
+// Attaches trace spans to every HTTP request and propagates
+// X-Trace-Id / X-Correlation-Id headers on the response.
+app.use(tracingMiddleware());
 
 // ── A05 Security Misconfiguration: security headers (Helmet) ─────────────────
 applySecurityHeaders(app);
 
 // ── A05 Security Misconfiguration: strict CORS ───────────────────────────────
-// Per-request CORS: credentials enabled only for /api/auth/* routes
-app.use(createCorsMiddleware());
+app.use(cors(corsOptions));
 
 // ── A09 Logging Failures: correlation IDs + structured request logging ────────
 app.use(correlationIdMiddleware());
 app.use(createRequestLogger());
+app.use(loggingMiddleware());
 
 app.use(express.json({ limit: "1mb" }));
+
+// Global IP rate limiter — health check excluded so load-balancer probes are not throttled
 app.use(globalIpRateLimiter(["/api/health"]));
+
+// ── Issue #869: Graceful Degradation — monitor circuit breaker states ────────
+app.use(degradationStatusMiddleware);
 
 // ── A03 Injection / A07 Auth Failures: validate login input with Zod ─────────
 app.post(
@@ -130,6 +151,7 @@ app.post("/api/auth/revoke-all", authenticate, userRateLimiter(), async (req, re
 // ── A01 Broken Access Control: all protected routes use `authenticate` ────────
 app.use("/api/webhooks", authenticate, webhookRouter);
 app.use("/api/email", emailRouter);
+app.use("/api/notifications/email", notificationRouter);
 app.use("/api/v1/user/portfolio", authenticate, portfolioRouter);
 app.use("/api/v1/gas", gasRouter);
 app.use("/api/v1/yield", yieldRouter);
@@ -139,16 +161,27 @@ app.use("/api/v1/vault", vaultRouter);
 app.use("/api/vault/leaderboard", leaderboardRouter);
 // Issue #318: User preferences — requires authentication
 app.use("/api/users/preferences", authenticate, userPreferencesRouter);
+app.use("/api/analytics", analyticsRouter);
+
+// Issue #302: Vault transaction endpoints (deposit / withdraw / harvest)
+app.use("/api/v1/vault", vaultTransactionRouter);
+
+// Issue #868: OpenAPI 3.1 Spec and Swagger UI at /api/docs
+app.use("/api/docs", swaggerRouter);
 
 app.get("/api/health", async (_req, res) => {
   const redisHealthy = await pingRedis();
   const warmup = getWarmupStatus();
+  const degradationStatus = getDegradationStatus();
+  const horizonStats = getCircuitBreakerStats();
+  const databaseStats = getDatabaseCircuitBreakerStats();
+  const redisStats = getRedisCircuitBreakerStats();
 
   // Return 'starting' until cache warm-up completes (issue #325)
   let status: string;
   if (warmup === "pending" || warmup === "warming") {
     status = "starting";
-  } else if (!redisHealthy) {
+  } else if (degradationStatus.isDegraded) {
     status = "degraded";
   } else {
     status = "ok";
@@ -156,14 +189,32 @@ app.get("/api/health", async (_req, res) => {
 
   res.json({
     status,
+    timestamp: new Date().toISOString(),
+    // Legacy fields for backwards compatibility
     redis: redisHealthy,
     warmup,
-    timestamp: new Date().toISOString(),
+    // Issue #869: Circuit breaker states and stats
+    circuits: {
+      horizon: {
+        state: getCircuitBreakerState(),
+        stats: horizonStats,
+      },
+      database: {
+        state: getDatabaseCircuitBreakerState(),
+        stats: databaseStats,
+      },
+      redis: {
+        state: getRedisCircuitBreakerState(),
+        stats: redisStats,
+      },
+    },
+    degradation: degradationStatus,
   });
 });
 
 const PORT = Number.parseInt(process.env.PORT ?? "3001", 10);
 const server = app.listen(PORT, () => {
+  void autoMigrate();         // issue #293: run pending SQL migrations on startup
   startWorker();
   startEmailWorker();
   startYieldWorker();
@@ -177,6 +228,7 @@ async function shutdown(signal: string): Promise<void> {
   stopWorker();
   stopEmailWorker();
   stopYieldWorker();
+  await shutdownTracing();
   server.close(async () => {
     await disconnectRedis().catch((err) => {
       console.error("[shutdown] redis disconnect failed:", err);

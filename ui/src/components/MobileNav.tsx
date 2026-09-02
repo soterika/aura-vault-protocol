@@ -1,4 +1,4 @@
-import { useState, useId, useEffect, type ReactNode } from "react";
+import { useState, useId, type ReactNode } from "react";
 
 export interface MobileNavProps {
   logo?: ReactNode;
@@ -191,7 +191,7 @@ export function StickyHeader({
 }: StickyHeaderProps) {
   const [isSticky, setIsSticky] = useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const handleScroll = () => {
       setIsSticky(window.scrollY > scrollThreshold);
     };

@@ -1,41 +1,30 @@
 {
-  "name": "aura-vault-protocol",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "prepare": "husky",
-    "lint-staged": "lint-staged",
-    "cy:open": "cypress open",
-    "cy:run": "cypress run",
-    "cy:run:a11y": "cypress run --spec 'cypress/e2e/accessibility.cy.ts'",
-    "cy:run:chrome": "cypress run --browser chrome",
-    "cy:run:firefox": "cypress run --browser firefox",
-    "cy:run:edge": "cypress run --browser edge",
-    "pw:install": "playwright install --with-deps",
-    "pw:test": "playwright test",
-    "pw:test:a11y": "playwright test playwright/accessibility.spec.ts",
-    "pw:test:mobile": "playwright test playwright/mobile.spec.ts --project=iphone-se --project=iphone-14 --project=android-lg",
-    "pw:test:ui": "playwright test --ui",
-    "pw:report": "playwright show-report"
-  },
-  "lint-staged": {
-    "*.{js,ts,tsx,mjs}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.rs": [
-      "rustfmt"
-    ]
-  },
-  "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
-    "@commitlint/cli": "^21.2.2",
-    "@commitlint/config-conventional": "^21.2.2",
-    "@playwright/test": "^1.62.1",
-    "axe-core": "^4.13.0",
-    "cypress": "^15.21.0",
-    "cypress-axe": "^1.5.0",
-    "husky": "^9.1.7",
-    "wait-on": "^9.1.0"
-  }
+    "name": "horizon-event-listener",
+    "version": "1.0.0",
+    "description": "Horizon SSE event listener for Aura Vault Protocol",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "dev": "ts-node src/index.ts",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "db:migrate": "psql -f db/migrations/001_create_vault_events_table.sql"
+    },
+    "dependencies": {
+        "@stellar/stellar-sdk": "^11.0.0",
+        "pg": "^8.11.0",
+        "dotenv": "^16.3.0",
+        "eventsource": "^2.0.0"
+    },
+    "devDependencies": {
+        "@types/pg": "^8.10.0",
+        "@types/node": "^20.0.0",
+        "@types/eventsource": "^1.1.0",
+        "typescript": "^5.0.0",
+        "ts-node": "^10.9.0",
+        "jest": "^29.0.0",
+        "@types/jest": "^29.0.0",
+        "ts-jest": "^29.0.0"
+    }
 }

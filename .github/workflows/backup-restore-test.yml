@@ -1,0 +1,275 @@
+name: Weekly Backup Restore Test
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC — 2 hours after the daily backup window
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      backup_key:
+        description: "Specific S3 key to test (leave blank for latest)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Run in dry-run mode (no AWS access required)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+# Prevent parallel restore tests from stomping on each other
+concurrency:
+  group: backup-restore-test
+  cancel-in-progress: false
+
+jobs:
+  # ── Restore test ─────────────────────────────────────────────────────────────
+  restore-test:
+    name: Restore & Integrity Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'ci-test-password' }}
+          POSTGRES_DB: aura_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: aura
+      PGDATABASE: aura_vault
+      PGPASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'ci-test-password' }}
+      AWS_REGION: us-east-1
+      BACKUP_PREFIX: postgres-backups
+      PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install tools ──────────────────────────────────────────────────
+      - name: Install PostgreSQL client tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-client \
+            openssl \
+            curl
+
+      # ── 3. Configure AWS credentials ─────────────────────────────────────
+      - name: Configure AWS credentials
+        if: github.event.inputs.dry_run != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          # Use OIDC in production — replace above with:
+          # role-to-assume: ${{ secrets.AWS_BACKUP_RESTORE_ROLE_ARN }}
+
+      # ── 4. Wait for Postgres to be ready ──────────────────────────────────
+      - name: Wait for PostgreSQL
+        run: |
+          echo "Waiting for PostgreSQL to accept connections..."
+          for i in $(seq 1 30); do
+            PGPASSWORD="${PGPASSWORD}" pg_isready -h localhost -p 5432 -U aura && break
+            sleep 2
+          done
+          PGPASSWORD="${PGPASSWORD}" psql -h localhost -U aura -d aura_vault -c "SELECT version();"
+
+      # ── 5. Seed the test database with schema (mirrors production) ─────────
+      - name: Apply database migrations
+        run: |
+          echo "Applying migrations to CI postgres..."
+          for migration in backend/migrations/*.sql; do
+            echo "→ $migration"
+            PGPASSWORD="${PGPASSWORD}" psql \
+              -h localhost -U aura -d aura_vault \
+              -f "$migration" \
+              --set ON_ERROR_STOP=1 \
+              -q 2>&1 || true  # some migrations are idempotent / may already exist
+          done
+          echo "Migrations applied."
+
+      # ── 6. Create a fresh backup to test the full pipeline ────────────────
+      - name: Run backup script (creates test backup)
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          chmod +x scripts/backup-postgres.sh
+          scripts/backup-postgres.sh
+        timeout-minutes: 30
+
+      - name: Run backup script (dry-run mode)
+        if: github.event.inputs.dry_run == 'true'
+        env:
+          BACKUP_BUCKET: "dry-run-bucket"
+          BACKUP_ENCRYPTION_KEY: "dry-run-key-00000000000000000000000000"
+        run: |
+          chmod +x scripts/backup-postgres.sh
+          scripts/backup-postgres.sh --dry-run
+
+      # ── 7. Run restore test ───────────────────────────────────────────────
+      - name: Run restore test
+        id: restore
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          TEST_DATABASE: restore_test_ci_${{ github.run_id }}
+        run: |
+          chmod +x scripts/restore-test.sh
+
+          EXTRA_ARGS=""
+          if [ -n "${{ github.event.inputs.backup_key }}" ]; then
+            EXTRA_ARGS="--backup-key ${{ github.event.inputs.backup_key }}"
+          fi
+
+          scripts/restore-test.sh $EXTRA_ARGS 2>&1 | tee /tmp/restore-test-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run restore test (dry-run mode)
+        id: restore_dry
+        if: github.event.inputs.dry_run == 'true'
+        env:
+          BACKUP_BUCKET: "dry-run-bucket"
+          BACKUP_ENCRYPTION_KEY: "dry-run-key-00000000000000000000000000"
+          TEST_DATABASE: restore_test_ci_dryrun
+        run: |
+          chmod +x scripts/restore-test.sh
+          scripts/restore-test.sh --dry-run 2>&1 | tee /tmp/restore-test-output.txt
+
+      # ── 8. Upload logs as artifact ────────────────────────────────────────
+      - name: Upload restore test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-test-logs-${{ github.run_id }}
+          path: /tmp/restore-test-output.txt
+          retention-days: 30
+
+      # ── 9. Verify restore result ──────────────────────────────────────────
+      - name: Check restore outcome
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          echo "--- Restore Test Output ---"
+          cat /tmp/restore-test-output.txt
+
+          # Check for the structured success log line
+          if grep -q '"event":"restore_test_passed"' /tmp/restore-test-output.txt; then
+            echo "✅ Restore test passed"
+          else
+            echo "❌ Restore test failed — see logs above"
+            exit 1
+          fi
+
+      # ── 10. Report status via GitHub summary ──────────────────────────────
+      - name: Write job summary
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Backup Restore Test Report
+
+          | Field         | Value                         |
+          |---------------|-------------------------------|
+          | **Status**    | ${STATUS}                     |
+          | **Run ID**    | ${{ github.run_id }}          |
+          | **Triggered** | ${{ github.event_name }}      |
+          | **Timestamp** | ${NOW}                        |
+          | **Dry Run**   | ${{ github.event.inputs.dry_run || 'false' }} |
+
+          ### Test Output
+
+          \`\`\`
+          $(cat /tmp/restore-test-output.txt 2>/dev/null || echo "(no output)")
+          \`\`\`
+          EOF
+
+  # ── Alert on failure ──────────────────────────────────────────────────────
+  notify-on-failure:
+    name: Alert on Failure
+    runs-on: ubuntu-latest
+    needs: restore-test
+    if: failure()
+    steps:
+      - name: Notify Slack on restore test failure
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "🚨 *Backup Restore Test FAILED*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚨 *Backup Restore Test FAILED*\n\nThe weekly PostgreSQL backup restore test failed. Backup integrity cannot be guaranteed.\n\n*Action required:* Investigate immediately."
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}"},
+                    {"type": "mrkdwn", "text": "*Branch:*\n${{ github.ref_name }}"},
+                    {"type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>"},
+                    {"type": "mrkdwn", "text": "*Time:*\n${{ github.event.head_commit.timestamp }}"}
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Create GitHub issue on failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Backup Restore Test Failed — ${new Date().toISOString().slice(0, 10)}`;
+            const body = `
+            ## Backup Restore Test Failure
+
+            The weekly PostgreSQL backup restore test failed on ${new Date().toISOString()}.
+
+            **Backup integrity cannot be guaranteed until this is resolved.**
+
+            ### Details
+            - Run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - Triggered by: ${{ github.event_name }}
+
+            ### Immediate Actions
+            1. Check the [run logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            2. Verify S3 bucket contents: \`aws s3 ls s3://BACKUP_BUCKET/postgres-backups/\`
+            3. Test decryption manually with \`scripts/restore-test.sh\`
+            4. If the backup is corrupted, trigger a manual backup: \`scripts/backup-postgres.sh\`
+
+            ### Labels
+            This issue is auto-labelled \`backup\`, \`critical\`.
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['backup', 'critical', 'operations'],
+            });

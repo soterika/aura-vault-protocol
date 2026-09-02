@@ -1,6 +1,6 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DepositForm } from "../components/DepositForm";
 import { WithdrawForm } from "../components/WithdrawForm";
 import { HarvestPanel } from "../components/HarvestPanel";
@@ -11,6 +11,7 @@ import { HarvestPanel } from "../components/HarvestPanel";
 describe("DepositForm", () => {
   let onToast: ReturnType<typeof vi.fn>;
   beforeEach(() => { onToast = vi.fn(); });
+  afterEach(() => { vi.useRealTimers(); });
 
   it("renders amount input and submit button", () => {
     render(<DepositForm onToast={onToast} />);
@@ -60,26 +61,21 @@ describe("DepositForm", () => {
   });
 
   it("calls onToast with success after valid submission", async () => {
-    vi.useFakeTimers();
     render(<DepositForm onToast={onToast} />);
     await userEvent.type(screen.getByLabelText(/amount/i), "500");
     await userEvent.click(screen.getByRole("button", { name: /deposit/i }));
-    vi.advanceTimersByTime(1500);
     await waitFor(() => expect(onToast).toHaveBeenCalledWith(
       expect.objectContaining({ type: "success" })
-    ));
-    vi.useRealTimers();
+    ), { timeout: 2000 });
   });
 
   it("clears amount after successful submission", async () => {
-    vi.useFakeTimers();
     render(<DepositForm onToast={onToast} />);
-    const input = screen.getByLabelText(/amount/i);
-    await userEvent.type(input, "100");
+    await userEvent.type(screen.getByLabelText(/amount/i), "100");
     await userEvent.click(screen.getByRole("button", { name: /deposit/i }));
-    vi.advanceTimersByTime(1500);
-    await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
-    vi.useRealTimers();
+    // Wait for loading skeleton to disappear and form to re-appear
+    await waitFor(() => expect(screen.queryByRole("status", { name: /loading/i })).toBeNull(), { timeout: 2000 });
+    expect((screen.getByLabelText(/amount/i) as HTMLInputElement).value).toBe("");
   });
 
   it("input has aria-invalid true when field error shown", async () => {
@@ -111,6 +107,7 @@ describe("DepositForm", () => {
 describe("WithdrawForm", () => {
   let onToast: ReturnType<typeof vi.fn>;
   beforeEach(() => { onToast = vi.fn(); });
+  afterEach(() => { vi.useRealTimers(); });
 
   it("renders shares input and submit button", () => {
     render(<WithdrawForm onToast={onToast} />);
@@ -146,15 +143,12 @@ describe("WithdrawForm", () => {
   });
 
   it("calls onToast with success on valid submit", async () => {
-    vi.useFakeTimers();
     render(<WithdrawForm onToast={onToast} />);
     await userEvent.type(screen.getByLabelText(/shares/i), "50");
     await userEvent.click(screen.getByRole("button", { name: /withdraw/i }));
-    vi.advanceTimersByTime(1500);
     await waitFor(() => expect(onToast).toHaveBeenCalledWith(
       expect.objectContaining({ type: "success" })
-    ));
-    vi.useRealTimers();
+    ), { timeout: 2000 });
   });
 
   it("shows skeleton while loading", async () => {
@@ -181,6 +175,7 @@ describe("WithdrawForm", () => {
 describe("HarvestPanel", () => {
   let onToast: ReturnType<typeof vi.fn>;
   beforeEach(() => { onToast = vi.fn(); });
+  afterEach(() => { vi.useRealTimers(); });
 
   it("renders yield amount input and submit button", () => {
     render(<HarvestPanel onToast={onToast} />);
@@ -209,15 +204,12 @@ describe("HarvestPanel", () => {
   });
 
   it("calls onToast with success on valid submit", async () => {
-    vi.useFakeTimers();
     render(<HarvestPanel onToast={onToast} />);
     await userEvent.type(screen.getByLabelText(/yield amount/i), "200");
     await userEvent.click(screen.getByRole("button", { name: /harvest/i }));
-    vi.advanceTimersByTime(1500);
     await waitFor(() => expect(onToast).toHaveBeenCalledWith(
       expect.objectContaining({ type: "success" })
-    ));
-    vi.useRealTimers();
+    ), { timeout: 2000 });
   });
 
   it("shows informational description text", () => {

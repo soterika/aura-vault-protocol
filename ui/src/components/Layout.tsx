@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
 /* ── Stack ────────────────────────────────────────────────────────── */
 export type StackDirection = "horizontal" | "vertical";

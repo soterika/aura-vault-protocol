@@ -4,7 +4,8 @@ export type EmailTemplate =
   | 'withdrawal'
   | 'security-alert'
   | 'welcome'
-  | 'gdpr-erasure-confirmation';
+  | 'gdpr-erasure-confirmation'
+  | 'portfolio-digest';
 
 export type EmailPriority = 'high' | 'normal' | 'low';
 export type EmailProvider = 'sendgrid' | 'mailgun';

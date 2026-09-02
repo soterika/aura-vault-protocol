@@ -45,22 +45,6 @@
   --shadow-xl:  0 24px 64px #00000080;
 }
 
-/* ── Dark theme (#479 financial colour overrides) ─────────────── */
-/* Lighter tints required for 4.5:1 contrast on dark surfaces     */
-[data-theme="dark"] {
-  --fin-positive:        #4ade80;  /* green-400 — 8.7:1 on dark bg */
-  --fin-positive-subtle: #052e16;  /* green-950 badge              */
-  --fin-positive-text:   #4ade80;
-
-  --fin-negative:        #f87171;  /* red-400   — 6.3:1 on dark bg */
-  --fin-negative-subtle: #450a0a;  /* red-950 badge                */
-  --fin-negative-text:   #f87171;
-
-  --fin-warning:         #fbbf24;  /* amber-400 — 9.5:1 on dark bg */
-  --fin-warning-subtle:  #451a03;  /* amber-950 badge              */
-  --fin-warning-text:    #fbbf24;
-}
-
 /* ── Light theme ──────────────────────────────────────────────── */
 [data-theme="light"] {
   --color-bg:              #f5f6fa;
@@ -147,20 +131,6 @@
   --transition-fast: 150ms ease;
   --transition-base: 250ms ease;
   --transition-slow: 400ms ease;
-
-  /* ── Financial colour palette (#479) ───────────────────────── */
-  /* Light theme — meets 4.5:1 contrast on white backgrounds     */
-  --fin-positive:        #16a34a;  /* green-700 — gains, success */
-  --fin-positive-subtle: #dcfce7;  /* green-100 — badge bg       */
-  --fin-positive-text:   #15803d;  /* green-700 text             */
-
-  --fin-negative:        #dc2626;  /* red-600   — losses, errors */
-  --fin-negative-subtle: #fee2e2;  /* red-100   — badge bg       */
-  --fin-negative-text:   #b91c1c;  /* red-700 text               */
-
-  --fin-warning:         #d97706;  /* amber-600 — warnings, pending */
-  --fin-warning-subtle:  #fef3c7;  /* amber-100 — badge bg          */
-  --fin-warning-text:    #b45309;  /* amber-700 text                */
 
   /* ── Z-index ────────────────────────────────────────────────── */
   --z-base:    0;

@@ -1,4 +1,4 @@
-import type { ReactElement, SVGProps } from "react";
+import type { SVGProps } from "react";
 
 export type IconSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -10,7 +10,7 @@ export interface IconProps extends SVGProps<SVGSVGElement> {
   label?: string;
 }
 
-function icon(path: string | ReactElement, displayName: string) {
+function icon(path: string | JSX.Element, displayName: string) {
   function Icon({ size = "md", label, ...props }: IconProps) {
     const px = typeof size === "number" ? size : sizePx[size];
     return (

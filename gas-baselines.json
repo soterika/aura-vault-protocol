@@ -1,6 +1,6 @@
 {
-  "_comment": "Gas baselines for AuraVault contract functions. CPU instruction counts are measured in the soroban-sdk native test harness (not WASM). Values are underestimates relative to on-chain WASM execution but are internally consistent and sufficient for regression detection. Update by running: scripts/update-gas-baselines.sh",
-  "_updated": "2026-07-27",
+  "_comment": "Gas baselines for AuraVault contract functions. CPU instruction counts are measured in the soroban-sdk native test harness (not WASM). Values are underestimates relative to on-chain WASM execution but are internally consistent and sufficient for regression detection. Update by running: scripts/run-benchmarks.sh --update-baselines",
+  "_updated": "2026-08-28",
   "_threshold_pct": 10,
   "baselines": {
     "initialize": {
@@ -8,8 +8,8 @@
       "memory_bytes": 1200000
     },
     "deposit": {
-      "cpu_instructions": 5500000,
-      "memory_bytes": 1800000
+      "cpu_instructions": 4675000,
+      "memory_bytes": 1530000
     },
     "withdraw": {
       "cpu_instructions": 5800000,

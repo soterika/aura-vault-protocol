@@ -7,37 +7,15 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: false
-    jsonData:
-      timeInterval: 15s
-      httpMethod: POST
 
   - name: Loki
     type: loki
     access: proxy
     url: http://loki:3100
     editable: false
-    jsonData:
-      maxLines: 5000
-      timeout: 60
-      derivedFields:
-        - name: TraceID
-          matcherRegex: 'traceId=(\w+)'
-          url: "$${__value.raw}"
-          datasourceUid: Jaeger
-        - name: SpanID
-          matcherRegex: 'spanId=(\w+)'
-          url: "$${__value.raw}"
-          datasourceUid: Jaeger
 
   - name: Jaeger
     type: jaeger
     access: proxy
     url: http://jaeger:16686
     editable: false
-    jsonData:
-      tracesToLogsV2:
-        datasourceUid: Loki
-        spanStartTimeShift: '-1h'
-        spanEndTimeShift: '1h'
-        filterByTraceID: true
-        filterBySpanID: true

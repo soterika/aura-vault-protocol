@@ -1,0 +1,22 @@
+[package]
+name = "aura-migration"
+version = "0.1.0"
+edition = "2021"
+description = "Migration helper contract for atomically moving assets between AuraVault instances"
+license = "MIT"
+repository = "https://github.com/soterika/aura-vault-protocol"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { version = "27", default-features = true }
+
+[dev-dependencies]
+soroban-sdk = { version = "27", features = ["testutils"] }
+
+[profile.release]
+overflow-checks = true
+opt-level = 3
+lto = true
+codegen-units = 1

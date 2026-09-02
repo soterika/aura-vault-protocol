@@ -1,0 +1,40 @@
+{
+  "Rules": [
+    {
+      "ID": "postgres-backup-30day-retention",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "postgres-backups/"
+      },
+      "Transitions": [
+        {
+          "Days": 7,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 14,
+          "StorageClass": "GLACIER_IR"
+        }
+      ],
+      "Expiration": {
+        "Days": 30
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 7
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    },
+    {
+      "ID": "delete-expired-delete-markers",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "postgres-backups/"
+      },
+      "Expiration": {
+        "ExpiredObjectDeleteMarker": true
+      }
+    }
+  ]
+}

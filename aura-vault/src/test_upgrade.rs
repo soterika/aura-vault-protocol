@@ -43,7 +43,7 @@ mod upgrade_tests {
         let vault = AuraVaultClient::new(&env, &vault_address);
 
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_address, &signers);
+        vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
         // Zero fees keep share arithmetic exact in upgrade scenario tests
         vault.set_fees(&admin, &0_u32, &0_u32);
 
@@ -244,7 +244,7 @@ mod upgrade_tests {
         let vault = AuraVaultClient::new(&env, &vault_address);
 
         let signers: Vec<Address> = Vec::new(&env);
-        vault.initialize(&admin, &token_address, &signers);
+        vault.initialize(&admin, &token_address, &signers, &soroban_sdk::String::from_str(&env, "AuraVault"), &soroban_sdk::String::from_str(&env, "AURA"));
         vault.set_fees(&admin, &0_u32, &0_u32);
 
         // Seed deposits so there is state to preserve
@@ -278,7 +278,7 @@ mod upgrade_tests {
         // Initialize with mocked auths temporarily
         env_no_mock.mock_all_auths();
         let signers2: Vec<Address> = Vec::new(&env_no_mock);
-        vault2.initialize(&admin2, &token2, &signers2);
+        vault2.initialize(&admin2, &token2, &signers2, &0_u32);
         vault2.set_fees(&admin2, &0_u32, &0_u32);
 
         let seeder = Address::generate(&env_no_mock);

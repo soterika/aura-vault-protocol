@@ -65,3 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_entity
   ON audit_logs (actor, entity_type, entity_id, created_at DESC);
 
 COMMIT;
+
+-- Down Migration
+BEGIN;
+DROP TABLE IF EXISTS audit_logs CASCADE;
+COMMIT;

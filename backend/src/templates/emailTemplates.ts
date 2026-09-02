@@ -290,6 +290,46 @@ To unsubscribe: {{unsubscribeUrl}}
 `,
 };
 
+const PORTFOLIO_DIGEST: TemplateDefinition = {
+  defaultSubject: 'Your Daily Aura Vault Summary',
+  html: layout('Daily Portfolio Summary', `
+    ${greeting()}
+    <p style="color:#c0c0d0;font-size:15px;margin:0 0 8px;">
+      Here's your daily Aura Vault portfolio snapshot for
+      <span style="font-family:monospace;font-size:13px;color:#a0a0b0;word-break:break-all;">{{walletAddress}}</span>.
+    </p>
+    ${detailTable(`
+      ${row('Current Value', '<span style="color:#6366f1;font-size:18px;font-weight:700;">{{currentValue}} {{asset}}</span>', false)}
+      ${row('24h Change', `
+        {{#if (eq changeSign "+")}}
+          <span style="color:#22c55e;font-size:15px;font-weight:600;">{{changeSign}}{{change24h}} {{asset}}</span>
+        {{else}}
+          <span style="color:#f59e0b;font-size:15px;font-weight:600;">{{changeSign}}{{change24h}} {{asset}}</span>
+        {{/if}}
+      `)}
+      ${row('Accrued Yield', '<span style="color:#22c55e;font-size:15px;font-weight:600;">{{accruedYield}} {{asset}}</span>')}
+      ${row('Last Harvest', '{{lastHarvest}}')}
+    `)}
+    <p style="color:#6b6b80;font-size:12px;margin:24px 0 0;">
+      This digest is sent daily at 08:00 UTC. To stop receiving it,
+      <a href="{{unsubscribeUrl}}" style="color:#6366f1;text-decoration:none;">unsubscribe here</a>.
+    </p>
+  `),
+  text: `Aura Vault — Daily Portfolio Summary
+
+Hi {{userName}},
+
+Here's your portfolio snapshot for {{walletAddress}}:
+
+Current Value:  {{currentValue}} {{asset}}
+24h Change:     {{changeSign}}{{change24h}} {{asset}}
+Accrued Yield:  {{accruedYield}} {{asset}}
+Last Harvest:   {{lastHarvest}}
+
+To unsubscribe: {{unsubscribeUrl}}
+`,
+};
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
@@ -299,4 +339,5 @@ export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
   'security-alert': SECURITY_ALERT,
   'welcome': WELCOME,
   'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
+  'portfolio-digest': PORTFOLIO_DIGEST,
 };

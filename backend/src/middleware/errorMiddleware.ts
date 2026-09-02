@@ -35,7 +35,7 @@ export function createApiError(
 
 export function errorHandler(
   err: Error | ApiError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) {
@@ -58,6 +58,11 @@ export function errorHandler(
       code: err.message,
       message: userMessage,
       ...(process.env.NODE_ENV === "development" && { details: err.message }),
+    },
+    meta: {
+      requestId: (req as Request & { requestId?: string }).requestId ?? "unknown",
+      timestamp: new Date().toISOString(),
+      version: "1.0.0",
     },
   };
 
