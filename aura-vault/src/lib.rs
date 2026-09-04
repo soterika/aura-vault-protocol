@@ -290,6 +290,7 @@ impl AuraVault {
         set_vault_name(&env, &name);
         set_vault_symbol(&env, &symbol);
         set_vault_version(&env, 1);
+        storage::set_role(&env, &admin, storage::ADMIN_ROLE);
         initialize_governance(&env, signers)?;
         bump_instance(&env);
         Ok(())
@@ -888,8 +889,9 @@ impl AuraVault {
         if yield_amount <= 0 {
             return Err(VaultError::ZeroAmount);
         }
-        if get_admin(&env).is_none() {
-            return Err(VaultError::NotInitialized);
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != caller && !storage::has_role(&env, &caller, storage::KEEPER_ROLE) && !storage::has_role(&env, &caller, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
@@ -1085,8 +1087,9 @@ impl AuraVault {
         if yield_amount <= 0 || underlying_amount <= 0 {
             return Err(VaultError::ZeroAmount);
         }
-        if get_admin(&env).is_none() {
-            return Err(VaultError::NotInitialized);
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != caller && !storage::has_role(&env, &caller, storage::KEEPER_ROLE) && !storage::has_role(&env, &caller, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
@@ -1230,8 +1233,9 @@ impl AuraVault {
         if yield_amount <= 0 {
             return Err(VaultError::ZeroAmount);
         }
-        if get_admin(&env).is_none() {
-            return Err(VaultError::NotInitialized);
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != caller && !storage::has_role(&env, &caller, storage::KEEPER_ROLE) && !storage::has_role(&env, &caller, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
@@ -1356,8 +1360,9 @@ impl AuraVault {
         if yield_amount <= 0 || underlying_amount <= 0 {
             return Err(VaultError::ZeroAmount);
         }
-        if get_admin(&env).is_none() {
-            return Err(VaultError::NotInitialized);
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != caller && !storage::has_role(&env, &caller, storage::KEEPER_ROLE) && !storage::has_role(&env, &caller, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
         }
         if storage_is_paused(&env) {
             return Err(VaultError::VaultPaused);
@@ -1677,7 +1682,7 @@ impl AuraVault {
     /// [`unpause`]: AuraVault::unpause
     pub fn pause(env: Env, admin: Address) -> Result<(), VaultError> {
         let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
+        if stored_admin != admin && !storage::has_role(&env, &admin, storage::GUARDIAN_ROLE) && !storage::has_role(&env, &admin, storage::ADMIN_ROLE) {
             return Err(VaultError::UpgradeUnauthorized);
         }
         admin.require_auth();
@@ -1705,7 +1710,7 @@ impl AuraVault {
     /// [`pause`]: AuraVault::pause
     pub fn unpause(env: Env, admin: Address) -> Result<(), VaultError> {
         let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
-        if stored_admin != admin {
+        if stored_admin != admin && !storage::has_role(&env, &admin, storage::GUARDIAN_ROLE) && !storage::has_role(&env, &admin, storage::ADMIN_ROLE) {
             return Err(VaultError::UpgradeUnauthorized);
         }
         admin.require_auth();
@@ -2647,6 +2652,48 @@ impl AuraVault {
         admin.require_auth();
         governance::apply_set_threshold(&env, threshold)?;
         bump_instance(&env);
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Role management — Issue #357
+    // -----------------------------------------------------------------------
+
+    pub fn grant_role(env: Env, admin: Address, role: u32, account: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin && !storage::has_role(&env, &admin, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+
+        let current_role = storage::get_role(&env, &account);
+        let new_role = current_role | role;
+        storage::set_role(&env, &account, new_role);
+
+        env.events().publish(
+            (Symbol::new(&env, "RoleGranted"), account),
+            (role, admin),
+        );
+
+        Ok(())
+    }
+
+    pub fn revoke_role(env: Env, admin: Address, role: u32, account: Address) -> Result<(), VaultError> {
+        let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        if stored_admin != admin && !storage::has_role(&env, &admin, storage::ADMIN_ROLE) {
+            return Err(VaultError::UpgradeUnauthorized);
+        }
+        admin.require_auth();
+
+        let current_role = storage::get_role(&env, &account);
+        let new_role = current_role & !role;
+        storage::set_role(&env, &account, new_role);
+
+        env.events().publish(
+            (Symbol::new(&env, "RoleRevoked"), account),
+            (role, admin),
+        );
+
         Ok(())
     }
 }

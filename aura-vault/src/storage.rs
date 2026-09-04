@@ -90,7 +90,16 @@ pub enum DataKey {
     /// Share-price snapshot stored after every harvest.
     /// Key = ledger timestamp (u64), Value = share price in micro-USD (i128).
     PriceSnapshot(u64),
+    // -----------------------------------------------------------------------
+    // Granular roles (Issue #357)
+    // -----------------------------------------------------------------------
+    /// Bitmask of roles granted to an address.
+    Role(Address),
 }
+
+pub const ADMIN_ROLE: u32 = 1 << 0;
+pub const KEEPER_ROLE: u32 = 1 << 1;
+pub const GUARDIAN_ROLE: u32 = 1 << 2;
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
 pub const INSTANCE_LIFETIME_THRESHOLD: u32 = DAY_IN_LEDGERS * 7;
@@ -101,6 +110,10 @@ pub const PERSISTENT_BUMP_AMOUNT: u32 = DAY_IN_LEDGERS * 30;
 // ---------------------------------------------------------------------------
 // Instance-storage helpers
 // ---------------------------------------------------------------------------
+
+pub fn is_initialized(env: &Env) -> bool {
+    env.storage().instance().has(&DataKey::UnderlyingToken)
+}
 
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Admin)
@@ -661,4 +674,25 @@ pub fn record_multisig_vote(env: &Env, op_id: u64, signer: &soroban_sdk::Address
     env.storage()
         .instance()
         .set(&MultisigStorageKey::Voted(op_id, signer.clone()), &true);
+}
+
+// ---------------------------------------------------------------------------
+// Role management (Issue #357)
+// ---------------------------------------------------------------------------
+
+pub fn get_role(env: &Env, addr: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Role(addr.clone()))
+        .unwrap_or(0)
+}
+
+pub fn set_role(env: &Env, addr: &Address, role: u32) {
+    let key = DataKey::Role(addr.clone());
+    env.storage().persistent().set(&key, &role);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn has_role(env: &Env, addr: &Address, role: u32) -> bool {
+    (get_role(env, addr) & role) == role
 }
