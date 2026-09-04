@@ -629,4 +629,14 @@ pub trait AuraVaultTrait {
     ///
     /// Read-only; no authorization required.
     fn list_price_snapshots(env: Env, timestamps: Vec<u64>, from: u64, to: u64) -> Vec<(u64, i128)>;
+
+    // -----------------------------------------------------------------------
+    // Role management — Issue #357
+    // -----------------------------------------------------------------------
+    
+    /// Grant a role to an address. Admin-only.
+    fn grant_role(env: Env, admin: Address, role: u32, account: Address) -> Result<(), VaultError>;
+
+    /// Revoke a role from an address. Admin-only.
+    fn revoke_role(env: Env, admin: Address, role: u32, account: Address) -> Result<(), VaultError>;
 }
