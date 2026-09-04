@@ -46,6 +46,7 @@ import {
 import {
   correlationIdMiddleware,
   createRequestLogger,
+  logger,
 } from "./logger.js";
 import {
   validate,
@@ -220,18 +221,18 @@ const server = app.listen(PORT, () => {
   startYieldWorker();
   void warmCache();           // existing DeFi price warm-up
   void runCacheWarmup();      // issue #325: vault stats / share price / top depositors
-  console.log(`Aura Vault backend running on port ${PORT}`);
+  logger.info({ port: PORT }, `Aura Vault backend running on port ${PORT}`);
 });
 
 async function shutdown(signal: string): Promise<void> {
-  console.log(`[shutdown] received ${signal}`);
+  logger.info({ signal }, `[shutdown] received ${signal}`);
   stopWorker();
   stopEmailWorker();
   stopYieldWorker();
   await shutdownTracing();
   server.close(async () => {
     await disconnectRedis().catch((err) => {
-      console.error("[shutdown] redis disconnect failed:", err);
+      logger.error({ err }, "[shutdown] redis disconnect failed");
     });
     process.exit(0);
   });

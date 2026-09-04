@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { getPortfolioAnalytics, type TxEvent } from '../services/analyticsService.js';
 import { INVALID_ADDRESS, INTERNAL_ERROR } from '../middleware/errorCodes.js';
+import { logger } from "../logger.js";
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ router.get('/:address/analytics', async (req: Request, res: Response) => {
     const analytics = await getPortfolioAnalytics(address, loadEventsForAddress);
     res.success(analytics);
   } catch (err) {
-    console.error('[analyticsRoute] error computing analytics:', err);
+    logger.error('[analyticsRoute] error computing analytics:', err);
     res.failure(INTERNAL_ERROR, 'Internal server error', 500);
   }
 });

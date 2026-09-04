@@ -15,6 +15,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
 import { getWritePool } from "../db.js";
+import { logger } from "../logger.js";
 
 export interface MigrationFile {
   name: string;
@@ -197,7 +198,7 @@ export async function runMigrationsUp(options?: {
           continue;
         }
 
-        console.info(`[migrations] Running UP: ${migration.filename}`);
+        logger.info(`[migrations] Running UP: ${migration.filename}`);
         await client.query("BEGIN;");
         try {
           if (migration.upSql) {
@@ -209,10 +210,10 @@ export async function runMigrationsUp(options?: {
           );
           await client.query("COMMIT;");
           appliedNow.push(migration.name);
-          console.info(`[migrations] Applied: ${migration.name}`);
+          logger.info(`[migrations] Applied: ${migration.name}`);
         } catch (err) {
           await client.query("ROLLBACK;");
-          console.error(`[migrations] Failed running migration ${migration.name}:`, err);
+          logger.error(`[migrations] Failed running migration ${migration.name}:`, err);
           throw err;
         }
 
@@ -261,14 +262,14 @@ export async function runMigrationsDown(options?: {
 
         const migration = fileMap.get(name);
         if (!migration) {
-          console.warn(`[migrations] Migration file for ${name} not found locally, removing record`);
+          logger.warn(`[migrations] Migration file for ${name} not found locally, removing record`);
           await client.query("DELETE FROM schema_migrations WHERE name = $1;", [name]);
           rolledBack.push(name);
           executed++;
           continue;
         }
 
-        console.info(`[migrations] Running DOWN: ${migration.filename}`);
+        logger.info(`[migrations] Running DOWN: ${migration.filename}`);
         await client.query("BEGIN;");
         try {
           if (migration.downSql) {
@@ -278,10 +279,10 @@ export async function runMigrationsDown(options?: {
           await client.query("COMMIT;");
           rolledBack.push(name);
           executed++;
-          console.info(`[migrations] Rolled back: ${name}`);
+          logger.info(`[migrations] Rolled back: ${name}`);
         } catch (err) {
           await client.query("ROLLBACK;");
-          console.error(`[migrations] Failed rolling back ${name}:`, err);
+          logger.error(`[migrations] Failed rolling back ${name}:`, err);
           throw err;
         }
 
@@ -322,19 +323,19 @@ export async function checkPendingMigrations(options?: {
 
 export async function autoMigrate(): Promise<void> {
   if (!process.env.DATABASE_URL) {
-    console.info("[migrations] DATABASE_URL not configured, skipping auto-migration");
+    logger.info("[migrations] DATABASE_URL not configured, skipping auto-migration");
     return;
   }
 
   try {
-    console.info("[migrations] Checking database schema status...");
+    logger.info("[migrations] Checking database schema status...");
     const applied = await runMigrationsUp();
     if (applied.length > 0) {
-      console.info(`[migrations] Successfully applied ${applied.length} pending migration(s) on startup`);
+      logger.info(`[migrations] Successfully applied ${applied.length} pending migration(s) on startup`);
     } else {
-      console.info("[migrations] Database schema is up to date");
+      logger.info("[migrations] Database schema is up to date");
     }
   } catch (err) {
-    console.error("[migrations] Error during auto-migration on startup:", err);
+    logger.error("[migrations] Error during auto-migration on startup:", err);
   }
 }

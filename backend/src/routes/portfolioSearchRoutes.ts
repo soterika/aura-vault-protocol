@@ -18,6 +18,7 @@ import { Router, Request, Response } from "express";
 import { getReadPool } from "../db.js";
 import { successResponse, errorResponse, paginatedResponse } from "../dto/index.js";
 import { authenticate } from "../middleware/authMiddleware.js";
+import { logger } from "../logger.js";
 
 export const portfolioSearchRouter = Router({ mergeParams: true });
 
@@ -164,7 +165,7 @@ portfolioSearchRouter.get("/search", authenticate, async (req: Request, res: Res
       })
     );
   } catch (err) {
-    console.error("[portfolio/search]", err);
+    logger.error("[portfolio/search]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Search query failed"));
   }
 });

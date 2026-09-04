@@ -18,6 +18,7 @@ import {
   LAG_ALERT_THRESHOLD_SECONDS,
   type VaultEvent,
 } from "../services/eventIndexer.js";
+import { logger } from "../logger.js";
 
 export const indexerRouter = Router();
 
@@ -76,7 +77,7 @@ indexerRouter.post(
         ),
       });
     } catch (err) {
-      console.error("[indexer-route]", err);
+      logger.error("[indexer-route]", err);
       res.status(500).json({ error: "Failed to process events" });
     }
   }

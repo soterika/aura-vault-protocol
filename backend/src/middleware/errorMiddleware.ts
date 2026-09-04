@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { logger } from "../logger.js";
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -46,11 +47,18 @@ export function errorHandler(
     errorMessages[err.message] ||
     "An unexpected error occurred. Please try again.";
 
-  console.error(`[${new Date().toISOString()}] Error:`, {
-    message: err.message,
-    statusCode,
-    stack: err.stack,
-  });
+  logger.error(
+    {
+      err: {
+        message: err.message,
+        statusCode,
+        stack: err.stack,
+      },
+      correlationId:
+        (req as Request & { correlationId?: string }).correlationId ?? "unknown",
+    },
+    "Request error"
+  );
 
   const response = {
     success: false,

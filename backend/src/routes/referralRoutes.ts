@@ -20,6 +20,7 @@ import {
   isValidStellarAddress,
   INVALID_STELLAR_ADDRESS_MESSAGE,
 } from "../utils/stellarAddress.js";
+import { logger } from "../logger.js";
 
 export const referralRouter = Router();
 
@@ -69,7 +70,7 @@ function handleReferralError(err: unknown, res: Response): void {
     });
     return;
   }
-  console.error("[referral-route]", err);
+  logger.error("[referral-route]", err);
   res.status(500).json({ error: "Internal server error" });
 }
 

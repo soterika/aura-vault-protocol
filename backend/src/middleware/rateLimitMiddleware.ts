@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import { getRedis } from "../redis.js";
 
@@ -123,7 +124,7 @@ export function ipRateLimiter(
       next();
     } catch (err) {
       // Fail open on Redis errors — availability > strict enforcement
-      console.error("[RateLimit] Redis error:", (err as Error).message);
+      logger.error({ err: (err as Error).message }, "[RateLimit] Redis error");
       next();
     }
   };
@@ -153,7 +154,7 @@ export function userRateLimiter(): RequestHandler {
       }
       next();
     } catch (err) {
-      console.error("[RateLimit] Redis error:", (err as Error).message);
+      logger.error({ err: (err as Error).message }, "[RateLimit] Redis error");
       next();
     }
   };

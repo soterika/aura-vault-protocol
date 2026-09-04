@@ -22,6 +22,7 @@ import {
 } from "../services/vaultRegistryService.js";
 import { successResponse, errorResponse } from "../dto/index.js";
 import { authenticate } from "../middleware/authMiddleware.js";
+import { logger } from "../logger.js";
 
 export const vaultRegistryRouter = Router();
 
@@ -61,7 +62,7 @@ vaultRegistryRouter.get("/", async (req: Request, res: Response): Promise<void> 
     const vaults = await listVaults(network);
     res.json(successResponse(vaults));
   } catch (err) {
-    console.error("[vaults/list]", err);
+    logger.error("[vaults/list]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to list vaults"));
   }
 });
@@ -85,7 +86,7 @@ vaultRegistryRouter.get("/:id", async (req: Request, res: Response): Promise<voi
     }
     res.json(successResponse(vault));
   } catch (err) {
-    console.error("[vaults/get]", err);
+    logger.error("[vaults/get]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve vault"));
   }
 });
@@ -114,7 +115,7 @@ vaultRegistryRouter.post("/", authenticate, async (req: Request, res: Response):
       res.status(409).json(errorResponse("CONFLICT", "A vault with this contract_id already exists"));
       return;
     }
-    console.error("[vaults/create]", err);
+    logger.error("[vaults/create]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to register vault"));
   }
 });
@@ -144,7 +145,7 @@ vaultRegistryRouter.patch("/:id", authenticate, async (req: Request, res: Respon
     }
     res.json(successResponse(vault));
   } catch (err) {
-    console.error("[vaults/update]", err);
+    logger.error("[vaults/update]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to update vault"));
   }
 });
@@ -168,7 +169,7 @@ vaultRegistryRouter.delete("/:id", authenticate, async (req: Request, res: Respo
     }
     res.json(successResponse({ message: "Vault deactivated", vault }));
   } catch (err) {
-    console.error("[vaults/deactivate]", err);
+    logger.error("[vaults/deactivate]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to deactivate vault"));
   }
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { logger } from "../logger.js";
 
 export interface WithdrawalJob {
   id: string;
@@ -67,7 +68,7 @@ async function processNextWithdrawal(): Promise<void> {
 export function startWithdrawalProcessor(intervalMs = 10_000): void {
   if (processorInterval) return;
   processorInterval = setInterval(() => {
-    processNextWithdrawal().catch(console.error);
+    processNextWithdrawal().catch((err) => logger.error({ err }, "[withdrawalQueue] processNextWithdrawal failed"));
   }, intervalMs);
 }
 

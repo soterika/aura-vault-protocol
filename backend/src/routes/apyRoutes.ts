@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getApyHistory, isValidPeriod } from '../services/apyHistoryService.js';
 import { INVALID_INPUT, INTERNAL_ERROR } from '../middleware/errorCodes.js';
+import { logger } from "../logger.js";
 
 export const apyRouter = Router();
 
@@ -25,7 +26,7 @@ apyRouter.get('/history', async (req: Request, res: Response): Promise<void> => 
     res.set('Cache-Control', 'public, max-age=300');
     res.success(history);
   } catch (err) {
-    console.error('[APY] GET /history error:', err);
+    logger.error('[APY] GET /history error:', err);
     res.failure(INTERNAL_ERROR, 'Failed to retrieve APY history.', 500);
   }
 });

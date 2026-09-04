@@ -17,6 +17,7 @@ import {
   type YieldSource,
   type BatchResult,
 } from "./yieldService.js";
+import { logger } from "../logger.js";
 
 export interface YieldWorkerOptions {
   intervalMs?: number;
@@ -56,7 +57,7 @@ async function persistRunStats(stats: RunStats): Promise<void> {
     // Trim to last 200 runs (~8 days of hourly runs)
     await redis.zremrangebyrank(NS.YIELD_HISTORY, 0, -201);
   } catch (err) {
-    console.error("[YieldWorker] Failed to persist run stats:", err);
+    logger.error("[YieldWorker] Failed to persist run stats:", err);
   }
 }
 
@@ -91,7 +92,7 @@ let runInProgress = false;
 
 async function runOnce(opts: Required<YieldWorkerOptions>): Promise<void> {
   if (runInProgress) {
-    console.warn("[YieldWorker] Previous run still in progress, skipping tick");
+    logger.warn("[YieldWorker] Previous run still in progress, skipping tick");
     return;
   }
 
@@ -105,7 +106,7 @@ async function runOnce(opts: Required<YieldWorkerOptions>): Promise<void> {
     ]);
 
     if (positions.length === 0) {
-      console.log("[YieldWorker] No positions to process");
+      logger.info("[YieldWorker] No positions to process");
       return;
     }
 
@@ -127,7 +128,7 @@ async function runOnce(opts: Required<YieldWorkerOptions>): Promise<void> {
     await persistRunStats(stats);
     await opts.onRunComplete(result);
 
-    console.log(
+    logger.info(
       `[YieldWorker] Run complete — processed: ${result.processed}, ` +
         `failed: ${result.failed}, duration: ${result.durationMs}ms`
     );
@@ -141,7 +142,7 @@ async function runOnce(opts: Required<YieldWorkerOptions>): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     opts.onAlert("Yield worker run failed", { error: msg, runAt });
-    console.error("[YieldWorker] Run failed:", err);
+    logger.error("[YieldWorker] Run failed:", err);
   } finally {
     runInProgress = false;
   }
@@ -155,7 +156,7 @@ function buildOptions(opts: YieldWorkerOptions): Required<YieldWorkerOptions> {
     getSources: opts.getSources ?? (async () => []),
     onAlert:
       opts.onAlert ??
-      ((msg, meta) => console.error(`[YieldWorker] ALERT: ${msg}`, meta ?? "")),
+      ((msg, meta) => logger.error(`[YieldWorker] ALERT: ${msg}`, meta ?? "")),
     onRunComplete: opts.onRunComplete ?? (async () => {}),
   };
 }
@@ -172,7 +173,7 @@ export function startYieldWorker(opts: YieldWorkerOptions = {}): void {
     void runOnce(resolvedOpts);
   }, resolvedOpts.intervalMs);
 
-  console.log(
+  logger.info(
     `[YieldWorker] Started — interval: ${resolvedOpts.intervalMs / 1000}s`
   );
 }
@@ -181,7 +182,7 @@ export function stopYieldWorker(): void {
   if (workerTimer !== null) {
     clearInterval(workerTimer);
     workerTimer = null;
-    console.log("[YieldWorker] Stopped");
+    logger.info("[YieldWorker] Stopped");
   }
 }
 

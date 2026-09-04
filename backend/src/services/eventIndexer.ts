@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 /**
  * Optimised Event Indexer for Aura Vault
  *
@@ -143,7 +144,7 @@ export interface DbAdapter {
  */
 export class NoopDbAdapter implements DbAdapter {
   async batchInsert(events: VaultEvent[]): Promise<void> {
-    console.log(
+    logger.info(
       `[event-indexer] noop-db: would insert ${events.length} event(s)`
     );
   }
@@ -211,7 +212,7 @@ export class EventBuffer {
       totalBatchesFlushed += 1;
     } catch (err) {
       errors.push(String(err));
-      console.error(`[event-indexer] batch insert failed:`, err);
+      logger.error(`[event-indexer] batch insert failed:`, err);
     }
 
     // Record average lag for this batch
@@ -288,7 +289,7 @@ export async function processEventsParallel(
     if (settled.status === "fulfilled") {
       summary.set(settled.value.type, settled.value.result);
     } else {
-      console.error(
+      logger.error(
         "[event-indexer] parallel processor error:",
         settled.reason
       );

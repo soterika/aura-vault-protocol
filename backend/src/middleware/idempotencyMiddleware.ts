@@ -13,6 +13,7 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import crypto from "crypto";
 import { getRedis } from "../redis.js";
+import { logger } from "../logger.js";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60; // 24 hours
@@ -71,7 +72,7 @@ export function idempotency(): RequestHandler {
         return;
       }
     } catch (err) {
-      console.warn("[idempotency] Redis error during lookup, proceeding without cache:", err);
+      logger.warn({ err }, "[idempotency] Redis error during lookup, proceeding without cache");
     }
 
     // Intercept response to cache on completion
@@ -90,10 +91,10 @@ export function idempotency(): RequestHandler {
             body,
           };
           redis.set(redisKey, JSON.stringify(record), "EX", IDEMPOTENCY_TTL_SECONDS).catch((err) => {
-            console.warn("[idempotency] Failed to cache response in Redis:", err);
+            logger.warn({ err }, "[idempotency] Failed to cache response in Redis");
           });
         } catch (err) {
-          console.warn("[idempotency] Redis client error during caching:", err);
+          logger.warn({ err }, "[idempotency] Redis client error during caching");
         }
       }
 

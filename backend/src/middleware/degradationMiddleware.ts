@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 /**
  * Graceful Degradation Middleware — Issue #869
  *
@@ -79,7 +80,7 @@ export function degradationStatusMiddleware(
 
   // Log degradation state on status change (log only once per state transition)
   if (status.isDegraded && !(req as any)._degradationLogged) {
-    console.warn("[degradation] Service degraded:", status);
+    logger.warn({ status }, "[degradation] Service degraded");
     (req as any)._degradationLogged = true;
   }
 

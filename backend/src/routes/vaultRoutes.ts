@@ -14,6 +14,7 @@ import { getVaultStats, VaultStatsData } from "../services/vaultStatsService.js"
 import { getDbMetrics, getSlowQueryLog, dbMetricsPrometheusText } from "../services/dbMonitor.js";
 import { successResponse, errorResponse } from "../dto/index.js";
 import { resolveVault } from "../services/vaultRegistryService.js";
+import { logger } from "../logger.js";
 
 export const VAULT_STATS_CACHE_NS = "vault:stats";
 export const VAULT_STATS_CACHE_KEY = "current";
@@ -108,7 +109,7 @@ vaultRouter.get("/stats", async (req: Request, res: Response): Promise<void> => 
     };
     res.json(successResponse(payload));
   } catch (err) {
-    console.error("[vault/stats]", err);
+    logger.error("[vault/stats]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve vault stats"));
   }
 });
@@ -132,7 +133,7 @@ vaultRouter.post("/stats/invalidate", async (req: Request, res: Response): Promi
     await cacheDel(VAULT_STATS_CACHE_NS, scopedCacheKey);
     res.json(successResponse({ invalidated: true }));
   } catch (err) {
-    console.error("[vault/stats/invalidate]", err);
+    logger.error("[vault/stats/invalidate]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Cache invalidation failed"));
   }
 });
@@ -156,7 +157,7 @@ vaultRouter.get("/metrics/db", async (_req: Request, res: Response): Promise<voi
     const metrics = await getDbMetrics();
     res.json(successResponse({ metrics, generated_at: new Date().toISOString() }));
   } catch (err) {
-    console.error("[vault/metrics/db]", err);
+    logger.error("[vault/metrics/db]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve DB metrics"));
   }
 });
@@ -170,7 +171,7 @@ vaultRouter.get("/metrics/db/slow-log", async (_req: Request, res: Response): Pr
     const log = await getSlowQueryLog();
     res.json(successResponse({ slow_queries: log, count: log.length, generated_at: new Date().toISOString() }));
   } catch (err) {
-    console.error("[vault/metrics/db/slow-log]", err);
+    logger.error("[vault/metrics/db/slow-log]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve slow query log"));
   }
 });
@@ -184,7 +185,7 @@ vaultRouter.get("/metrics/db/prometheus", async (_req: Request, res: Response): 
     const text = await dbMetricsPrometheusText();
     res.set("Content-Type", "text/plain; version=0.0.4").send(text);
   } catch (err) {
-    console.error("[vault/metrics/db/prometheus]", err);
+    logger.error("[vault/metrics/db/prometheus]", err);
     res.status(500).send("# error generating metrics\n");
   }
 });

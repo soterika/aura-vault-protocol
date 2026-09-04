@@ -64,7 +64,7 @@ const envSchema = z.object({
     .optional()
     .default("development"),
   LOG_LEVEL: z
-    .enum(["error", "warn", "info", "http", "verbose", "debug", "silly"])
+    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .optional()
     .default("info"),
   CORS_ORIGIN: optionalStr,
@@ -184,7 +184,7 @@ const env = parseEnv();
  *
  * @property port       - TCP port the Express server listens on (default 3001)
  * @property nodeEnv    - Runtime environment: "development" | "test" | "production"
- * @property logLevel   - Winston log level
+ * @property logLevel   - Pino log level (trace | debug | info | warn | error | fatal)
  * @property corsOrigin - Comma-separated list of allowed CORS origins; empty
  *                        string means localhost-only in dev, deny-all in prod
  */

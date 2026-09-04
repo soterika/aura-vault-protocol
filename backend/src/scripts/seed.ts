@@ -12,18 +12,19 @@
  */
 
 import { getWritePool, closePools } from "../db.js";
+import { logger } from "../logger.js";
 
 export async function seedDatabase(): Promise<void> {
   const pool = getWritePool();
   const client = await pool.connect();
 
-  console.info("[seed] Starting development data seeding...");
+  logger.info("[seed] Starting development data seeding...");
 
   try {
     await client.query("BEGIN;");
 
     // 1. Vaults Registry
-    console.info("[seed] Seeding vaults registry...");
+    logger.info("[seed] Seeding vaults registry...");
     await client.query(`
       INSERT INTO vaults (id, contract_id, name, underlying_token, network, is_active, is_default, description)
       VALUES 
@@ -33,7 +34,7 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     // 2. Sample Vault Positions
-    console.info("[seed] Seeding sample vault positions...");
+    logger.info("[seed] Seeding sample vault positions...");
     await client.query(`
       INSERT INTO vault_positions (user_id, vault_id, amount, entry_date, entry_price, yield_earned)
       VALUES 
@@ -44,7 +45,7 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     // 3. Referrals
-    console.info("[seed] Seeding referrals...");
+    logger.info("[seed] Seeding referrals...");
     await client.query(`
       INSERT INTO referrals (referrer_address, referred_address, registered_at, deposit_volume, pending_reward, claimed_reward)
       VALUES 
@@ -54,7 +55,7 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     // 4. Yield Sources & Calculations
-    console.info("[seed] Seeding yield sources and calculations...");
+    logger.info("[seed] Seeding yield sources and calculations...");
     await client.query(`
       INSERT INTO yield_sources (id, vault_id, source_type, apy, is_active)
       VALUES 
@@ -71,7 +72,7 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     // 5. Transaction Jobs
-    console.info("[seed] Seeding transaction jobs...");
+    logger.info("[seed] Seeding transaction jobs...");
     await client.query(`
       INSERT INTO transaction_jobs (id, tx_type, wallet_address, amount, status, attempts, result)
       VALUES 
@@ -81,7 +82,7 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     // 6. Contract Events
-    console.info("[seed] Seeding vault events...");
+    logger.info("[seed] Seeding vault events...");
     await client.query(`
       INSERT INTO vault_events (id, ledger_sequence, ledger_timestamp, event_type, contract_id, caller_address, amount, raw_payload)
       VALUES 
@@ -91,10 +92,10 @@ export async function seedDatabase(): Promise<void> {
     `);
 
     await client.query("COMMIT;");
-    console.info("[seed] Database seeding completed successfully!");
+    logger.info("[seed] Database seeding completed successfully!");
   } catch (err) {
     await client.query("ROLLBACK;");
-    console.error("[seed] Error seeding database:", err);
+    logger.error("[seed] Error seeding database:", err);
     throw err;
   } finally {
     client.release();

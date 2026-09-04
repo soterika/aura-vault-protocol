@@ -20,6 +20,7 @@
  */
 
 import CircuitBreaker from "opossum";
+import { logger } from "../logger.js";
 
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
@@ -71,17 +72,17 @@ const breaker = new CircuitBreaker(
 // Event hooks
 breaker.on("open", () => {
   incrementCounter("opened");
-  console.warn("[database-circuit-breaker] Circuit OPENED — database may be unavailable");
+  logger.warn("[database-circuit-breaker] Circuit OPENED — database may be unavailable");
 });
 
 breaker.on("close", () => {
   incrementCounter("closed");
-  console.info("[database-circuit-breaker] Circuit CLOSED — database operational");
+  logger.info("[database-circuit-breaker] Circuit CLOSED — database operational");
 });
 
 breaker.on("halfOpen", () => {
   incrementCounter("half_opened");
-  console.info("[database-circuit-breaker] Circuit HALF-OPEN — probing database");
+  logger.info("[database-circuit-breaker] Circuit HALF-OPEN — probing database");
 });
 
 breaker.on("fallback", () => {
@@ -119,7 +120,7 @@ export async function withDatabaseCircuitBreaker<T>(
   try {
     return await breaker.fire(fn) as T;
   } catch (err: unknown) {
-    console.error(
+    logger.error(
       `[database-circuit-breaker] Query failed${queryName ? ` (${queryName})` : ''}: ${err instanceof Error ? err.message : 'unknown error'}`
     );
     throw err;

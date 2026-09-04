@@ -1,5 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { logger } from "./logger.js";
 
 const router = express.Router();
 
@@ -137,7 +138,7 @@ router.get(
       res.setHeader("X-Cache", "MISS");
       res.json(data);
     } catch (err) {
-      console.error("[portfolio]", err);
+      logger.error("[portfolio]", err);
 
       res.status(500).json({
         error: "Internal server error",

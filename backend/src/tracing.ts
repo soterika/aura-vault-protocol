@@ -72,7 +72,7 @@ let sdk: NodeSDK | null = null;
  */
 export function initTracing(): void {
   if (!OTEL_ENABLED) {
-    console.log('[OTel] Tracing disabled (OTEL_ENABLED=false)');
+    logger.info('[OTel] Tracing disabled (OTEL_ENABLED=false)');
     return;
   }
 
@@ -110,7 +110,7 @@ export function initTracing(): void {
 
   sdk.start();
 
-  console.log(
+  logger.info(
     `[OTel] Tracing started — service="${SERVICE_NAME}" ` +
     `endpoint="${OTLP_ENDPOINT}" samplingRate=${SAMPLING_RATE}`,
   );
@@ -128,9 +128,9 @@ export async function shutdownTracing(): Promise<void> {
   if (!sdk) return;
   try {
     await sdk.shutdown();
-    console.log('[OTel] Tracing shut down');
+    logger.info('[OTel] Tracing shut down');
   } catch (err) {
-    console.error('[OTel] Shutdown error:', err);
+    logger.error('[OTel] Shutdown error:', err);
   }
 }
 
@@ -276,6 +276,7 @@ export async function traceDbQuery<T>(
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from "./logger.js";
 
 /**
  * Express middleware that:
@@ -313,7 +314,7 @@ export function tracingMiddleware(): RequestHandler {
       } else {
         span.setStatus({ code: SpanStatusCode.OK });
       }
-      console.log(
+      logger.info(
         `[trace] method=${req.method} path=${req.path} ` +
         `status=${res.statusCode} traceId=${traceId} correlationId=${correlationId}`,
       );

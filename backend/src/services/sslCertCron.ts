@@ -16,6 +16,7 @@
 
 import { checkCertExpiry, parseDomainsFromEnv } from "./sslCertService.js";
 import { updateSslMetric } from "./sslMetrics.js";
+import { logger } from "../logger.js";
 
 /** Cron expression — daily at 02:00 UTC by default. */
 const CRON_EXPRESSION =
@@ -65,21 +66,21 @@ export async function runSslCheck(): Promise<void> {
   const domainEntries = parseDomainsFromEnv(process.env.SSL_CHECK_DOMAINS);
 
   if (domainEntries.length === 0) {
-    console.log("[ssl-cron] No domains configured (SSL_CHECK_DOMAINS not set). Skipping.");
+    logger.info("[ssl-cron] No domains configured (SSL_CHECK_DOMAINS not set). Skipping.");
     return;
   }
 
-  console.log(`[ssl-cron] Checking ${domainEntries.length} domain(s)…`);
+  logger.info(`[ssl-cron] Checking ${domainEntries.length} domain(s)…`);
 
   for (const { domain, port } of domainEntries) {
     const result = await checkCertExpiry(domain, port);
 
     if (result.error) {
-      console.error(`[ssl-cron] ${domain}: ERROR — ${result.error}`);
+      logger.error(`[ssl-cron] ${domain}: ERROR — ${result.error}`);
       // Record -1 to signal a check failure to dashboards
       updateSslMetric(domain, -1);
     } else {
-      console.log(
+      logger.info(
         `[ssl-cron] ${domain}: ${result.daysUntilExpiry} days remaining (expires ${result.expiresAt})`
       );
       updateSslMetric(domain, result.daysUntilExpiry!);
@@ -96,7 +97,7 @@ export function startSslCron(): void {
   const delayMs = msUntilNextRun(CRON_EXPRESSION);
   const delayHours = (delayMs / 3_600_000).toFixed(1);
 
-  console.log(
+  logger.info(
     `[ssl-cron] Scheduled — next run in ${delayHours}h (cron: "${CRON_EXPRESSION}")`
   );
 
@@ -122,6 +123,6 @@ export function stopSslCron(): void {
     clearInterval(cronHandle);
     clearTimeout(cronHandle as unknown as ReturnType<typeof setTimeout>);
     cronHandle = null;
-    console.log("[ssl-cron] Stopped.");
+    logger.info("[ssl-cron] Stopped.");
   }
 }

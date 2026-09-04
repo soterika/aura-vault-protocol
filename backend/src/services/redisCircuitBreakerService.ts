@@ -16,6 +16,7 @@
  */
 
 import CircuitBreaker from "opossum";
+import { logger } from "../logger.js";
 
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
@@ -67,17 +68,17 @@ const breaker = new CircuitBreaker(
 // Event hooks
 breaker.on("open", () => {
   incrementCounter("opened");
-  console.warn("[redis-circuit-breaker] Circuit OPENED — Redis unavailable, cache disabled");
+  logger.warn("[redis-circuit-breaker] Circuit OPENED — Redis unavailable, cache disabled");
 });
 
 breaker.on("close", () => {
   incrementCounter("closed");
-  console.info("[redis-circuit-breaker] Circuit CLOSED — Redis operational");
+  logger.info("[redis-circuit-breaker] Circuit CLOSED — Redis operational");
 });
 
 breaker.on("halfOpen", () => {
   incrementCounter("half_opened");
-  console.info("[redis-circuit-breaker] Circuit HALF-OPEN — testing Redis connection");
+  logger.info("[redis-circuit-breaker] Circuit HALF-OPEN — testing Redis connection");
 });
 
 breaker.on("fallback", () => {
@@ -116,7 +117,7 @@ export async function withRedisCircuitBreaker<T>(
     return await breaker.fire(fn) as T;
   } catch (err: unknown) {
     // Fail-open for cache: log but don't throw
-    console.warn(
+    logger.warn(
       `[redis-circuit-breaker] Operation failed${operationName ? ` (${operationName})` : ''}: ${err instanceof Error ? err.message : 'unknown error'}`
     );
     return null;

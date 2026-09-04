@@ -17,6 +17,7 @@
  */
 
 import pg from 'pg';
+import { logger } from './logger.js';
 
 const { Pool } = pg;
 
@@ -69,18 +70,27 @@ function createPool(connectionString: string, label: string): pg.Pool {
     poolErrorCounts[label] = (poolErrorCounts[label] ?? 0) + 1;
     // Auto-reconnect: pg Pool retries on next query automatically.
     // Log with safe metadata only (no connection string).
-    console.error(`[db:${label}] Pool error #${poolErrorCounts[label]}`, {
-      message: err.message,
-      code: (err as NodeJS.ErrnoException).code ?? 'UNKNOWN',
-    });
+    logger.error(
+      {
+        label,
+        errorCount: poolErrorCounts[label],
+        message: err.message,
+        code: (err as NodeJS.ErrnoException).code ?? 'UNKNOWN',
+      },
+      `[db:${label}] Pool error #${poolErrorCounts[label]}`
+    );
   });
 
-  console.info(`[db:${label}] Pool created`, {
-    min: PG_POOL_MIN,
-    max: PG_POOL_MAX,
-    idleTimeoutMs: PG_IDLE_TIMEOUT_MS,
-    connectionTimeoutMs: PG_CONNECTION_TIMEOUT_MS,
-  });
+  logger.info(
+    {
+      label,
+      min: PG_POOL_MIN,
+      max: PG_POOL_MAX,
+      idleTimeoutMs: PG_IDLE_TIMEOUT_MS,
+      connectionTimeoutMs: PG_CONNECTION_TIMEOUT_MS,
+    },
+    `[db:${label}] Pool created`
+  );
 
   return pool;
 }
@@ -248,19 +258,19 @@ export async function closePools(): Promise<void> {
   const tasks: Promise<void>[] = [];
 
   if (writePool) {
-    console.info('[db:write] Draining connection pool before shutdown...');
+    logger.info('[db:write] Draining connection pool before shutdown...');
     tasks.push(
       writePool.end().then(() => {
-        console.info('[db:write] Pool drained and closed');
+        logger.info('[db:write] Pool drained and closed');
       })
     );
   }
 
   if (readPool) {
-    console.info('[db:read] Draining connection pool before shutdown...');
+    logger.info('[db:read] Draining connection pool before shutdown...');
     tasks.push(
       readPool.end().then(() => {
-        console.info('[db:read] Pool drained and closed');
+        logger.info('[db:read] Pool drained and closed');
       })
     );
   }

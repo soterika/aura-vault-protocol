@@ -21,6 +21,7 @@
 
 import CircuitBreaker from "opossum";
 import { cacheGet } from "../cache.js";
+import { logger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,17 +106,17 @@ const breaker = new CircuitBreaker(
 
 breaker.on("open", () => {
   incrementCounter("opened");
-  console.warn("[horizon-circuit-breaker] Circuit OPENED — Horizon calls will be rejected");
+  logger.warn("[horizon-circuit-breaker] Circuit OPENED — Horizon calls will be rejected");
 });
 
 breaker.on("close", () => {
   incrementCounter("closed");
-  console.info("[horizon-circuit-breaker] Circuit CLOSED — Horizon calls resuming");
+  logger.info("[horizon-circuit-breaker] Circuit CLOSED — Horizon calls resuming");
 });
 
 breaker.on("halfOpen", () => {
   incrementCounter("half_opened");
-  console.info("[horizon-circuit-breaker] Circuit HALF-OPEN — probing Horizon");
+  logger.info("[horizon-circuit-breaker] Circuit HALF-OPEN — probing Horizon");
 });
 
 breaker.on("fallback", () => {
@@ -180,7 +181,7 @@ export async function withHorizonCircuitBreaker<T>(
     if (fallbackKey) {
       const cached = await getFallback<T>(fallbackKey);
       if (cached !== null) {
-        console.warn("[horizon-circuit-breaker] Serving cached fallback for key:", fallbackKey);
+        logger.warn("[horizon-circuit-breaker] Serving cached fallback for key:", fallbackKey);
         return cached;
       }
     }
