@@ -53,7 +53,7 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "@types/uuid": "^11.0.0",
-    "supertest": "^7.3.0",
+    "supertest": "^7.3.1",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
