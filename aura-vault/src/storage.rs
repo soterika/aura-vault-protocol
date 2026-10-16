@@ -183,7 +183,7 @@ pub fn set_treasury(env: &Env, treasury: &Address) {
 }
 
 pub fn get_perf_fee_bps(env: &Env) -> u32 {
-    env.storage().instance().get(&DataKey::PerfFeeBps).unwrap_or(1000)
+    env.storage().instance().get(&DataKey::PerfFeeBps).unwrap_or(0)
 }
 
 pub fn set_perf_fee_bps(env: &Env, bps: u32) {

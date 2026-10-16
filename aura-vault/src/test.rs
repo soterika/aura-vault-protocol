@@ -1125,3 +1125,412 @@ fn test_events_emitted_on_full_flow() {
     let status = vault.operation_status(&op_id);
     assert_eq!(status, Some(soroban_sdk::String::from_str(&_env, "Executed")));
 }
+
+// ===========================================================================
+// TWAP ORACLE TESTS
+// ===========================================================================
+//
+// Tests for the on-chain TWAP (time-weighted average price) oracle.
+// Verifies:
+//   - get_twap returns spot price when fewer than 2 observations exist
+//   - 1h, 6h, 24h window calculations are correct
+//   - Circular buffer wrap-around is handled correctly
+//   - TWAP is resistant to flash-loan style manipulation (only harvest changes price)
+//   - Buffer overflow (more than 24 observations) wraps correctly
+// ===========================================================================
+
+use soroban_sdk::testutils::Ledger as _;
+
+/// Helper: set up vault with a depositor and return (env, vault, admin, token).
+fn setup_with_deposit() -> (Env, AuraVaultClient<'static>, Address, Address) {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+    (env, vault, admin, token)
+}
+
+/// Helper: perform a harvest of `yield_amount` at the given timestamp.
+fn harvest_at(env: &Env, vault: &AuraVaultClient, admin: &Address, token: &Address, yield_amount: i128, ts: u64) {
+    env.ledger().set_timestamp(ts);
+    mint(env, token, admin, admin, yield_amount);
+    vault.harvest(admin, &yield_amount);
+}
+
+// ---------------------------------------------------------------------------
+// 1. Spot price fallback — fewer than 2 observations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_no_observations_returns_spot_price() {
+    // No harvests yet → no observations → should return spot price
+    let (env, vault, _admin, _token) = setup_with_deposit();
+    // 1_000_000 assets, 1_000_000 shares → price = 1e9 (1:1)
+    let twap = vault.get_twap(&3600);
+    assert_eq!(twap, 1_000_000_000);
+}
+
+#[test]
+fn test_twap_one_observation_returns_spot_price() {
+    // One harvest → one observation → should return spot price (latest price)
+    let (env, vault, admin, token) = setup_with_deposit();
+    // Harvest 200_000 at ts=1000 → price = 1.2e9
+    harvest_at(&env, &vault, &admin, &token, 200_000, 1000);
+    let twap = vault.get_twap(&3600);
+    // Spot price after harvest: 1_200_000 / 1_000_000 * 1e9 = 1_200_000_000
+    assert_eq!(twap, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 2. TWAP with 2 observations — 1h window
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_1h_window_two_observations() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Harvest at t=0 → price = 1.1e9 (1_100_000 / 1_000_000)
+    harvest_at(&env, &vault, &admin, &token, 100_000, 0);
+    // Harvest at t=1800 (30 min later) → price = 1.2e9 (1_200_000 / 1_000_000)
+    harvest_at(&env, &vault, &admin, &token, 100_000, 1800);
+
+    // Query at t=3600 (1h window from t=0)
+    env.ledger().set_timestamp(3600);
+
+    // Two observations: t=0 price=1.1e9, t=1800 price=1.2e9
+    // Segments: [0→1800] uses price from t=0 obs? No — TWAP walks from newest to oldest.
+    // newest obs: t=1800, price=1.2e9
+    //   segment: now(3600) - t(1800) = 1800s, weight = 1800 * 1.2e9
+    // oldest obs: t=0, price=1.1e9
+    //   segment: t(1800) - t(0) = 1800s, weight = 1800 * 1.1e9
+    // total_weight = 3600
+    // twap = (1800*1.2e9 + 1800*1.1e9) / 3600 = (2.16e12 + 1.98e12) / 3600 = 4.14e12 / 3600 = 1.15e9
+    let twap = vault.get_twap(&3600);
+    assert_eq!(twap, 1_150_000_000); // (1.1e9 + 1.2e9) / 2
+}
+
+// ---------------------------------------------------------------------------
+// 3. TWAP with multiple observations — 6h window
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_6h_window_multiple_observations() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Initial: 1_000_000 assets, 1_000_000 shares, price = 1e9
+
+    // Harvest 100_000 every hour for 6 hours
+    // t=3600: price = 1.1e9
+    // t=7200: price = 1.2e9
+    // t=10800: price = 1.3e9
+    // t=14400: price = 1.4e9
+    // t=18000: price = 1.5e9
+    // t=21600: price = 1.6e9
+    for hour in 1..=6u64 {
+        let ts = hour * 3600;
+        harvest_at(&env, &vault, &admin, &token, 100_000, ts);
+    }
+
+    // Query at t=21600 with 6h window (21600 seconds)
+    env.ledger().set_timestamp(21600);
+
+    // We have 6 observations at t=3600,7200,...,21600
+    // TWAP from newest to oldest:
+    //   t=21600: price=1.6e9, segment: 21600-21600=0 (skip, zero segment)
+    // Actually: now=21600, newest obs ts=21600, segment=0
+    // Then prev_ts=21600, next obs ts=18000, segment=3600, price=1.5e9
+    // Then prev_ts=18000, next obs ts=14400, segment=3600, price=1.4e9
+    // Then prev_ts=14400, next obs ts=10800, segment=3600, price=1.3e9
+    // Then prev_ts=10800, next obs ts=7200, segment=3600, price=1.2e9
+    // Then prev_ts=7200, next obs ts=3600, segment=3600, price=1.1e9
+    // total_weight = 5*3600 = 18000
+    // twap = (1.5e9 + 1.4e9 + 1.3e9 + 1.2e9 + 1.1e9) * 3600 / 18000
+    //      = 6.5e9 * 3600 / 18000 = 6.5e9 / 5 = 1.3e9
+    let twap = vault.get_twap(&21600);
+    assert_eq!(twap, 1_300_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 4. TWAP with 24h window — full buffer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_24h_window_full_buffer() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Harvest 100_000 every hour for 24 hours
+    for hour in 1..=24u64 {
+        let ts = hour * 3600;
+        harvest_at(&env, &vault, &admin, &token, 100_000, ts);
+    }
+
+    // Query at t=86400 (24h) with 24h window (86400 seconds)
+    env.ledger().set_timestamp(86400);
+
+    // 24 observations at t=3600, 7200, ..., 86400
+    // Prices: 1.1e9, 1.2e9, ..., 3.4e9 (hour h: (1000000 + h*100000)/1000000 * 1e9)
+    // All segments are 3600s except the newest (t=86400) which has 0 duration
+    // TWAP = average of prices from t=3600 to t=82800 (23 prices)
+    //        = (1.1e9 + 1.2e9 + ... + 3.3e9) / 23
+    //        = sum(1.1, 1.2, ..., 3.3) * 1e9 / 23
+    // sum = (1.1 + 3.3) * 23 / 2 = 4.4 * 23 / 2 = 50.6
+    // twap = 50.6e9 / 23 = 2.2e9
+    let twap = vault.get_twap(&86400);
+    assert_eq!(twap, 2_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Circular buffer wrap-around
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_buffer_wrap_around() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Push 24 entries to fill the buffer (hours 1-24)
+    for hour in 1..=24u64 {
+        let ts = hour * 3600;
+        harvest_at(&env, &vault, &admin, &token, 100_000, ts);
+    }
+
+    // Push 6 more entries (hours 25-30) to force wrap-around
+    for hour in 25..=30u64 {
+        let ts = hour * 3600;
+        harvest_at(&env, &vault, &admin, &token, 100_000, ts);
+    }
+
+    // Buffer should now contain entries for hours 7-30 (oldest 6 were evicted)
+    // Query at t=108000 (30h) with a window covering all remaining entries
+    env.ledger().set_timestamp(108000);
+
+    // The buffer has 24 entries: t=7*3600=25200 to t=30*3600=108000
+    // Prices: hour h → (1000000 + h*100000) / 1000000 * 1e9 = (10+h) * 1e8
+    //   hour 7: 1.7e9, hour 8: 1.8e9, ..., hour 30: 4.0e9
+    // Segments: each 3600s except newest (t=108000) which has 0 duration
+    // TWAP = average of prices from hour 7 to hour 29 (23 prices)
+    //        = (1.7e9 + 1.8e9 + ... + 3.9e9) / 23
+    //        = sum(1.7, 1.8, ..., 3.9) * 1e9 / 23
+    //        = (1.7 + 3.9) * 23 / 2 * 1e9 / 23 = 5.6 * 1e9 / 2 = 2.8e9
+    let twap = vault.get_twap(&86400);
+    assert_eq!(twap, 2_800_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 6. Window shorter than observation interval
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_window_shorter_than_interval() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Two harvests 1h apart
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+    harvest_at(&env, &vault, &admin, &token, 100_000, 7200);
+
+    // Query 30 min after last harvest with 30 min window
+    env.ledger().set_timestamp(9000);
+
+    // Window = 1800s, cutoff = 7200
+    // Only the segment from t=7200 to t=9000 (1800s) is within the window
+    // The observation at t=7200 has price = 1.2e9
+    // The observation at t=3600 is older than cutoff → boundary
+    // segment = 9000 - 7200 = 1800, price = 1.2e9
+    // twap = 1.2e9 * 1800 / 1800 = 1.2e9
+    let twap = vault.get_twap(&1800);
+    assert_eq!(twap, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Window larger than available data
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_window_larger_than_data() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Two harvests close together
+    harvest_at(&env, &vault, &admin, &token, 100_000, 1000);
+    harvest_at(&env, &vault, &admin, &token, 100_000, 2000);
+
+    // Query at t=2000 with 100000s window (much larger than data)
+    env.ledger().set_timestamp(2000);
+
+    // Observations: t=1000 (price=1.1e9), t=2000 (price=1.2e9)
+    // cutoff = 2000 - 100000 = 0 (saturating_sub)
+    // newest obs: t=2000, segment = 2000-2000 = 0 (skip)
+    // prev_ts=2000, next obs: t=1000, segment = 2000-1000 = 1000, price=1.1e9
+    //   t=1000 > cutoff(0) so full segment
+    // total_weight = 1000
+    // twap = 1.1e9 * 1000 / 1000 = 1.1e9
+    let twap = vault.get_twap(&100_000);
+    assert_eq!(twap, 1_100_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 8. TWAP is resistant to flash-loan manipulation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_resistant_to_flash_loan() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Establish a price history
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+    harvest_at(&env, &vault, &admin, &token, 100_000, 7200);
+
+    // Query TWAP at t=7200 with 1h window
+    env.ledger().set_timestamp(7200);
+    let twap_before = vault.get_twap(&3600);
+
+    // Even if someone deposits a huge amount (changing total_assets),
+    // the TWAP should not change because TWAP only records on harvest
+    let whale = Address::generate(&env);
+    mint(&env, &token, &admin, &whale, 100_000_000);
+    vault.deposit(&whale, &100_000_000);
+
+    // TWAP should be unchanged — deposit doesn't create a snapshot
+    let twap_after = vault.get_twap(&3600);
+    assert_eq!(twap_before, twap_after);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Buffer overflow — more than 24 harvests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_buffer_overflow_keeps_latest_24() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Push 30 entries
+    for hour in 1..=30u64 {
+        let ts = hour * 3600;
+        harvest_at(&env, &vault, &admin, &token, 100_000, ts);
+    }
+
+    // The buffer should only have the latest 24 entries (hours 7-30)
+    // Query with a very large window to include all entries
+    env.ledger().set_timestamp(108000);
+
+    // Same calculation as test_twap_buffer_wrap_around
+    let twap = vault.get_twap(&86400);
+    assert_eq!(twap, 2_800_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 10. TWAP with zero window — edge case
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_zero_window_returns_spot_price() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+    harvest_at(&env, &vault, &admin, &token, 100_000, 7200);
+
+    env.ledger().set_timestamp(7200);
+    // Zero window → total_weight = 0 → spot price
+    let twap = vault.get_twap(&0);
+    // Spot price: 1_200_000 / 1_000_000 * 1e9 = 1.2e9
+    assert_eq!(twap, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 11. Single harvest creates first observation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_single_harvest_creates_observation() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Before harvest: 0 observations → spot price
+    let before = vault.get_twap(&3600);
+    assert_eq!(before, 1_000_000_000); // 1:1
+
+    // After harvest: 1 observation → still spot price (need 2+ for TWAP)
+    harvest_at(&env, &vault, &admin, &token, 200_000, 3600);
+    let after = vault.get_twap(&3600);
+    // Spot: 1_200_000 / 1_000_000 * 1e9 = 1.2e9
+    assert_eq!(after, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 12. Multiple harvests at same timestamp
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_multiple_harvests_same_timestamp() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Two harvests at the same timestamp
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+
+    // Query at t=7200
+    env.ledger().set_timestamp(7200);
+
+    // Both observations have ts=3600
+    // newest (index 1): ts=3600, price=1.2e9 → segment: 7200-3600=3600
+    // next (index 0): ts=3600, price=1.1e9 → segment: 3600-3600=0 (skip, zero segment)
+    // total_weight = 3600
+    // twap = 1.2e9 * 3600 / 3600 = 1.2e9
+    let twap = vault.get_twap(&3600);
+    assert_eq!(twap, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 13. TWAP reflects only harvest price changes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_price_increases_monotonically_with_harvest() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // Harvest increasing amounts
+    harvest_at(&env, &vault, &admin, &token, 100_000, 3600);
+    harvest_at(&env, &vault, &admin, &token, 200_000, 7200);
+    harvest_at(&env, &vault, &admin, &token, 300_000, 10800);
+
+    env.ledger().set_timestamp(10800);
+
+    // Prices: 1.1e9, 1.3e9, 1.6e9
+    // Segments (newest to oldest):
+    //   t=10800: segment=0 (skip)
+    //   t=7200: segment=3600, price=1.3e9
+    //   t=3600: segment=3600, price=1.1e9
+    // total_weight = 7200
+    // twap = (1.3e9*3600 + 1.1e9*3600) / 7200 = (1.3e9 + 1.1e9) / 2 = 1.2e9
+    let twap = vault.get_twap(&7200);
+    assert_eq!(twap, 1_200_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// 14. Verify share price formula
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_twap_share_price_correct_after_multiple_harvests() {
+    let (env, vault, admin, token) = setup_with_deposit();
+
+    // After deposit: 1_000_000 assets, 1_000_000 shares, price = 1e9
+    let initial_price = vault.get_twap(&3600);
+    assert_eq!(initial_price, 1_000_000_000);
+
+    // Harvest 500_000 → 1_500_000 assets, 1_000_000 shares
+    harvest_at(&env, &vault, &admin, &token, 500_000, 3600);
+
+    // Harvest 500_000 → 2_000_000 assets, 1_000_000 shares
+    harvest_at(&env, &vault, &admin, &token, 500_000, 7200);
+
+    env.ledger().set_timestamp(7200);
+
+    // Two observations: t=3600 (price=1.5e9), t=7200 (price=2.0e9)
+    // Segments: t=7200→7200=0 (skip), t=3600→7200=3600 (price=1.5e9)
+    // total_weight=3600
+    // twap = 1.5e9 * 3600 / 3600 = 1.5e9
+    let twap = vault.get_twap(&3600);
+    assert_eq!(twap, 1_500_000_000);
+
+    // Verify spot price is 2.0e9
+    let spot = vault.get_twap(&0);
+    assert_eq!(spot, 2_000_000_000);
+}
