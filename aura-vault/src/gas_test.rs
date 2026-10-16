@@ -277,3 +277,30 @@ fn gas_balance_of() {
         let _ = vault.balance_of(&user);
     });
 }
+
+#[test]
+fn gas_regression_vault_state_storage_reduction() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+
+    // Verify batched VaultState storage reads reduce/maintain CPU instructions vs baseline
+    env.cost_estimate().budget().reset_default();
+    vault.deposit(&user, &1_000_000);
+    let deposit_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    assert!(
+        deposit_cpu <= 4_675_000,
+        "Deposit CPU cost ({}) exceeded baseline (4675000)",
+        deposit_cpu
+    );
+
+    let shares = vault.balance_of(&user);
+    env.cost_estimate().budget().reset_default();
+    vault.withdraw(&user, &shares);
+    let withdraw_cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    assert!(
+        withdraw_cpu <= 5_800_000,
+        "Withdraw CPU cost ({}) exceeded baseline (5800000)",
+        withdraw_cpu
+    );
+}

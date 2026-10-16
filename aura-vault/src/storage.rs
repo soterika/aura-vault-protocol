@@ -2,11 +2,19 @@ use soroban_sdk::{contracttype, Address, Env, Vec};
 use crate::errors::VaultError;
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VaultState {
+    pub total_assets: i128,
+    pub total_shares: i128,
+}
+
+#[contracttype]
 pub enum DataKey {
     Admin,
     UnderlyingToken,
     TotalShares,
     TotalDeposited,
+    VaultState,
     Balance(Address),
     Version,
     LayoutVersion,
@@ -137,20 +145,41 @@ pub fn set_token(env: &Env, token: &Address) {
     env.storage().instance().set(&DataKey::UnderlyingToken, token);
 }
 
+pub fn get_vault_state(env: &Env) -> VaultState {
+    if let Some(state) = env.storage().instance().get(&DataKey::VaultState) {
+        state
+    } else {
+        VaultState {
+            total_assets: env.storage().instance().get(&DataKey::TotalDeposited).unwrap_or(0),
+            total_shares: env.storage().instance().get(&DataKey::TotalShares).unwrap_or(0),
+        }
+    }
+}
+
+pub fn set_vault_state(env: &Env, state: &VaultState) {
+    env.storage().instance().set(&DataKey::VaultState, state);
+    env.storage().instance().set(&DataKey::TotalDeposited, &state.total_assets);
+    env.storage().instance().set(&DataKey::TotalShares, &state.total_shares);
+}
+
 pub fn get_total_shares(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::TotalShares).unwrap_or(0)
+    get_vault_state(env).total_shares
 }
 
 pub fn set_total_shares(env: &Env, val: i128) {
-    env.storage().instance().set(&DataKey::TotalShares, &val);
+    let mut state = get_vault_state(env);
+    state.total_shares = val;
+    set_vault_state(env, &state);
 }
 
 pub fn get_total_deposited(env: &Env) -> i128 {
-    env.storage().instance().get(&DataKey::TotalDeposited).unwrap_or(0)
+    get_vault_state(env).total_assets
 }
 
 pub fn set_total_deposited(env: &Env, val: i128) {
-    env.storage().instance().set(&DataKey::TotalDeposited, &val);
+    let mut state = get_vault_state(env);
+    state.total_assets = val;
+    set_vault_state(env, &state);
 }
 
 // ---------------------------------------------------------------------------
