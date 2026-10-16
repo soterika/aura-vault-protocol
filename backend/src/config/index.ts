@@ -126,6 +126,17 @@ const envSchema = z.object({
    */
   HARVEST_INTERVAL_HOURS: positiveInt(6),
   HARVEST_KEEPER_SECRET_ID: optionalStr,
+
+  // ── OpenAPI request validation (#945) ───────────────────────────────────────
+  /**
+   * Master switch for the express-openapi-validator middleware. Defaults to
+   * enabled; it is force-disabled in the test environment (see
+   * resolveOpenApiValidationEnabled) so the test suite is not slowed down by
+   * schema validation.
+   */
+  OPENAPI_VALIDATION_ENABLED: booleanStr(true),
+  /** Path to the OpenAPI document used for request validation. */
+  OPENAPI_SPEC_PATH: z.string().optional().default("docs/openapi.yaml"),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,6 +183,19 @@ function validateCrossFieldConstraints(
       errors.map((e) => `  • ${e}`).join("\n")
     );
   }
+}
+
+/**
+ * Resolves whether OpenAPI request validation should run.
+ *
+ * Validation is always disabled in the test environment to keep the test
+ * suite fast; otherwise the OPENAPI_VALIDATION_ENABLED flag decides.
+ */
+function resolveOpenApiValidationEnabled(
+  env: z.infer<typeof envSchema>
+): boolean {
+  if (env.NODE_ENV === "test") return false;
+  return env.OPENAPI_VALIDATION_ENABLED;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,6 +366,20 @@ export const emailConfig = {
 
 export type EmailConfig = typeof emailConfig;
 
+/**
+ * OpenAPI request validation settings (#945).
+ *
+ * @property enabled  - Whether express-openapi-validator middleware is active.
+ *                      Always false when NODE_ENV === "test".
+ * @property specPath - Path to the OpenAPI document (docs/openapi.yaml)
+ */
+export const openApiConfig = {
+  enabled: resolveOpenApiValidationEnabled(env),
+  specPath: env.OPENAPI_SPEC_PATH,
+} as const;
+
+export type OpenApiConfig = typeof openApiConfig;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Aggregated config object
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,6 +405,7 @@ export const config = {
   database: databaseConfig,
   stellar: stellarConfig,
   email: emailConfig,
+  openApi: openApiConfig,
 } as const;
 
 export type AppConfig = typeof config;

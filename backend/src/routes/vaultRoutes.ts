@@ -12,8 +12,8 @@
  */
 
 import { Router, Request, Response } from "express";
-import { cacheDel } from "../cache.js";
-import { getVaultStats as getLegacyVaultStats } from "../services/vaultStatsService.js";
+import { cacheDel, cacheGet, cacheSet, NS } from "../cache.js";
+import { getVaultStats as getLegacyVaultStats, getUserVolume } from "../services/vaultStatsService.js";
 import {
   getVaultStats,
   invalidateVaultStats,
@@ -23,11 +23,83 @@ import {
 import { getDbMetrics, getSlowQueryLog, dbMetricsPrometheusText } from "../services/dbMonitor.js";
 import { successResponse, errorResponse } from "../dto/index.js";
 import { resolveVault } from "../services/vaultRegistryService.js";
+import { ipRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import { logger } from "../logger.js";
 
 export const VAULT_STATS_CACHE_KEY = "current";
 
+/** Cache TTL for per-user volume aggregation (5 minutes). */
+export const USER_VOLUME_CACHE_TTL_SECS = 300;
+
 export const vaultRouter = Router();
+
+/** Dedicated per-IP rate limiter for the public volume endpoint (30 req/min). */
+const volumeRateLimiter = ipRateLimiter({
+  bucketKey: "rl:volume:ip",
+  limit: 30,
+  windowMs: 60_000,
+});
+
+/** Stellar account address: 56 chars, starting with G. */
+const STELLAR_ADDRESS_RE = /^G[A-Z2-7]{55}$/;
+
+/**
+ * GET /api/v1/users/:address/volume
+ *
+ * Public (no auth) aggregation of a wallet's deposit, withdrawal and yield
+ * totals across all vaults and all time. Results are cached per address for
+ * 5 minutes and rate limited to 30 req/min per IP.
+ *
+ * Response: { total_deposited, total_withdrawn, total_yield, net_position }
+ */
+vaultRouter.get(
+  "/users/:address/volume",
+  volumeRateLimiter,
+  async (req: Request, res: Response): Promise<void> => {
+    const address = req.params.address;
+
+    if (!STELLAR_ADDRESS_RE.test(address)) {
+      res.status(400).json(
+        errorResponse("INVALID_ADDRESS", "address must be a valid Stellar account address"),
+      );
+      return;
+    }
+
+    const cacheKey = address;
+
+    try {
+      const cached = await cacheGet<{
+        total_deposited: string;
+        total_withdrawn: string;
+        total_yield: string;
+        net_position: string;
+      }>(NS.USER_VOLUME, cacheKey);
+
+      if (cached) {
+        res.set("Cache-Control", `public, max-age=${USER_VOLUME_CACHE_TTL_SECS}`);
+        res.json(successResponse({ ...cached, cached: true }));
+        return;
+      }
+
+      const volume = await getUserVolume(address);
+
+      const payload = {
+        total_deposited: volume.total_deposited,
+        total_withdrawn: volume.total_withdrawn,
+        total_yield: volume.total_yield,
+        net_position: volume.net_position,
+      };
+
+      await cacheSet(NS.USER_VOLUME, cacheKey, payload, USER_VOLUME_CACHE_TTL_SECS);
+
+      res.set("Cache-Control", `public, max-age=${USER_VOLUME_CACHE_TTL_SECS}`);
+      res.json(successResponse({ ...payload, cached: false }));
+    } catch (err) {
+      logger.error({ err }, "[users/:address/volume] Failed to aggregate user volume");
+      res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve user volume"));
+    }
+  },
+);
 
 /**
  * GET /api/v1/vault/decimals?vaultId=<id>

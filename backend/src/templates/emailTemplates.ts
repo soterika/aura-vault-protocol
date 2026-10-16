@@ -358,6 +358,70 @@ To unsubscribe: {{unsubscribeUrl}}
 `,
 };
 
+const WEEKLY_DIGEST: TemplateDefinition = {
+  defaultSubject: 'Your Weekly Aura Vault Summary',
+  html: layout('Weekly Portfolio Summary', `
+    ${greeting()}
+    <p style="color:#c0c0d0;font-size:15px;margin:0 0 8px;">
+      Here's your weekly Aura Vault portfolio summary for
+      <span style="font-family:monospace;font-size:13px;color:#a0a0b0;word-break:break-all;">{{walletAddress}}</span>.
+    </p>
+    ${detailTable(`
+      ${row('Share Balance', '<span style="color:#e0e0f0;font-size:18px;font-weight:700;">{{shareBalance}} shares</span>', false)}
+      ${row('USD Value', '<span style="color:#6366f1;font-size:18px;font-weight:700;">${{usdValue}}</span>')}
+      ${row('Week-over-Week Change', `
+        {{#if (eq changeSign "+")}}
+          <span style="color:#22c55e;font-size:15px;font-weight:600;">{{changeSign}}{{changeWow}}%</span>
+        {{else}}
+          <span style="color:#f59e0b;font-size:15px;font-weight:600;">{{changeSign}}{{changeWow}}%</span>
+        {{/if}}
+      `)}
+      ${row('APY This Week', '<span style="color:#22c55e;font-size:15px;font-weight:600;">{{apyThisWeek}}%</span>')}
+      ${row('APY Last Week', '<span style="color:#a0a0b0;font-size:15px;font-weight:600;">{{apyLastWeek}}%</span>')}
+    `)}
+    {{#if vaultEvents}}
+    <div style="background:#1a1a2e;border-radius:12px;padding:20px 24px;margin:24px 0;">
+      <div style="color:#e0e0f0;font-size:14px;font-weight:600;margin-bottom:12px;">Vault Events</div>
+      <ul style="color:#a0a0b0;font-size:14px;margin:0;padding-left:20px;line-height:2;">
+        {{#each vaultEvents}}
+        <li>{{this}}</li>
+        {{/each}}
+      </ul>
+    </div>
+    {{/if}}
+    <div style="text-align:center;margin:28px 0;">
+      <a href="{{dashboardUrl}}" style="display:inline-block;background:#6366f1;color:#fff;font-size:14px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">
+        View Dashboard
+      </a>
+    </div>
+    <p style="color:#6b6b80;font-size:12px;margin:24px 0 0;">
+      This digest is sent weekly on Monday at 08:00 UTC. To stop receiving it,
+      <a href="{{unsubscribeUrl}}" style="color:#6366f1;text-decoration:none;">unsubscribe here</a>.
+    </p>
+  `),
+  text: `Aura Vault — Weekly Portfolio Summary
+
+Hi {{userName}},
+
+Here's your weekly portfolio summary for {{walletAddress}}:
+
+Share Balance:          {{shareBalance}} shares
+USD Value:              ${{usdValue}}
+Week-over-Week Change:  {{changeSign}}{{changeWow}}%
+APY This Week:          {{apyThisWeek}}%
+APY Last Week:          {{apyLastWeek}}%
+{{#if vaultEvents}}
+Vault Events:
+{{#each vaultEvents}}
+- {{this}}
+{{/each}}
+{{/if}}
+View Dashboard: {{dashboardUrl}}
+
+To unsubscribe: {{unsubscribeUrl}}
+`,
+};
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
@@ -369,4 +433,5 @@ export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
   'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
   'gdpr-data-export-ready': GDPR_DATA_EXPORT_READY,
   'portfolio-digest': PORTFOLIO_DIGEST,
+  'weekly-digest': WEEKLY_DIGEST,
 };

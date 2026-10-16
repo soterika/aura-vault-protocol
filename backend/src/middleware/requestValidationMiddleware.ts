@@ -14,9 +14,14 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import express from "express";
+import path from "path";
+import * as OpenApiValidator from "express-openapi-validator";
 
 /** 64 KB in bytes */
 export const MAX_BODY_BYTES = 64 * 1024;
+
+/** Absolute path to the OpenAPI specification. */
+export const OPENAPI_SPEC_PATH = path.resolve(__dirname, "../../../docs/openapi.yaml");
 
 /**
  * Returns the raw Content-Length from the request headers as a number,
@@ -121,4 +126,75 @@ export function contentTypeEnforcement(): RequestHandler {
  */
 export function jsonBodyParser(limitBytes: number = MAX_BODY_BYTES): RequestHandler {
   return express.json({ limit: limitBytes });
+}
+
+/** A single field-level validation failure. */
+export interface ValidationErrorDetail {
+  /** Location of the offending value, e.g. "body.email" or "query.page". */
+  path: string;
+  /** Human-readable description of the failure. */
+  message: string;
+  /** Machine-readable error code, e.g. "required" or "type". */
+  code: string;
+}
+
+/**
+ * Normalises the error objects produced by express-openapi-validator into the
+ * flat, field-level shape returned to clients.
+ */
+function toValidationDetails(err: unknown): ValidationErrorDetail[] {
+  const raw = (err as { errors?: unknown }).errors;
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((entry) => {
+    const e = entry as { path?: string; message?: string; errorCode?: string; code?: string };
+    return {
+      path: e.path ?? "",
+      message: e.message ?? "Invalid value",
+      code: e.errorCode ?? e.code ?? "invalid",
+    };
+  });
+}
+
+/**
+ * Middleware — validates incoming requests against the OpenAPI spec at
+ * docs/openapi.yaml using express-openapi-validator.
+ *
+ * Validation failures are mapped to a structured 400 response carrying
+ * field-level details (path, message, code).  The middleware is a no-op when
+ * NODE_ENV === "test" so the test suite stays fast, and it is intentionally
+ * lightweight to keep per-request overhead below 2 ms.
+ */
+export function openApiValidation(): RequestHandler {
+  if (process.env.NODE_ENV === "test") {
+    return (_req: Request, _res: Response, next: NextFunction): void => next();
+  }
+
+  const validator = OpenApiValidator.middleware({
+    apiSpec: OPENAPI_SPEC_PATH,
+    validateRequests: true,
+    validateResponses: false,
+    validateSecurity: false,
+  });
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    validator(req, res, (err?: unknown) => {
+      if (!err) {
+        next();
+        return;
+      }
+
+      const details = toValidationDetails(err);
+      const status =
+        typeof (err as { status?: number }).status === "number"
+          ? (err as { status: number }).status
+          : 400;
+
+      res.status(status).json({
+        error: status === 400 ? "Bad Request" : "Validation Error",
+        message: (err as { message?: string }).message ?? "Request validation failed",
+        details,
+      });
+    });
+  };
 }

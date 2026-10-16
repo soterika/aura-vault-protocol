@@ -31,6 +31,8 @@ export const NS = {
   ANALYTICS_LEADERBOARD: "analytics:leaderboard",
   ANALYTICS_APY: "analytics:apy",
   ANALYTICS_USER_VOLUME: "analytics:user-volume",
+  // Per-user transaction volume aggregation
+  USER_VOLUME: "user:volume",
 } as const;
 
 export type Namespace = (typeof NS)[keyof typeof NS];

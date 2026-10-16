@@ -1,10 +1,32 @@
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "../logger.js";
+import { ERROR_CODES } from "../errorCodes.js";
 
 export interface ApiError extends Error {
   statusCode?: number;
   isOperational?: boolean;
   userMessage?: string;
+}
+
+interface OpenApiValidationError {
+  path?: string;
+  message?: string;
+  errorCode?: string;
+}
+
+interface OpenApiValidatorError extends Error {
+  status?: number;
+  statusCode?: number;
+  errors?: OpenApiValidationError[];
+}
+
+function isOpenApiValidationError(err: unknown): err is OpenApiValidatorError {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const candidate = err as OpenApiValidatorError;
+  const status = candidate.status ?? candidate.statusCode;
+  return status === 400 && Array.isArray(candidate.errors);
 }
 
 const errorMessages: Record<string, string> = {
@@ -40,6 +62,46 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ) {
+  const requestId = (req as Request & { requestId?: string }).requestId ?? "unknown";
+  const correlationId =
+    (req as Request & { correlationId?: string }).correlationId ?? "unknown";
+
+  if (isOpenApiValidationError(err)) {
+    const details = (err.errors ?? []).map((validationError) => ({
+      field: validationError.path ?? "",
+      message: validationError.message ?? "Invalid value",
+      code: validationError.errorCode ?? "invalid",
+    }));
+
+    logger.error(
+      {
+        err: {
+          message: err.message,
+          statusCode: 400,
+          stack: err.stack,
+        },
+        correlationId,
+      },
+      "Request validation error"
+    );
+
+    res.status(400).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INVALID_INPUT,
+        message: errorMessages[ERROR_CODES.INVALID_INPUT],
+        details,
+      },
+      meta: {
+        requestId,
+        correlationId,
+        timestamp: new Date().toISOString(),
+        version: "1.0.0",
+      },
+    });
+    return;
+  }
+
   const apiError = err as ApiError;
   const statusCode = apiError.statusCode || 500;
   const userMessage =
@@ -54,8 +116,7 @@ export function errorHandler(
         statusCode,
         stack: err.stack,
       },
-      correlationId:
-        (req as Request & { correlationId?: string }).correlationId ?? "unknown",
+      correlationId,
     },
     "Request error"
   );
@@ -68,9 +129,8 @@ export function errorHandler(
       ...(process.env.NODE_ENV === "development" && { details: err.message }),
     },
     meta: {
-      requestId: (req as Request & { requestId?: string }).requestId ?? "unknown",
-      correlationId:
-        (req as Request & { correlationId?: string }).correlationId ?? "unknown",
+      requestId,
+      correlationId,
       timestamp: new Date().toISOString(),
       version: "1.0.0",
     },

@@ -6,7 +6,8 @@ export type EmailTemplate =
   | 'welcome'
   | 'gdpr-erasure-confirmation'
   | 'gdpr-data-export-ready'
-  | 'portfolio-digest';
+  | 'portfolio-digest'
+  | 'weekly-digest';
 
 export type EmailPriority = 'high' | 'normal' | 'low';
 export type EmailProvider = 'sendgrid' | 'mailgun';

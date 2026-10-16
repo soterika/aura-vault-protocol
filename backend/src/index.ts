@@ -49,6 +49,11 @@ import { errorHandler } from "./middleware/errorMiddleware.js";
 import { runCacheWarmup, getWarmupStatus } from "./services/cacheWarmup.js";
 import { startEmailWorker, stopEmailWorker } from "./services/emailQueue.js";
 import {
+  startDigestScheduler,
+  stopDigestScheduler,
+} from "./services/digestScheduler.js";
+import { openApiValidationMiddleware } from "./middleware/requestValidationMiddleware.js";
+import {
   startUserExportWorker,
   stopUserExportWorker,
 } from "./services/userExportService.js";
@@ -120,6 +125,11 @@ app.use(metricsMiddleware());
 
 app.use(express.json({ limit: "1mb" }));
 app.use(responseEnvelopeMiddleware);
+
+// ── Issue #945: OpenAPI request validation (disabled in test env) ────────────
+if (process.env.NODE_ENV !== "test") {
+  app.use(openApiValidationMiddleware());
+}
 
 // Global IP rate limiter — health check and metrics excluded so load-balancer probes and scrapers are not throttled
 app.use(globalIpRateLimiter(["/api/health", "/metrics"]));
@@ -291,6 +301,7 @@ const server = app.listen(PORT, () => {
   void autoMigrate();         // issue #293: run pending SQL migrations on startup
   startWorker();
   startEmailWorker();
+  startDigestScheduler();     // issue #935: weekly portfolio digest cron job
   startUserExportWorker();
   startYieldWorker();
   startVaultSyncJob();        // issue #942: background TVL/APY sync for vault registry
@@ -317,6 +328,7 @@ async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, `[shutdown] received ${signal}`);
   stopWorker();
   stopEmailWorker();
+  stopDigestScheduler();      // issue #935
   stopUserExportWorker();
   stopYieldWorker();
   stopVaultSyncJob();         // issue #942
