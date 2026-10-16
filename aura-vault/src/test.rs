@@ -1125,3 +1125,239 @@ fn test_events_emitted_on_full_flow() {
     let status = vault.operation_status(&op_id);
     assert_eq!(status, Some(soroban_sdk::String::from_str(&_env, "Executed")));
 }
+
+// ===========================================================================
+// TVL CAP TESTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// set_tvl_caps / get_tvl_caps — governance
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_get_tvl_caps_returns_none_by_default() {
+    let (_env, vault, _admin, _token) = setup();
+    assert_eq!(vault.get_tvl_caps(), (None, None));
+}
+
+#[test]
+fn test_set_tvl_caps_stores_and_retrieves_both() {
+    let (_env, vault, _admin, _token) = setup();
+    vault.set_tvl_caps(&Some(5_000_000_i128), &Some(10_000_000_i128));
+    assert_eq!(vault.get_tvl_caps(), (Some(5_000_000), Some(10_000_000)));
+}
+
+#[test]
+fn test_set_tvl_caps_soft_only() {
+    let (_env, vault, _admin, _token) = setup();
+    vault.set_tvl_caps(&Some(3_000_000_i128), &None);
+    assert_eq!(vault.get_tvl_caps(), (Some(3_000_000), None));
+}
+
+#[test]
+fn test_set_tvl_caps_hard_only() {
+    let (_env, vault, _admin, _token) = setup();
+    vault.set_tvl_caps(&None, &Some(8_000_000_i128));
+    assert_eq!(vault.get_tvl_caps(), (None, Some(8_000_000)));
+}
+
+#[test]
+fn test_set_tvl_caps_can_clear_caps() {
+    let (_env, vault, _admin, _token) = setup();
+    vault.set_tvl_caps(&Some(5_000_000_i128), &Some(10_000_000_i128));
+    vault.set_tvl_caps(&None, &None);
+    assert_eq!(vault.get_tvl_caps(), (None, None));
+}
+
+#[test]
+fn test_set_tvl_caps_zero_soft_returns_zero_amount() {
+    let (_env, vault, _admin, _token) = setup();
+    let result = vault.try_set_tvl_caps(&Some(0_i128), &None);
+    assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
+}
+
+#[test]
+fn test_set_tvl_caps_zero_hard_returns_zero_amount() {
+    let (_env, vault, _admin, _token) = setup();
+    let result = vault.try_set_tvl_caps(&None, &Some(0_i128));
+    assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
+}
+
+#[test]
+fn test_set_tvl_caps_soft_greater_than_hard_returns_error() {
+    let (_env, vault, _admin, _token) = setup();
+    // soft > hard is invalid
+    let result = vault.try_set_tvl_caps(&Some(10_000_000_i128), &Some(5_000_000_i128));
+    assert_eq!(result, Err(Ok(VaultError::MathOverflow)));
+}
+
+#[test]
+fn test_set_tvl_caps_soft_equal_to_hard_is_valid() {
+    let (_env, vault, _admin, _token) = setup();
+    // soft == hard is allowed (every deposit that pushes past soft also hits hard)
+    vault.set_tvl_caps(&Some(5_000_000_i128), &Some(5_000_000_i128));
+    assert_eq!(vault.get_tvl_caps(), (Some(5_000_000), Some(5_000_000)));
+}
+
+// ---------------------------------------------------------------------------
+// Hard cap enforcement in deposit()
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_deposit_exceeds_hard_cap_is_rejected() {
+    let (env, vault, admin, token) = setup();
+    // Hard cap = 5M; try to deposit 6M into an empty vault → total would be 6M > 5M.
+    vault.set_tvl_caps(&None, &Some(5_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 6_000_000);
+    let result = vault.try_deposit(&user, &6_000_000);
+    assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
+}
+
+#[test]
+fn test_deposit_exactly_at_hard_cap_is_allowed() {
+    let (env, vault, admin, token) = setup();
+    // Hard cap = 5M; deposit exactly 5M → total = 5M = cap → OK.
+    vault.set_tvl_caps(&None, &Some(5_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 5_000_000);
+    let shares = vault.deposit(&user, &5_000_000);
+    assert_eq!(shares, 5_000_000);
+    assert_eq!(vault.total_assets(), 5_000_000);
+}
+
+#[test]
+fn test_deposit_one_above_hard_cap_is_rejected() {
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&None, &Some(5_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 5_000_001);
+    let result = vault.try_deposit(&user, &5_000_001);
+    assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
+}
+
+#[test]
+fn test_deposit_fills_vault_to_hard_cap_then_next_deposit_fails() {
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&None, &Some(5_000_000_i128));
+
+    // First depositor fills exactly to the cap.
+    let alice = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 5_000_000);
+    vault.deposit(&alice, &5_000_000);
+
+    // Any further deposit—even 1 unit—is blocked.
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &bob, 1);
+    let result = vault.try_deposit(&bob, &1);
+    assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
+}
+
+#[test]
+fn test_hard_cap_lifted_allows_more_deposits() {
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&None, &Some(5_000_000_i128));
+
+    let alice = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 5_000_000);
+    vault.deposit(&alice, &5_000_000);
+
+    // Lift the cap.
+    vault.set_tvl_caps(&None, &Some(10_000_000_i128));
+
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &bob, 5_000_000);
+    let shares = vault.deposit(&bob, &5_000_000);
+    assert!(shares > 0);
+}
+
+#[test]
+fn test_no_hard_cap_allows_unlimited_deposits() {
+    let (env, vault, admin, token) = setup();
+    // No cap set (default) — large deposit must succeed.
+    let user = Address::generate(&env);
+    let large: i128 = 1_000_000_000_000;
+    mint(&env, &token, &admin, &user, large);
+    let shares = vault.deposit(&user, &large);
+    assert_eq!(shares, large);
+}
+
+// ---------------------------------------------------------------------------
+// Soft cap warning in deposit()
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_deposit_below_soft_cap_succeeds_without_warning() {
+    let (env, vault, admin, token) = setup();
+    // Soft cap = 5M, hard cap = 10M
+    vault.set_tvl_caps(&Some(5_000_000_i128), &Some(10_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 4_000_000);
+    // Should succeed; no TvlCapExceeded, total stays under soft cap
+    let shares = vault.deposit(&user, &4_000_000);
+    assert_eq!(shares, 4_000_000);
+    assert_eq!(vault.total_assets(), 4_000_000);
+}
+
+#[test]
+fn test_deposit_exceeding_soft_cap_still_succeeds() {
+    let (env, vault, admin, token) = setup();
+    // Soft cap = 3M, hard cap = 10M.
+    // Deposit 6M — crosses the soft cap but not the hard cap → must succeed.
+    vault.set_tvl_caps(&Some(3_000_000_i128), &Some(10_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 6_000_000);
+    let shares = vault.deposit(&user, &6_000_000);
+    assert_eq!(shares, 6_000_000);
+    assert_eq!(vault.total_assets(), 6_000_000);
+}
+
+#[test]
+fn test_deposit_at_soft_cap_exact_succeeds() {
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&Some(5_000_000_i128), &Some(10_000_000_i128));
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 5_000_000);
+    // projected_total = 5_000_000 which is NOT > soft_cap → no warning, no error
+    let shares = vault.deposit(&user, &5_000_000);
+    assert_eq!(shares, 5_000_000);
+}
+
+#[test]
+fn test_soft_cap_warning_and_hard_cap_together_partial_fill() {
+    // Scenario: soft=2M, hard=5M.
+    // Step 1: deposit 3M → crosses soft (warning), under hard → OK.
+    // Step 2: deposit 3M → total=6M > hard → rejected.
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&Some(2_000_000_i128), &Some(5_000_000_i128));
+
+    let alice = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 3_000_000);
+    let shares = vault.deposit(&alice, &3_000_000); // crosses soft, under hard
+    assert_eq!(shares, 3_000_000);
+    assert_eq!(vault.total_assets(), 3_000_000);
+
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &bob, 3_000_000);
+    let result = vault.try_deposit(&bob, &3_000_000); // would push to 6M > 5M hard
+    assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
+}
+
+#[test]
+fn test_only_soft_cap_set_does_not_block_large_deposit() {
+    // With only a soft cap (no hard), very large deposits should still go through.
+    let (env, vault, admin, token) = setup();
+    vault.set_tvl_caps(&Some(1_000_000_i128), &None);
+
+    let user = Address::generate(&env);
+    let large: i128 = 100_000_000;
+    mint(&env, &token, &admin, &user, large);
+    let shares = vault.deposit(&user, &large);
+    assert_eq!(shares, large); // succeeds (only warning, not blocked)
+}

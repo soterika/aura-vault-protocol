@@ -2480,5 +2480,62 @@ impl AuraVault {
     pub fn decimals(env: Env) -> u32 {
         get_decimals(&env)
     }
+
+    // -----------------------------------------------------------------------
+    // TVL cap governance — admin-only setter, public getter
+    // -----------------------------------------------------------------------
+
+    /// Set the soft and hard TVL caps.  Pass `None` to disable a cap.
+    ///
+    /// - `soft`: when `total_assets + deposit > soft` a `tvl_soft_cap_warning`
+    ///   event is emitted but the deposit proceeds.
+    /// - `hard`: when `total_assets + deposit > hard` the deposit reverts with
+    ///   `TvlCapExceeded`.
+    ///
+    /// When both caps are set the soft cap must be ≤ the hard cap.
+    /// Only the admin may call this.
+    pub fn set_tvl_caps(
+        env: Env,
+        soft: Option<i128>,
+        hard: Option<i128>,
+    ) -> Result<(), VaultError> {
+        let admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+        admin.require_auth();
+
+        // Validate: individual caps must be positive when provided.
+        if let Some(s) = soft {
+            if s <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+        }
+        if let Some(h) = hard {
+            if h <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+        }
+        // Soft cap must not exceed hard cap when both are present.
+        if let (Some(s), Some(h)) = (soft, hard) {
+            if s > h {
+                return Err(VaultError::MathOverflow);
+            }
+        }
+
+        set_soft_tvl_cap(&env, soft);
+        set_hard_tvl_cap(&env, hard);
+        bump_instance(&env);
+
+        env.events().publish(
+            (Symbol::new(&env, "tvl_caps_set"),),
+            (soft, hard),
+        );
+
+        Ok(())
+    }
+
+    /// Return the current `(soft_cap, hard_cap)` pair.  `None` means the cap
+    /// is not set for that tier.
+    pub fn get_tvl_caps(env: Env) -> (Option<i128>, Option<i128>) {
+        (get_soft_tvl_cap(&env), get_hard_tvl_cap(&env))
+    }
 }
 
