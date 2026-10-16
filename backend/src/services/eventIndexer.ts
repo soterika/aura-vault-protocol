@@ -37,7 +37,8 @@ export type VaultEventType =
   | "pause"
   | "unpause"
   | "suspicious"
-  | "upgrade";
+  | "upgrade"
+  | "share_price_snapshot";
 
 export interface VaultEvent {
   /** Unique on-chain event identifier (ledger_seq:tx_index:op_index:event_index) */

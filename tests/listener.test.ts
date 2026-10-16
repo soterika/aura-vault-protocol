@@ -64,4 +64,20 @@ describe('HorizonEventListener', () => {
         expect(parsed.reason).toBe('Unusual activity');
         expect(parsed.severity).toBe('high');
     });
+
+    test('should parse share_price_snapshot events', () => {
+        const data = {
+            new_rate: '13000000',
+            total_assets: '1300000',
+            total_shares: '1000000',
+            yield_injected: '300000',
+            ledger_timestamp: 1700000000,
+        };
+        const parsed = EventParser.parseSharePriceSnapshot(data);
+        expect(parsed.new_rate).toBe('13000000');
+        expect(parsed.total_assets).toBe('1300000');
+        expect(parsed.total_shares).toBe('1000000');
+        expect(parsed.yield_injected).toBe('300000');
+        expect(parsed.ledger_timestamp).toBe(1700000000);
+    });
 });

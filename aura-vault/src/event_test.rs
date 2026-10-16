@@ -306,6 +306,61 @@ mod event_tests {
         assert_eq!(data, &expected_data, "harvest fee data mismatch");
     }
 
+    /// Harvest emits `share_price_snapshot` event with new_rate, total_assets,
+    /// total_shares, yield_injected, and ledger_timestamp (Issue #918).
+    #[test]
+    fn test_harvest_emits_share_price_snapshot_event() {
+        let (env, vault, admin, token) = setup();
+        let vault_id = vault.address.clone();
+
+        let user = Address::generate(&env);
+        let deposit_amount: i128 = 1_000_000;
+        mint(&env, &token, &admin, &user, deposit_amount);
+        vault.deposit(&user, &deposit_amount);
+
+        let yield_amount: i128 = 300_000;
+        mint(&env, &token, &admin, &admin, yield_amount);
+
+        vault.harvest(&admin, &yield_amount);
+
+        let vault_events: std::vec::Vec<_> = env
+            .events()
+            .all()
+            .iter()
+            .filter(|(contract, _, _)| contract == &vault_id)
+            .collect();
+
+        // Find the share_price_snapshot event
+        let snapshot_event = vault_events.iter().find(|(_, topics, _)| {
+            let expected_topic = (Symbol::new(&env, "share_price_snapshot"),).into_val(&env);
+            topics == &expected_topic
+        });
+
+        assert!(snapshot_event.is_some(), "share_price_snapshot event not found");
+        let (_, topics, data) = snapshot_event.unwrap();
+
+        let expected_topics = (Symbol::new(&env, "share_price_snapshot"),).into_val(&env);
+        // deposit=1_000_000 -> 1_000_000 shares, 1_000_000 assets
+        // harvest 300_000 (0 fees) -> 1_300_000 total_assets, 1_000_000 shares
+        // new_rate = 1_300_000 * 10_000_000 / 1_000_000 = 13_000_000
+        let new_rate: i128 = 13_000_000;
+        let total_assets: i128 = 1_300_000;
+        let total_shares: i128 = 1_000_000;
+        let yield_injected: i128 = 300_000;
+        let ledger_timestamp = env.ledger().timestamp();
+        let expected_data = (
+            new_rate,
+            total_assets,
+            total_shares,
+            yield_injected,
+            ledger_timestamp,
+        )
+            .into_val(&env);
+
+        assert_eq!(topics, &expected_topics, "share_price_snapshot topics mismatch");
+        assert_eq!(data, &expected_data, "share_price_snapshot data mismatch");
+    }
+
     // -----------------------------------------------------------------------
     // AC 4 — pause / unpause emit respective events
     // -----------------------------------------------------------------------

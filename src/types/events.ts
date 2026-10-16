@@ -1,6 +1,6 @@
 export interface VaultEvent {
     id: string;
-    type: 'deposit' | 'withdraw' | 'harvest' | 'pause' | 'suspicious';
+    type: 'deposit' | 'withdraw' | 'harvest' | 'pause' | 'suspicious' | 'share_price_snapshot';
     contract_id: string;
     tx_hash: string;
     ledger: number;
@@ -24,6 +24,14 @@ export interface ParsedWithdrawEvent {
 export interface ParsedHarvestEvent {
     amount: string;
     yield: string;
+}
+
+export interface ParsedSharePriceSnapshotEvent {
+    new_rate: string;
+    total_assets: string;
+    total_shares: string;
+    yield_injected: string;
+    ledger_timestamp: number;
 }
 
 export interface ParsedPauseEvent {

@@ -4,6 +4,7 @@ import {
     ParsedHarvestEvent,
     ParsedPauseEvent,
     ParsedSuspiciousEvent,
+    ParsedSharePriceSnapshotEvent,
 } from '../types/events';
 
 export class EventParser {
@@ -30,6 +31,16 @@ export class EventParser {
         };
     }
 
+    static parseSharePriceSnapshot(data: any): ParsedSharePriceSnapshotEvent {
+        return {
+            new_rate: data.new_rate ? String(data.new_rate) : '0',
+            total_assets: data.total_assets ? String(data.total_assets) : '0',
+            total_shares: data.total_shares ? String(data.total_shares) : '0',
+            yield_injected: data.yield_injected ? String(data.yield_injected) : '0',
+            ledger_timestamp: data.ledger_timestamp ? Number(data.ledger_timestamp) : 0,
+        };
+    }
+
     static parsePause(data: any): ParsedPauseEvent {
         return {
             paused: data.paused || data.pause || false,
@@ -52,6 +63,8 @@ export class EventParser {
                 return this.parseWithdraw(data);
             case 'harvest':
                 return this.parseHarvest(data);
+            case 'share_price_snapshot':
+                return this.parseSharePriceSnapshot(data);
             case 'pause':
                 return this.parsePause(data);
             case 'suspicious':

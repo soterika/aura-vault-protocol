@@ -1061,6 +1061,21 @@ impl AuraVault {
             // Record harvest timestamp for cooldown enforcement (Issue #471)
             set_last_harvest_time(&env, env.ledger().timestamp());
 
+            let ledger_timestamp = env.ledger().timestamp();
+            let new_rate: i128 = if total_shares > 0 {
+                new_total
+                    .checked_mul(10_000_000)
+                    .and_then(|v| v.checked_div(total_shares))
+                    .unwrap_or(0)
+            } else {
+                10_000_000
+            };
+
+            env.events().publish(
+                (Symbol::new(&env, "share_price_snapshot"),),
+                (new_rate, new_total, total_shares, yield_amount, ledger_timestamp),
+            );
+
             env.events().publish(
                 (Symbol::new(&env, "harvest"), caller.clone(), yield_amount),
                 (yield_after_fee, fee_amount, new_total),

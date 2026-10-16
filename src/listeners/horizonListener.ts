@@ -216,7 +216,7 @@ export class HorizonListener {
     };
 
     // Typed event listeners for each Soroban vault event type
-    for (const eventType of ['deposit', 'withdraw', 'harvest', 'pause', 'suspicious']) {
+    for (const eventType of ['deposit', 'withdraw', 'harvest', 'pause', 'suspicious', 'share_price_snapshot']) {
       this.eventSource.addEventListener(eventType, (event: MessageEvent) => {
         void this.handleEvent(event);
       });

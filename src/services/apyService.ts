@@ -54,6 +54,49 @@ export class APYService {
     }
 
     /**
+     * Update APY calculations when a share_price_snapshot event is indexed
+     */
+    async updateOnSharePriceSnapshot(snapshot: {
+        id: string;
+        new_rate: string;
+        total_assets: string;
+        total_shares: string;
+        yield_injected: string;
+        ledger_timestamp: number;
+    }): Promise<void> {
+        console.log(`📊 Updating APY calculations from share_price_snapshot ${snapshot.id}`);
+
+        const harvests = await this.getHarvestsForContract();
+        this.totalAssets = parseFloat(snapshot.total_assets);
+
+        const { apy7d, apy30d } = APYCalculator.calculateAllAPY(
+            harvests,
+            this.totalAssets
+        );
+
+        const calculatedAt = new Date(snapshot.ledger_timestamp * 1000);
+        const calculations: YieldCalculation[] = [
+            {
+                contract_id: this.contractId,
+                ...apy7d,
+                calculated_at: calculatedAt,
+            },
+            {
+                contract_id: this.contractId,
+                ...apy30d,
+                calculated_at: calculatedAt,
+            },
+        ];
+
+        for (const calc of calculations) {
+            await YieldRepository.saveYieldCalculation(calc);
+        }
+
+        await this.takeSnapshot(apy7d.apy, apy30d.apy);
+        console.log(`✅ APY calculations updated from snapshot: 7d=${(apy7d.apy * 100).toFixed(2)}%, 30d=${(apy30d.apy * 100).toFixed(2)}%`);
+    }
+
+    /**
      * Take a snapshot of current APY values
      */
     async takeSnapshot(apy7d: number, apy30d: number): Promise<void> {
