@@ -12,18 +12,35 @@
  */
 
 import { Router, Request, Response } from "express";
-import { cacheDel } from "../cache.js";
-import { getVaultStats as getLegacyVaultStats } from "../services/vaultStatsService.js";
+import { cacheGet, cacheSet, NS } from "../cache.js";
+import {
+  getVaultStats as getLegacyVaultStats,
+  simulateDeposit,
+  type VaultStatsData,
+} from "../services/vaultStatsService.js";
 import {
   getVaultStats,
   invalidateVaultStats,
   VAULT_STATS_CACHE_NS,
   VAULT_STATS_CACHE_TTL_SECS,
 } from "../services/vaultStatsServiceV2.js";
+// Re-export for consumers (e.g. tests) that import this constant from the route module
+export { VAULT_STATS_CACHE_NS };
 import { getDbMetrics, getSlowQueryLog, dbMetricsPrometheusText } from "../services/dbMonitor.js";
 import { successResponse, errorResponse } from "../dto/index.js";
 import { resolveVault } from "../services/vaultRegistryService.js";
 import { logger } from "../logger.js";
+import { depositSimulateSchema } from "../types/schemas.js";
+
+// ── Simulate-deposit cache namespace ─────────────────────────────────────────
+export const VAULT_SIMULATE_CACHE_NS = NS.VAULT_SIMULATE;
+const VAULT_SIMULATE_CACHE_TTL_SECS = 15;
+
+// ── Exported cache-entry type (consumed by tests) ────────────────────────────
+export interface VaultStatsCacheEntry {
+  data: VaultStatsData;
+  cached_at: number; // Unix epoch ms
+}
 
 export const VAULT_STATS_CACHE_KEY = "current";
 
@@ -263,6 +280,112 @@ vaultRouter.post(
       res.status(500).json(errorResponse("INTERNAL_ERROR", "Harvest failed. Please try again."));
     }
   }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #933 — Deposit Simulation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/vault/simulate/deposit
+ *
+ * Returns the estimated number of shares a user would receive for a given
+ * deposit amount, without executing anything on-chain.
+ *
+ * Body: { amount: number }  (positive integer, stroops / base units)
+ *
+ * Response: { expectedShares, sharePrice, priceImpact }
+ *
+ * Caching:
+ *  - Vault stats read from VAULT_STATS_CACHE_NS:current (15-second TTL fallback)
+ *  - Simulation result cached under VAULT_SIMULATE_CACHE_NS with 15-second TTL,
+ *    keyed by (totalAssets, totalShares, amount) so stale vault state won't
+ *    serve incorrect results to a different deposit amount.
+ *
+ * Closes #933
+ */
+vaultRouter.post(
+  "/simulate/deposit",
+  async (req: Request, res: Response): Promise<void> => {
+    // ── Input validation ────────────────────────────────────────────────────
+    const parsed = depositSimulateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const issues = parsed.error.issues;
+      const firstField = issues[0]?.path.join(".") ?? "amount";
+      const firstMessage = issues[0]?.message ?? "invalid";
+      res
+        .status(400)
+        .json({ error: `Validation failed: ${firstField} — ${firstMessage}` });
+      return;
+    }
+    const { amount } = parsed.data;
+
+    // ── Fetch vault stats (cache-first) ─────────────────────────────────────
+    let totalAssets: number;
+    let totalShares: number;
+
+    try {
+      // Try reading the existing stats cache entry (same cache populated by
+      // GET /stats). The entry shape matches VaultStatsCacheEntry defined above.
+      let statsFromCache: VaultStatsCacheEntry | null = null;
+      try {
+        statsFromCache = await cacheGet<VaultStatsCacheEntry>(
+          VAULT_STATS_CACHE_NS,
+          VAULT_STATS_CACHE_KEY,
+        );
+      } catch {
+        // Redis unavailable — fall through to live fetch
+      }
+
+      if (statsFromCache !== null) {
+        totalAssets = statsFromCache.data.total_assets;
+        totalShares = statsFromCache.data.total_shares;
+      } else {
+        // Cache miss — call the legacy service (same seam mocked in tests)
+        const liveStats = await getLegacyVaultStats();
+        totalAssets = liveStats.total_assets;
+        totalShares = liveStats.total_shares;
+      }
+    } catch (err) {
+      logger.error({ err }, "[vault/simulate/deposit] Failed to fetch vault state");
+      res
+        .status(500)
+        .json({ error: "Failed to fetch vault state. Please try again." });
+      return;
+    }
+
+    // ── Check simulation cache ──────────────────────────────────────────────
+    const simulateCacheKey = `${totalAssets}:${totalShares}:${amount}`;
+    try {
+      const cached = await cacheGet<ReturnType<typeof simulateDeposit>>(
+        VAULT_SIMULATE_CACHE_NS,
+        simulateCacheKey,
+      );
+      if (cached !== null) {
+        res.status(200).json(cached);
+        return;
+      }
+    } catch {
+      // Redis unavailable — compute and return without caching
+    }
+
+    // ── Compute simulation ──────────────────────────────────────────────────
+    const result = simulateDeposit(amount, totalAssets, totalShares);
+
+    // ── Write simulation cache (best-effort) ────────────────────────────────
+    try {
+      await cacheSet(
+        VAULT_SIMULATE_CACHE_NS,
+        simulateCacheKey,
+        result,
+        VAULT_SIMULATE_CACHE_TTL_SECS,
+      );
+    } catch {
+      // Best-effort — do not fail the request if Redis is unavailable
+    }
+
+    res.status(200).json(result);
+  },
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
