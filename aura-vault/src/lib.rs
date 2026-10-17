@@ -113,7 +113,7 @@ use storage::{
 };
 use governance::{
     initialize_governance, create_proposal, vote_on_proposal, execute_proposal,
-    get_proposal_status, ProposalStatus, ProposalType,
+    get_proposal_status, cancel_multisig_op, ProposalStatus, ProposalType,
 };
 
 // ---------------------------------------------------------------------------
@@ -161,6 +161,132 @@ fn with_reentrancy_guard<T, F: FnOnce() -> Result<T, VaultError>>(env: &Env, f: 
 /// persistent storage alive for the standard 30-day window.
 fn bump_user_yield(env: &Env, addr: &Address) {
     storage::bump_user_yield_ttl(env, addr);
+}
+
+fn checkpoint_total_share_seconds(env: &Env, now: u64) -> Result<(), VaultError> {
+    let last_update = storage::get_epoch_last_update(env);
+    let elapsed = now.saturating_sub(last_update);
+    if elapsed > 0 {
+        let accrued = get_total_shares(env)
+            .checked_mul(elapsed as i128)
+            .ok_or(VaultError::MathOverflow)?;
+        let total = storage::get_epoch_share_seconds(env)
+            .checked_add(accrued)
+            .ok_or(VaultError::MathOverflow)?;
+        storage::set_epoch_share_seconds(env, total);
+    }
+    storage::set_epoch_last_update(env, now);
+    Ok(())
+}
+
+fn checkpoint_user_share_seconds(
+    env: &Env,
+    addr: &Address,
+    shares: i128,
+    now: u64,
+) -> Result<(), VaultError> {
+    let current_epoch = storage::get_harvest_epoch(env);
+    let (cursor_time, cursor_epoch) = storage::get_user_epoch_cursor(env, addr)
+        .unwrap_or((now, current_epoch));
+
+    if cursor_epoch <= current_epoch {
+        for epoch in cursor_epoch..=current_epoch {
+            let epoch_start = storage::get_epoch_start_at(env, epoch);
+            let start = cursor_time.max(epoch_start);
+            let end = if epoch == current_epoch {
+                now
+            } else {
+                storage::get_epoch_end_at(env, epoch).unwrap_or(now)
+            };
+            let duration = end.saturating_sub(start);
+            let mut weight = shares
+                .checked_mul(duration as i128)
+                .ok_or(VaultError::MathOverflow)?;
+            if epoch < current_epoch && epoch_start == end && cursor_time <= epoch_start && shares > 0 {
+                weight = shares;
+            }
+            if weight > 0 {
+                let prior = storage::get_user_epoch_share_seconds(env, addr, epoch);
+                storage::set_user_epoch_share_seconds(
+                    env,
+                    addr,
+                    epoch,
+                    prior.checked_add(weight).ok_or(VaultError::MathOverflow)?,
+                );
+            }
+        }
+    }
+
+    storage::set_user_epoch_cursor(env, addr, now, current_epoch);
+    Ok(())
+}
+
+fn user_harvest_yield(env: &Env, addr: &Address, current_epoch: u64) -> Result<i128, VaultError> {
+    let mut claimable = 0_i128;
+    for epoch in 0..current_epoch {
+        let total_weight = storage::get_epoch_total_share_seconds(env, epoch);
+        if total_weight == 0 {
+            continue;
+        }
+        let user_weight = storage::get_user_epoch_share_seconds(env, addr, epoch);
+        let epoch_yield = storage::get_epoch_yield(env, epoch);
+        let reward = user_weight
+            .checked_mul(epoch_yield)
+            .ok_or(VaultError::MathOverflow)?
+            .checked_div(total_weight)
+            .ok_or(VaultError::MathOverflow)?;
+        claimable = claimable.checked_add(reward).ok_or(VaultError::MathOverflow)?;
+    }
+    Ok(claimable)
+}
+
+fn reduce_user_closed_epoch_weights(
+    env: &Env,
+    addr: &Address,
+    remaining_shares: i128,
+    prior_shares: i128,
+    current_epoch: u64,
+) -> Result<(), VaultError> {
+    for epoch in 0..current_epoch {
+        let weight = storage::get_user_epoch_share_seconds(env, addr, epoch);
+        let remaining = weight
+            .checked_mul(remaining_shares)
+            .ok_or(VaultError::MathOverflow)?
+            .checked_div(prior_shares)
+            .ok_or(VaultError::MathOverflow)?;
+        storage::set_user_epoch_share_seconds(env, addr, epoch, remaining);
+    }
+    Ok(())
+}
+
+fn record_harvest_epoch(env: &Env, net_yield: i128, now: u64) -> Result<(), VaultError> {
+    checkpoint_total_share_seconds(env, now)?;
+    let epoch = storage::get_harvest_epoch(env);
+    let total_weight = storage::get_epoch_share_seconds(env);
+    let total_weight = if total_weight == 0 {
+        get_total_shares(env)
+    } else {
+        total_weight
+    };
+    if total_weight <= 0 {
+        return Err(VaultError::ZeroShares);
+    }
+
+    let outstanding = storage::get_outstanding_harvest_yield(env)
+        .checked_add(net_yield)
+        .ok_or(VaultError::MathOverflow)?;
+    storage::set_epoch_end_at(env, epoch, now);
+    storage::set_epoch_total_share_seconds(env, epoch, total_weight);
+    storage::set_epoch_yield(env, epoch, net_yield);
+    storage::set_outstanding_harvest_yield(env, outstanding);
+
+    let next_epoch = epoch.checked_add(1).ok_or(VaultError::MathOverflow)?;
+    storage::set_harvest_epoch(env, next_epoch);
+    storage::set_epoch_start(env, now);
+    storage::set_epoch_start_at(env, next_epoch, now);
+    storage::set_epoch_share_seconds(env, 0);
+    storage::set_epoch_last_update(env, now);
+    Ok(())
 }
 
 /// Maximum oracle price accepted without reverting.
@@ -295,6 +421,27 @@ impl AuraVault {
         signers: Vec<Address>,
         decimals: u32,
     ) -> Result<(), VaultError> {
+        Self::initialize_with_metadata(
+            env.clone(),
+            admin,
+            underlying_token,
+            signers,
+            decimals,
+            soroban_sdk::String::from_str(&env, "Aura Vault Share"),
+            soroban_sdk::String::from_str(&env, "AVS"),
+        )
+    }
+
+    /// Initialize the vault with immutable SEP-41 share metadata.
+    pub fn initialize_with_metadata(
+        env: Env,
+        admin: Address,
+        underlying_token: Address,
+        signers: Vec<Address>,
+        decimals: u32,
+        name: soroban_sdk::String,
+        symbol: soroban_sdk::String,
+    ) -> Result<(), VaultError> {
         if get_admin(&env).is_some() {
             return Err(VaultError::AlreadyInitialized);
         }
@@ -304,12 +451,19 @@ impl AuraVault {
         set_total_deposited(&env, 0);
         storage::set_cumulative_yps(&env, 0);
         storage::set_distribution_epoch(&env, 0);
+        storage::set_harvest_epoch(&env, 0);
+        let epoch_start = env.ledger().timestamp();
+        storage::set_epoch_start(&env, epoch_start);
+        storage::set_epoch_start_at(&env, 0, epoch_start);
+        storage::set_epoch_last_update(&env, epoch_start);
+        storage::set_epoch_share_seconds(&env, 0);
+        storage::set_outstanding_harvest_yield(&env, 0);
         storage::set_user_checkpoint(&env, &admin, 0);
         storage::set_user_pending_yield(&env, &admin, 0);
         set_version(&env, 1);
         set_layout_version(&env, CURRENT_LAYOUT_VERSION);
-        set_vault_name(&env, &soroban_sdk::String::from_str(&env, "Aura Vault Share"));
-        set_vault_symbol(&env, &soroban_sdk::String::from_str(&env, "AVS"));
+        set_vault_name(&env, &name);
+        set_vault_symbol(&env, &symbol);
         set_vault_version(&env, 1);
         let dec = if decimals == 0 { 7u32 } else { decimals };
         set_decimals(&env, dec);
@@ -415,16 +569,19 @@ impl AuraVault {
             }
 
             let total_shares = get_total_shares(&env);
+            let share_pricing_assets = total_deposited
+                .checked_sub(storage::get_outstanding_harvest_yield(&env))
+                .ok_or(VaultError::MathOverflow)?;
 
             // Compute shares to mint (checked arithmetic; overflow returns MathOverflow)
-            let new_shares: i128 = if total_shares == 0 || total_deposited == 0 {
+            let new_shares: i128 = if total_shares == 0 || share_pricing_assets == 0 {
                 amount
             } else {
                 let numerator = amount
                     .checked_mul(total_shares)
                     .ok_or(VaultError::MathOverflow)?;
                 numerator
-                    .checked_div(total_deposited)
+                    .checked_div(share_pricing_assets)
                     .ok_or(VaultError::MathOverflow)?
             };
 
@@ -440,10 +597,19 @@ impl AuraVault {
 
             // Effects: write state after successful transfer
             let old_balance = get_balance(&env, &caller);
+            let now = env.ledger().timestamp();
+            checkpoint_total_share_seconds(&env, now)?;
+            checkpoint_user_share_seconds(&env, &caller, old_balance, now)?;
             let new_balance = old_balance
                 .checked_add(new_shares)
                 .ok_or(VaultError::MathOverflow)?;
             set_balance(&env, &caller, new_balance);
+            storage::set_deposit_metadata(
+                &env,
+                &caller,
+                now,
+                storage::get_harvest_epoch(&env),
+            );
             storage::set_user_checkpoint(&env, &caller, storage::get_cumulative_yps(&env));
             storage::set_user_pending_yield(&env, &caller, storage::get_user_pending_yield(&env, &caller));
             let new_total_shares = total_shares
@@ -560,12 +726,29 @@ impl AuraVault {
             }
 
             let total_shares = get_total_shares(&env);
+            let now = env.ledger().timestamp();
+            checkpoint_total_share_seconds(&env, now)?;
+            checkpoint_user_share_seconds(&env, &caller, user_balance, now)?;
 
-            let numerator = shares
-                .checked_mul(total_deposited)
+            let outstanding_harvest_yield = storage::get_outstanding_harvest_yield(&env);
+            let base_assets = total_deposited
+                .checked_sub(outstanding_harvest_yield)
                 .ok_or(VaultError::MathOverflow)?;
-            let redeem_amount = numerator
+            let base_numerator = shares
+                .checked_mul(base_assets)
+                .ok_or(VaultError::MathOverflow)?;
+            let base_redeem = base_numerator
                 .checked_div(total_shares)
+                .ok_or(VaultError::MathOverflow)?;
+            let current_epoch = storage::get_harvest_epoch(&env);
+            let user_yield = user_harvest_yield(&env, &caller, current_epoch)?;
+            let harvested_redeem = user_yield
+                .checked_mul(shares)
+                .ok_or(VaultError::MathOverflow)?
+                .checked_div(user_balance)
+                .ok_or(VaultError::MathOverflow)?;
+            let redeem_amount = base_redeem
+                .checked_add(harvested_redeem)
                 .ok_or(VaultError::MathOverflow)?;
 
             if redeem_amount <= 0 {
@@ -577,6 +760,19 @@ impl AuraVault {
 
             // CEI — Effects: burn shares before any token transfer
             let new_balance = user_balance - shares;
+            reduce_user_closed_epoch_weights(
+                &env,
+                &caller,
+                new_balance,
+                user_balance,
+                current_epoch,
+            )?;
+            storage::set_outstanding_harvest_yield(
+                &env,
+                outstanding_harvest_yield
+                    .checked_sub(harvested_redeem)
+                    .ok_or(VaultError::MathOverflow)?,
+            );
             set_balance(&env, &caller, new_balance);
             let new_total_shares = total_shares
                 .checked_sub(shares)
@@ -1058,8 +1254,10 @@ impl AuraVault {
             // Effects: increase total deposited with net yield; accumulate fees
             set_total_deposited(&env, new_total);
             storage::set_total_fee_collected(&env, new_fees);
+            let harvest_timestamp = env.ledger().timestamp();
+            record_harvest_epoch(&env, yield_after_fee, harvest_timestamp)?;
             // Record harvest timestamp for cooldown enforcement (Issue #471)
-            set_last_harvest_time(&env, env.ledger().timestamp());
+            set_last_harvest_time(&env, harvest_timestamp);
 
             env.events().publish(
                 (Symbol::new(&env, "harvest"), caller.clone(), yield_amount),
@@ -1191,6 +1389,7 @@ impl AuraVault {
                 &env,
                 prev_fees.checked_add(fee_amount).ok_or(VaultError::MathOverflow)?,
             );
+            record_harvest_epoch(&env, net_underlying, env.ledger().timestamp())?;
 
             env.events().publish(
                 (Symbol::new(&env, "harvest_token"), caller, alt_token),
@@ -1629,6 +1828,21 @@ impl AuraVault {
         storage::get_distribution_epoch(&env)
     }
 
+    /// Return the start timestamp of the current harvest epoch.
+    pub fn epoch_start_timestamp(env: Env) -> u64 {
+        storage::get_epoch_start(&env)
+    }
+
+    /// Return the last recorded deposit timestamp for an address.
+    pub fn deposit_timestamp(env: Env, addr: Address) -> u64 {
+        storage::get_deposit_timestamp(&env, &addr)
+    }
+
+    /// Return the harvest epoch in which an address most recently deposited.
+    pub fn deposit_epoch(env: Env, addr: Address) -> u64 {
+        storage::get_deposit_epoch(&env, &addr)
+    }
+
     // -----------------------------------------------------------------------
     // pause / unpause — admin-only emergency controls
     // Takes admin address so the client can require_auth on it.
@@ -1730,6 +1944,10 @@ impl AuraVault {
                 (Symbol::new(&env, "AdminProposed"), current_admin),
                 (new_admin, expires_at),
             );
+            env.events().publish(
+                (Symbol::new(&env, "admin_proposed"),),
+                (current_admin, new_admin, expires_at),
+            );
             bump_instance(&env);
             Ok(())
         })
@@ -1762,6 +1980,10 @@ impl AuraVault {
                 (Symbol::new(&env, "AdminTransferred"), old_admin),
                 (new_admin,),
             );
+            env.events().publish(
+                (Symbol::new(&env, "admin_transferred"),),
+                (new_admin,),
+            );
             bump_instance(&env);
             Ok(())
         })
@@ -1784,6 +2006,16 @@ impl AuraVault {
             bump_instance(&env);
             Ok(())
         })
+    }
+
+    /// Cancel a pending admin transfer using the explicit transfer API name.
+    pub fn cancel_admin_transfer(env: Env, current_admin: Address) -> Result<(), VaultError> {
+        Self::cancel_admin(env, current_admin)
+    }
+
+    /// Return the pending admin address, if one exists and has not expired.
+    pub fn get_pending_admin(env: Env) -> Option<Address> {
+        Self::pending_admin(env)
     }
 
     /// Return the role bitmask for an address.
@@ -2188,7 +2420,7 @@ impl AuraVault {
     /// [`execute`]: AuraVault::execute
     pub fn propose_update_admin(env: Env, proposer: Address, new_admin: Address) -> Result<u64, VaultError> {
         with_reentrancy_guard(&env, || {
-            create_proposal(&env, proposer, ProposalType::UpdateAdmin)
+            create_proposal(&env, proposer, ProposalType::UpdateAdminAddress(new_admin))
         })
     }
 
@@ -2202,7 +2434,7 @@ impl AuraVault {
     /// A unique proposal ID.
     pub fn propose_update_token(env: Env, proposer: Address, new_token: Address) -> Result<u64, VaultError> {
         with_reentrancy_guard(&env, || {
-            create_proposal(&env, proposer, ProposalType::UpdateUnderlyingToken)
+            create_proposal(&env, proposer, ProposalType::UpdateUnderlyingTokenAddress(new_token))
         })
     }
 
@@ -2271,6 +2503,19 @@ impl AuraVault {
         })
     }
 
+    /// Cancel a pending proposal before it executes. Only its proposer may cancel it.
+    pub fn cancel_proposal(
+        env: Env,
+        proposer: Address,
+        proposal_id: u64,
+    ) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            cancel_multisig_op(&env, proposer, proposal_id)?;
+            bump_instance(&env);
+            Ok(())
+        })
+    }
+
     /// Returns the status of a governance proposal as a human-readable string,
     /// or `None` if the proposal ID does not exist.
     ///
@@ -2284,6 +2529,7 @@ impl AuraVault {
                 ProposalStatus::Ready => soroban_sdk::String::from_str(&env, "Approved"),
                 ProposalStatus::Executed => soroban_sdk::String::from_str(&env, "Executed"),
                 ProposalStatus::Expired => soroban_sdk::String::from_str(&env, "Rejected"),
+                ProposalStatus::Cancelled => soroban_sdk::String::from_str(&env, "Cancelled"),
             }
         })
     }
@@ -2341,6 +2587,7 @@ impl AuraVault {
             28 => Some(VaultError::NotWhitelisted.message()),
             29 => Some(VaultError::BelowMinDeposit.message()),
             30 => Some(VaultError::Reentrancy.message()),
+            42 => Some(VaultError::ProposalCancelled.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))
@@ -2460,13 +2707,15 @@ impl AuraVault {
     // -----------------------------------------------------------------------
 
     /// Returns the vault name. Read-only, no auth required.
-    pub fn name(env: Env) -> Option<soroban_sdk::String> {
+    pub fn name(env: Env) -> soroban_sdk::String {
         get_vault_name(&env)
+            .unwrap_or_else(|| soroban_sdk::String::from_str(&env, "Aura Vault Share"))
     }
 
     /// Returns the vault share symbol. Read-only, no auth required.
-    pub fn symbol(env: Env) -> Option<soroban_sdk::String> {
+    pub fn symbol(env: Env) -> soroban_sdk::String {
         get_vault_symbol(&env)
+            .unwrap_or_else(|| soroban_sdk::String::from_str(&env, "AVS"))
     }
 
     /// Returns the contract version integer. Read-only, no auth required.

@@ -9,7 +9,7 @@
 //! # Flow
 //! 1. Any current signer calls `propose_operation(op_type, params)` → returns `op_id`
 //! 2. Other signers call `sign_operation(op_id)` to add their signature
-//! 3. Once `signature_count >= threshold`, the operation becomes executable
+//! 3. Once `signature_count >= threshold`, the operation enters a 24-hour timelock
 //! 4. Any signer calls `execute_operation(op_id)` to apply the change
 //! 5. Proposals expire 72 hours after creation (whether signed or not)
 
@@ -19,8 +19,11 @@ use crate::errors::VaultError;
 use crate::storage::{
     get_multisig_op_count, get_multisig_signers, get_multisig_threshold, has_multisig_signed,
     record_multisig_vote, set_multisig_op_count, set_multisig_signers, set_multisig_threshold,
-    MULTISIG_EXPIRY_SECS,
+    get_admin, get_role_mask, set_admin, set_mgmt_fee_bps, set_perf_fee_bps, set_role_mask,
+    set_token, set_tvl_cap, ADMIN_ROLE, MULTISIG_EXPIRY_SECS,
 };
+
+pub const GOVERNANCE_TIMELOCK_SECS: u64 = 24 * 60 * 60;
 
 // ---------------------------------------------------------------------------
 // Operation type — Soroban contracttype requires simple (tuple) variants
@@ -52,6 +55,8 @@ pub enum OpType {
     UpdateAdmin,
     UpdateUnderlyingToken,
     UpdateParameter(Symbol, i128),
+    UpdateAdminAddress(Address),
+    UpdateUnderlyingTokenAddress(Address),
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +74,8 @@ pub enum OpStatus {
     Executed,
     /// Expired before threshold was reached.
     Expired,
+    /// Cancelled by the proposer before execution.
+    Cancelled,
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +106,7 @@ pub struct MultiSigOp {
 #[contracttype]
 pub enum MultisigKey {
     Op(u64),
+    ReadyAt(u64),
 }
 
 fn get_op(env: &Env, id: u64) -> Option<MultiSigOp> {
@@ -107,6 +115,14 @@ fn get_op(env: &Env, id: u64) -> Option<MultiSigOp> {
 
 fn set_op(env: &Env, id: u64, op: &MultiSigOp) {
     env.storage().instance().set(&MultisigKey::Op(id), op);
+}
+
+fn get_ready_at(env: &Env, id: u64) -> u64 {
+    env.storage().instance().get(&MultisigKey::ReadyAt(id)).unwrap_or(0)
+}
+
+fn set_ready_at(env: &Env, id: u64, timestamp: u64) {
+    env.storage().instance().set(&MultisigKey::ReadyAt(id), &timestamp);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +172,7 @@ pub fn propose_operation(
         id: new_id,
         op_type,
         proposer: proposer.clone(),
-        status,
+        status: status.clone(),
         sig_count: 1,
         signers: initial_signers,
         proposed_at: now,
@@ -164,6 +180,9 @@ pub fn propose_operation(
     };
 
     set_op(env, new_id, &op);
+    if status == OpStatus::Ready {
+        set_ready_at(env, new_id, now.saturating_add(GOVERNANCE_TIMELOCK_SECS));
+    }
     set_multisig_op_count(env, new_id);
 
     // Record the proposer's vote to prevent double-signing
@@ -199,27 +218,30 @@ pub fn sign_operation(
 
     // Check expiry
     let now = env.ledger().timestamp();
-    if now > op.expires_at {
+    if now > op.expires_at && op.status == OpStatus::Pending {
         return Err(VaultError::OperationExpired);
     }
 
     match op.status {
         OpStatus::Executed => return Err(VaultError::OperationAlreadyExecuted),
         OpStatus::Expired  => return Err(VaultError::OperationExpired),
+        OpStatus::Cancelled => return Err(VaultError::ProposalCancelled),
         _ => {}
     }
 
     if has_multisig_signed(env, op_id, &signer) {
-        return Err(VaultError::OperationAlreadySigned);
+        return Err(VaultError::AlreadyVoted);
     }
 
+    let was_ready = op.status == OpStatus::Ready;
     op.sig_count += 1;
     op.signers.push_back(signer.clone());
     record_multisig_vote(env, op_id, &signer);
 
     let threshold = get_multisig_threshold(env);
-    if op.sig_count >= threshold {
+    if !was_ready && op.sig_count >= threshold {
         op.status = OpStatus::Ready;
+        set_ready_at(env, op_id, now.saturating_add(GOVERNANCE_TIMELOCK_SECS));
     }
 
     let sig_count = op.sig_count;
@@ -259,15 +281,20 @@ pub fn execute_multisig_op(
     let mut op = get_op(env, op_id).ok_or(VaultError::OperationNotFound)?;
 
     let now = env.ledger().timestamp();
-    if now > op.expires_at {
+    if now > op.expires_at && op.status == OpStatus::Pending {
         return Err(VaultError::OperationExpired);
     }
 
     match op.status {
         OpStatus::Executed => return Err(VaultError::OperationAlreadyExecuted),
         OpStatus::Expired  => return Err(VaultError::OperationExpired),
+        OpStatus::Cancelled => return Err(VaultError::ProposalCancelled),
         OpStatus::Pending  => return Err(VaultError::ThresholdNotMet),
         OpStatus::Ready    => {}
+    }
+
+    if now < get_ready_at(env, op_id) {
+        return Err(VaultError::TimelockNotExpired);
     }
 
     op.status = OpStatus::Executed;
@@ -281,12 +308,36 @@ pub fn execute_multisig_op(
     Ok(op)
 }
 
+/// Cancel an operation before execution. Only its proposer may cancel it.
+pub fn cancel_multisig_op(env: &Env, proposer: Address, op_id: u64) -> Result<(), VaultError> {
+    proposer.require_auth();
+    let mut op = get_op(env, op_id).ok_or(VaultError::OperationNotFound)?;
+    if op.proposer != proposer {
+        return Err(VaultError::NotASigner);
+    }
+
+    match op.status {
+        OpStatus::Executed => return Err(VaultError::OperationAlreadyExecuted),
+        OpStatus::Expired => return Err(VaultError::OperationExpired),
+        OpStatus::Cancelled => return Err(VaultError::ProposalCancelled),
+        OpStatus::Pending | OpStatus::Ready => {}
+    }
+
+    op.status = OpStatus::Cancelled;
+    set_op(env, op_id, &op);
+    env.events().publish(
+        (Symbol::new(env, "OperationCancelled"), op_id, proposer),
+        (),
+    );
+    Ok(())
+}
+
 /// Read the current status of a multi-sig operation.
 pub fn get_operation_status(env: &Env, op_id: u64) -> Option<OpStatus> {
     get_op(env, op_id).map(|op| {
         // Lazily reflect expiry without writing state (read-only)
         let now = env.ledger().timestamp();
-        if matches!(op.status, OpStatus::Pending | OpStatus::Ready) && now > op.expires_at {
+        if op.status == OpStatus::Pending && now > op.expires_at {
             OpStatus::Expired
         } else {
             op.status
@@ -405,10 +456,109 @@ pub fn execute_proposal(
     executor: Address,
     proposal_id: u64,
 ) -> Result<(), VaultError> {
-    execute_multisig_op(env, executor, proposal_id)?;
+    let op = execute_multisig_op(env, executor, proposal_id)?;
+    match op.op_type {
+        OpType::Upgrade(wasm_hash) => env.deployer().update_current_contract_wasm(wasm_hash),
+        OpType::SetPerfFee(bps) => set_perf_fee_bps(env, bps),
+        OpType::SetMgmtFee(bps) => set_mgmt_fee_bps(env, bps),
+        OpType::SetTvlCap(cap) => set_tvl_cap(env, cap),
+        OpType::AddSigner(signer) => apply_add_signer(env, &signer)?,
+        OpType::RemoveSigner(signer) => apply_remove_signer(env, &signer)?,
+        OpType::SetThreshold(threshold) => apply_set_threshold(env, threshold)?,
+        OpType::UpdateAdminAddress(new_admin) => {
+            if let Some(old_admin) = get_admin(env) {
+                let old_roles = get_role_mask(env, &old_admin) & !ADMIN_ROLE;
+                set_role_mask(env, &old_admin, old_roles);
+            }
+            let new_roles = get_role_mask(env, &new_admin) | ADMIN_ROLE;
+            set_role_mask(env, &new_admin, new_roles);
+            set_admin(env, &new_admin);
+        }
+        OpType::UpdateUnderlyingTokenAddress(token) => set_token(env, &token),
+        OpType::UpdateAdmin | OpType::UpdateUnderlyingToken | OpType::UpdateParameter(_, _) => {}
+    }
     Ok(())
 }
 
 pub fn get_proposal_status(env: &Env, proposal_id: u64) -> Option<ProposalStatus> {
     get_operation_status(env, proposal_id)
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env, Vec,
+    };
+
+    fn setup() -> (Env, Vec<Address>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let mut signers = Vec::new(&env);
+        signers.push_back(Address::generate(&env));
+        signers.push_back(Address::generate(&env));
+        signers.push_back(Address::generate(&env));
+        initialize_governance(&env, signers.clone()).unwrap();
+        (env, signers)
+    }
+
+    #[test]
+    fn proposal_waits_for_timelock_then_executes() {
+        let (env, signers) = setup();
+        let proposal_id = propose_operation(
+            &env,
+            signers.get(0).unwrap(),
+            OpType::SetThreshold(1),
+        )
+        .unwrap();
+        sign_operation(&env, signers.get(1).unwrap(), proposal_id).unwrap();
+
+        assert!(matches!(
+            execute_multisig_op(&env, signers.get(0).unwrap(), proposal_id),
+            Err(VaultError::TimelockNotExpired)
+        ));
+
+        let start = env.ledger().timestamp();
+        env.ledger().set_timestamp(start + GOVERNANCE_TIMELOCK_SECS);
+        execute_proposal(&env, signers.get(0).unwrap(), proposal_id).unwrap();
+        assert_eq!(get_multisig_threshold(&env), 1);
+        assert_eq!(get_operation_status(&env, proposal_id), Some(OpStatus::Executed));
+    }
+
+    #[test]
+    fn proposal_without_threshold_expires_as_rejected() {
+        let (env, signers) = setup();
+        let proposal_id = propose_operation(&env, signers.get(0).unwrap(), OpType::SetTvlCap(100)).unwrap();
+
+        let start = env.ledger().timestamp();
+        env.ledger().set_timestamp(start + MULTISIG_EXPIRY_SECS + 1);
+        assert_eq!(get_operation_status(&env, proposal_id), Some(OpStatus::Expired));
+    }
+
+    #[test]
+    fn signer_cannot_vote_twice() {
+        let (env, signers) = setup();
+        let proposer = signers.get(0).unwrap();
+        let proposal_id = propose_operation(&env, proposer.clone(), OpType::SetTvlCap(100)).unwrap();
+
+        assert!(matches!(
+            sign_operation(&env, proposer, proposal_id),
+            Err(VaultError::AlreadyVoted)
+        ));
+    }
+
+    #[test]
+    fn cancelled_proposal_cannot_execute() {
+        let (env, signers) = setup();
+        let proposer = signers.get(0).unwrap();
+        let proposal_id = propose_operation(&env, proposer.clone(), OpType::SetTvlCap(100)).unwrap();
+        cancel_multisig_op(&env, proposer.clone(), proposal_id).unwrap();
+
+        assert_eq!(get_operation_status(&env, proposal_id), Some(OpStatus::Cancelled));
+        assert!(matches!(
+            execute_multisig_op(&env, proposer, proposal_id),
+            Err(VaultError::ProposalCancelled)
+        ));
+    }
 }

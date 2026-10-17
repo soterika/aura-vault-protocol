@@ -250,8 +250,10 @@ paths:
       tags: [Vault]
       summary: Get vault share decimals
       description: |
-        Returns the number of decimal places used by vault shares (e.g. 7 for Stellar standard).
-        Stored in DataKey::Decimals during vault initialize and immutable thereafter.
+        Read-only vault metadata view. The contract exposes name() -> String,
+        symbol() -> String, and decimals() -> u32. These immutable values are
+        stored during initialize_with_metadata (the legacy initializer uses
+        the defaults "Aura Vault Share", "AVS", and 7 decimals).
       operationId: getVaultDecimals
       parameters:
         - name: vaultId

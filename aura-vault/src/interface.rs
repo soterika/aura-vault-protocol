@@ -23,8 +23,8 @@ use crate::errors::VaultError;
 /// | `unpause` | `("unpaused",)` | `()` |
 /// | `upgrade` | `("upgrade", admin)` | `(old_version, new_version)` |
 /// | `withdraw_fees` | `("fees_withdrawn", admin)` | `(fees, treasury)` |
-/// | `propose_admin` | `("AdminProposed", admin)` | `(new_admin, expiry_timestamp)` |
-/// | `accept_admin` | `("AdminTransferred", old_admin)` | `(new_admin,)` |
+/// | `propose_admin` | `("admin_proposed",)` | `(current_admin, new_admin, expiry_timestamp)` |
+/// | `accept_admin` | `("admin_transferred",)` | `(new_admin,)` |
 /// | `cancel_admin` | `("AdminCancelled", admin)` | `()` |
 /// | `grant_role` | `("RoleGranted", admin)` | `(role, addr)` |
 /// | `revoke_role` | `("RoleRevoked", admin)` | `(role, addr)` |
@@ -34,7 +34,8 @@ pub trait AuraVaultTrait {
     /// Initialise the vault.
     ///
     /// Must be called exactly once after the contract is deployed. Sets the
-    /// admin address, the underlying token, and the governance signer list.
+    /// admin address, the underlying token, and the governance signer list,
+    /// using the default share name and symbol.
     /// All subsequent calls return [`VaultError::AlreadyInitialized`].
     ///
     /// # Parameters
@@ -52,6 +53,17 @@ pub trait AuraVaultTrait {
     ///
     /// - [`VaultError::AlreadyInitialized`] — vault has already been initialised.
     fn initialize(env: Env, admin: Address, underlying_token: Address, signers: Vec<Address>, decimals: u32) -> Result<(), VaultError>;
+
+    /// Initialise with immutable SEP-41 share metadata.
+    fn initialize_with_metadata(
+        env: Env,
+        admin: Address,
+        underlying_token: Address,
+        signers: Vec<Address>,
+        decimals: u32,
+        name: String,
+        symbol: String,
+    ) -> Result<(), VaultError>;
 
     /// Deposit underlying tokens and receive proportional vault shares.
     ///
@@ -188,6 +200,15 @@ pub trait AuraVaultTrait {
 
     /// Return the current distribution epoch counter.
     fn distribution_epoch(env: Env) -> u64;
+
+    /// Return the start timestamp of the current harvest epoch.
+    fn epoch_start_timestamp(env: Env) -> u64;
+
+    /// Return the most recent deposit timestamp for an address.
+    fn deposit_timestamp(env: Env, addr: Address) -> u64;
+
+    /// Return the harvest epoch of an address's most recent deposit.
+    fn deposit_epoch(env: Env, addr: Address) -> u64;
 
     /// Halt all mutating operations (deposit, withdraw, harvest).
     ///
@@ -474,6 +495,9 @@ pub trait AuraVaultTrait {
     /// - [`VaultError::InvalidAddress`] — executor is not a whitelisted signer.
     fn execute(env: Env, executor: Address, proposal_id: u64) -> Result<(), VaultError>;
 
+    /// Cancel a pending proposal before execution. Only its proposer may cancel it.
+    fn cancel_proposal(env: Env, proposer: Address, proposal_id: u64) -> Result<(), VaultError>;
+
     /// Returns the current status of a governance proposal as a human-readable
     /// string, or `None` if the proposal ID does not exist.
     ///
@@ -542,10 +566,10 @@ pub trait AuraVaultTrait {
     // -----------------------------------------------------------------------
 
     /// Returns the vault name. Read-only.
-    fn name(env: Env) -> Option<String>;
+    fn name(env: Env) -> String;
 
     /// Returns the vault share symbol. Read-only.
-    fn symbol(env: Env) -> Option<String>;
+    fn symbol(env: Env) -> String;
 
     /// Returns the contract version integer. Read-only.
     fn version(env: Env) -> u32;
@@ -600,6 +624,12 @@ pub trait AuraVaultTrait {
 
     /// Return the pending admin address, if any. Read-only.
     fn pending_admin(env: Env) -> Option<Address>;
+
+    /// Return the pending admin address, if any. Read-only alias.
+    fn get_pending_admin(env: Env) -> Option<Address>;
+
+    /// Cancel a pending admin transfer (current admin only).
+    fn cancel_admin_transfer(env: Env, current_admin: Address) -> Result<(), VaultError>;
 
     // -----------------------------------------------------------------------
     // Role-based access control (Issue #357)

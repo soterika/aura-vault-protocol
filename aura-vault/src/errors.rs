@@ -289,6 +289,8 @@ pub enum VaultError {
     ThresholdNotMet        = 40,
     /// The provided signer threshold is invalid for the current signer set.
     InvalidThreshold       = 41,
+    /// The governance proposal was cancelled before execution.
+    ProposalCancelled      = 42,
 }
 
 impl VaultError {
@@ -336,6 +338,7 @@ impl VaultError {
             VaultError::OperationAlreadySigned => "Signer has already signed this operation",
             VaultError::ThresholdNotMet => "Operation signature threshold has not been met",
             VaultError::InvalidThreshold => "Invalid multi-sig threshold",
+            VaultError::ProposalCancelled => "Governance proposal was cancelled",
         }
     }
 }

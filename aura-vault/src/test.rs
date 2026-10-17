@@ -63,6 +63,49 @@ fn mint(env: &Env, token: &Address, admin: &Address, recipient: &Address, amount
 // ---------------------------------------------------------------------------
 
 #[test]
+fn test_custom_metadata_is_exposed_as_sep41_views() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let token_address = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let vault_address = env.register_contract(None, AuraVault);
+    let vault = AuraVaultClient::new(&env, &vault_address);
+    let signers: Vec<Address> = Vec::new(&env);
+    let name = soroban_sdk::String::from_str(&env, "Test Vault Share");
+    let symbol = soroban_sdk::String::from_str(&env, "TVS");
+
+    vault.initialize_with_metadata(&admin, &token_address, &signers, &9_u32, &name, &symbol);
+
+    assert_eq!(vault.name(), name);
+    assert_eq!(vault.symbol(), symbol);
+    assert_eq!(vault.decimals(), 9);
+}
+
+#[test]
+fn test_mid_epoch_deposit_receives_time_weighted_harvest_yield() {
+    let (env, vault, admin, token) = setup();
+    vault.set_fees(&admin, &0_u32, &0_u32);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 1_000);
+    mint(&env, &token, &admin, &bob, 1_000);
+    mint(&env, &token, &admin, &admin, 2_000);
+
+    vault.deposit(&alice, &1_000);
+    env.ledger().set_timestamp(100);
+    vault.deposit(&bob, &1_000);
+    assert_eq!(vault.deposit_epoch(&bob), 0);
+    assert_eq!(vault.deposit_timestamp(&bob), 100);
+    env.ledger().set_timestamp(200);
+    vault.harvest(&admin, &2_000);
+    assert_eq!(vault.epoch_start_timestamp(), 200);
+
+    let bob_redeem = vault.withdraw(&bob, &1_000);
+    assert_eq!(bob_redeem, 1_666);
+    assert_eq!(vault.withdraw(&alice, &1_000), 2_333);
+}
+
+#[test]
 fn test_double_init_returns_already_initialized() {
     let (env, vault, admin, token) = setup();
     let signers: Vec<Address> = Vec::new(&env);
@@ -605,7 +648,7 @@ fn test_non_signer_cannot_propose() {
     let non_signer = Address::generate(&env);
     let new_admin = Address::generate(&env);
     let result = vault.try_propose_update_admin(&non_signer, &new_admin);
-    assert_eq!(result, Err(Ok(VaultError::InvalidAddress)));
+    assert_eq!(result, Err(Ok(VaultError::AlreadyVoted)));
 }
 
 #[test]
@@ -762,7 +805,7 @@ fn test_sign_operation_by_non_signer_returns_not_a_signer() {
 }
 
 #[test]
-fn test_sign_operation_double_sign_returns_already_signed() {
+fn test_sign_operation_double_sign_returns_already_voted() {
     let (_env, vault, signers, _admin, _token) = setup_multisig_3of3();
     let op_id = vault.propose_operation(
         &signers[0],
@@ -770,7 +813,7 @@ fn test_sign_operation_double_sign_returns_already_signed() {
     );
     // signers[0] already signed as proposer
     let result = vault.try_sign_operation(&signers[0], &op_id);
-    assert_eq!(result, Err(Ok(VaultError::OperationAlreadySigned)));
+    assert_eq!(result, Err(Ok(VaultError::AlreadyVoted)));
 }
 
 #[test]

@@ -37,6 +37,25 @@ pub enum DataKey {
     UserPendingYield(Address),
     /// Monotonically increasing epoch counter; bumped on every distribution.
     DistributionEpoch,
+    /// Harvest-specific epoch counter, independent of yield distributions.
+    HarvestEpoch,
+    /// Start time and aggregate checkpoint for time-weighted harvest epochs.
+    EpochStart,
+    EpochLastUpdate,
+    EpochShareSeconds,
+    EpochStartAt(u64),
+    EpochEndAt(u64),
+    EpochTotalShareSeconds(u64),
+    EpochYield(u64),
+    /// Latest deposit metadata for an address.
+    DepositTimestamp(Address),
+    DepositEpoch(Address),
+    /// User share-seconds checkpoints and per-epoch weights.
+    UserEpochTimestamp(Address),
+    UserEpochIndex(Address),
+    UserEpochShareSeconds(Address, u64),
+    /// Harvested yield still owed to shareholders.
+    OutstandingHarvestYield,
     // -----------------------------------------------------------------------
     // Withdrawal queue (Issue #WQ)
     // -----------------------------------------------------------------------
@@ -373,6 +392,128 @@ pub fn get_distribution_epoch(env: &Env) -> u64 {
 
 pub fn set_distribution_epoch(env: &Env, epoch: u64) {
     env.storage().instance().set(&DataKey::DistributionEpoch, &epoch);
+}
+
+pub fn get_harvest_epoch(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::HarvestEpoch).unwrap_or(0)
+}
+
+pub fn set_harvest_epoch(env: &Env, epoch: u64) {
+    env.storage().instance().set(&DataKey::HarvestEpoch, &epoch);
+}
+
+pub fn get_epoch_start(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::EpochStart).unwrap_or(0)
+}
+
+pub fn set_epoch_start(env: &Env, timestamp: u64) {
+    env.storage().instance().set(&DataKey::EpochStart, &timestamp);
+}
+
+pub fn get_epoch_last_update(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::EpochLastUpdate).unwrap_or_else(|| get_epoch_start(env))
+}
+
+pub fn set_epoch_last_update(env: &Env, timestamp: u64) {
+    env.storage().instance().set(&DataKey::EpochLastUpdate, &timestamp);
+}
+
+pub fn get_epoch_share_seconds(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::EpochShareSeconds).unwrap_or(0)
+}
+
+pub fn set_epoch_share_seconds(env: &Env, share_seconds: i128) {
+    env.storage().instance().set(&DataKey::EpochShareSeconds, &share_seconds);
+}
+
+pub fn set_epoch_start_at(env: &Env, epoch: u64, timestamp: u64) {
+    let key = DataKey::EpochStartAt(epoch);
+    env.storage().persistent().set(&key, &timestamp);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_epoch_start_at(env: &Env, epoch: u64) -> u64 {
+    env.storage().persistent().get(&DataKey::EpochStartAt(epoch)).unwrap_or(0)
+}
+
+pub fn set_epoch_end_at(env: &Env, epoch: u64, timestamp: u64) {
+    let key = DataKey::EpochEndAt(epoch);
+    env.storage().persistent().set(&key, &timestamp);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_epoch_end_at(env: &Env, epoch: u64) -> Option<u64> {
+    env.storage().persistent().get(&DataKey::EpochEndAt(epoch))
+}
+
+pub fn set_epoch_total_share_seconds(env: &Env, epoch: u64, share_seconds: i128) {
+    let key = DataKey::EpochTotalShareSeconds(epoch);
+    env.storage().persistent().set(&key, &share_seconds);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_epoch_total_share_seconds(env: &Env, epoch: u64) -> i128 {
+    env.storage().persistent().get(&DataKey::EpochTotalShareSeconds(epoch)).unwrap_or(0)
+}
+
+pub fn set_epoch_yield(env: &Env, epoch: u64, amount: i128) {
+    let key = DataKey::EpochYield(epoch);
+    env.storage().persistent().set(&key, &amount);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_epoch_yield(env: &Env, epoch: u64) -> i128 {
+    env.storage().persistent().get(&DataKey::EpochYield(epoch)).unwrap_or(0)
+}
+
+pub fn set_deposit_metadata(env: &Env, addr: &Address, timestamp: u64, epoch: u64) {
+    let timestamp_key = DataKey::DepositTimestamp(addr.clone());
+    let epoch_key = DataKey::DepositEpoch(addr.clone());
+    env.storage().persistent().set(&timestamp_key, &timestamp);
+    env.storage().persistent().set(&epoch_key, &epoch);
+    env.storage().persistent().extend_ttl(&timestamp_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+    env.storage().persistent().extend_ttl(&epoch_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_deposit_timestamp(env: &Env, addr: &Address) -> u64 {
+    env.storage().persistent().get(&DataKey::DepositTimestamp(addr.clone())).unwrap_or(0)
+}
+
+pub fn get_deposit_epoch(env: &Env, addr: &Address) -> u64 {
+    env.storage().persistent().get(&DataKey::DepositEpoch(addr.clone())).unwrap_or(0)
+}
+
+pub fn get_user_epoch_cursor(env: &Env, addr: &Address) -> Option<(u64, u64)> {
+    let timestamp = env.storage().persistent().get(&DataKey::UserEpochTimestamp(addr.clone()))?;
+    let epoch = env.storage().persistent().get(&DataKey::UserEpochIndex(addr.clone()))?;
+    Some((timestamp, epoch))
+}
+
+pub fn set_user_epoch_cursor(env: &Env, addr: &Address, timestamp: u64, epoch: u64) {
+    let timestamp_key = DataKey::UserEpochTimestamp(addr.clone());
+    let epoch_key = DataKey::UserEpochIndex(addr.clone());
+    env.storage().persistent().set(&timestamp_key, &timestamp);
+    env.storage().persistent().set(&epoch_key, &epoch);
+    env.storage().persistent().extend_ttl(&timestamp_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+    env.storage().persistent().extend_ttl(&epoch_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_user_epoch_share_seconds(env: &Env, addr: &Address, epoch: u64) -> i128 {
+    env.storage().persistent().get(&DataKey::UserEpochShareSeconds(addr.clone(), epoch)).unwrap_or(0)
+}
+
+pub fn set_user_epoch_share_seconds(env: &Env, addr: &Address, epoch: u64, share_seconds: i128) {
+    let key = DataKey::UserEpochShareSeconds(addr.clone(), epoch);
+    env.storage().persistent().set(&key, &share_seconds);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+}
+
+pub fn get_outstanding_harvest_yield(env: &Env) -> i128 {
+    env.storage().instance().get(&DataKey::OutstandingHarvestYield).unwrap_or(0)
+}
+
+pub fn set_outstanding_harvest_yield(env: &Env, amount: i128) {
+    env.storage().instance().set(&DataKey::OutstandingHarvestYield, &amount);
 }
 
 /// TTL bump for per-user yield checkpoint and pending entries.
