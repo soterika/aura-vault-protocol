@@ -193,7 +193,7 @@ mod overflow_fuzz {
             // Seed vault so the share formula is exercised.
             let seeder = Address::generate(&env);
             mint(&env, &token, &admin, &seeder, seed);
-            vault.deposit(&seeder, &seed);
+            vault.deposit(&seeder, &seed, &None);
 
             let user = Address::generate(&env);
             // Mint a safe amount — the actual deposit call will check arithmetic.
@@ -201,7 +201,7 @@ mod overflow_fuzz {
             // arithmetic check triggers (the overflow happens in share formula).
             mint(&env, &token, &admin, &user, seed);
 
-            let result = vault.try_deposit(&user, &amount);
+            let result = vault.try_deposit(&user, &amount, &None);
             assert_safe_i128_result(
                 // try_deposit returns Result<i128, ...>
                 result,
@@ -231,7 +231,7 @@ mod overflow_fuzz {
             let safe_seed = i128::MAX / 4;
             mint(&env, &token, &admin, &user, safe_seed);
 
-            let result = vault.try_deposit(&user, &amount);
+            let result = vault.try_deposit(&user, &amount, &None);
             assert_safe_i128_result(result, "first_deposit_max_i128");
 
             assert!(vault.total_assets() >= 0, "total_assets must be non-negative");
@@ -264,7 +264,7 @@ mod overflow_fuzz {
             // Give the user some real shares first.
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, seed);
-            vault.deposit(&user, &seed);
+            vault.deposit(&user, &seed, &None);
 
             let result = vault.try_withdraw(&user, &shares);
 
@@ -305,7 +305,7 @@ mod overflow_fuzz {
             let (env, vault, admin, token) = setup();
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, seed);
-            vault.deposit(&user, &seed);
+            vault.deposit(&user, &seed, &None);
 
             let result = vault.try_withdraw(&user, &i128::MAX);
             // Must not panic or produce invalid state.
@@ -343,7 +343,7 @@ mod overflow_fuzz {
             // Seed so harvest is valid (non-zero total_shares).
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, seed);
-            vault.deposit(&user, &seed);
+            vault.deposit(&user, &seed, &None);
 
             let total_before = vault.total_assets();
 
@@ -433,7 +433,7 @@ mod overflow_fuzz {
             let mint_amount = amount.min(i128::MAX / 4);
             mint(&env, &token, &admin, &user, mint_amount);
 
-            let deposit_result = vault.try_deposit(&user, &amount);
+            let deposit_result = vault.try_deposit(&user, &amount, &None);
 
             let shares = match deposit_result {
                 Ok(s) => s,

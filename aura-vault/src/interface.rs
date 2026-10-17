@@ -64,7 +64,9 @@ pub trait AuraVaultTrait {
     /// ```
     ///
     /// Enforces the flash-loan guard (actual balance == tracked balance) before
-    /// executing. Emits a `deposit` event on success.
+    /// executing. If `referrer` is `Some(addr)` and `addr != caller`, increments
+    /// the on-chain referral count for `addr` and emits a `deposit_with_referral`
+    /// event in addition to the standard `deposit` event.
     ///
     /// # Parameters
     ///
@@ -72,6 +74,9 @@ pub trait AuraVaultTrait {
     /// - `caller` — Address depositing tokens. Must authorise this call.
     /// - `amount` — Number of underlying tokens to deposit (in the token's
     ///   smallest unit, i.e. stroops for a 7-decimal token). Must be > 0.
+    /// - `referrer` — Optional address that referred this depositor. If
+    ///   `Some`, must differ from `caller`; otherwise
+    ///   [`VaultError::SelfReferral`] is returned.
     ///
     /// # Returns
     ///
@@ -85,15 +90,16 @@ pub trait AuraVaultTrait {
     /// - [`VaultError::VaultPaused`] — vault is currently paused.
     /// - [`VaultError::BalanceMismatch`] — flash-loan guard tripped.
     /// - [`VaultError::MathOverflow`] — arithmetic overflow in share formula.
+    /// - [`VaultError::SelfReferral`] — `referrer == Some(caller)`.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// // In a Soroban test environment:
-    /// // let shares = vault_client.deposit(&caller, &1_000_000_i128);
+    /// // let shares = vault_client.deposit(&caller, &1_000_000_i128, &None);
     /// // assert!(shares > 0);
     /// ```
-    fn deposit(env: Env, caller: Address, amount: i128) -> Result<i128, VaultError>;
+    fn deposit(env: Env, caller: Address, amount: i128, referrer: Option<Address>) -> Result<i128, VaultError>;
 
     /// Burn vault shares and redeem the proportional underlying tokens.
     ///
@@ -536,6 +542,20 @@ pub trait AuraVaultTrait {
 
     /// Query the minimum deposit amount. Read-only, no auth required.
     fn min_deposit(env: Env) -> i128;
+
+    // -----------------------------------------------------------------------
+    // Referral tracking
+    // -----------------------------------------------------------------------
+
+    /// Return the number of deposits attributed to `referrer`.
+    ///
+    /// This count is incremented each time a depositor supplies
+    /// `Some(referrer)` as the referrer argument to [`deposit`].  It is
+    /// intended for off-chain reward calculation; no on-chain bonus is
+    /// distributed.
+    ///
+    /// Read-only; no authorization required.
+    fn get_referral_count(env: Env, referrer: Address) -> u32;
 
     // -----------------------------------------------------------------------
     // Contract metadata (Issue #350)

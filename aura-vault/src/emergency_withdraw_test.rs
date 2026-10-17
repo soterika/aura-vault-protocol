@@ -54,7 +54,7 @@ fn test_emergency_withdraw_fails_when_not_paused() {
 
     // Deposit so user has shares
     mint(&env, &token, &_admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     // Vault is NOT paused — should return NotVaultPaused
     let result = vault.try_emergency_withdraw(&user, &500_000);
@@ -67,7 +67,7 @@ fn test_emergency_withdraw_succeeds_when_paused() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
     vault.pause(&admin);
 
     // Should succeed now
@@ -86,7 +86,7 @@ fn test_emergency_withdraw_pro_rata_single_user() {
 
     // Deposit 1_000_000 → receives 1_000_000 shares (1:1 seed)
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     vault.pause(&admin);
 
@@ -103,7 +103,7 @@ fn test_emergency_withdraw_pro_rata_full_balance() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 2_000_000);
-    vault.deposit(&user, &2_000_000);
+    vault.deposit(&user, &2_000_000, &None);
 
     vault.pause(&admin);
 
@@ -124,8 +124,8 @@ fn test_emergency_withdraw_pro_rata_two_users() {
     // total_shares = 4_000_000, total_deposited = 4_000_000
     mint(&env, &token, &admin, &alice, 3_000_000);
     mint(&env, &token, &admin, &bob, 1_000_000);
-    vault.deposit(&alice, &3_000_000);
-    vault.deposit(&bob, &1_000_000);
+    vault.deposit(&alice, &3_000_000, &None);
+    vault.deposit(&bob, &1_000_000, &None);
 
     vault.pause(&admin);
 
@@ -154,7 +154,7 @@ fn test_emergency_withdraw_no_fee_even_when_fee_configured() {
     vault.set_withdrawal_fee(&admin, &500_u32);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     vault.pause(&admin);
 
@@ -174,7 +174,7 @@ fn test_emergency_withdraw_emits_event() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
     vault.pause(&admin);
 
     vault.emergency_withdraw(&user, &1_000_000);
@@ -206,11 +206,11 @@ fn test_emergency_withdraw_non_admin_can_call_when_paused() {
 
     // non_admin has no special permissions
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     // Give non_admin shares too
     mint(&env, &token, &admin, &non_admin, 500_000);
-    vault.deposit(&non_admin, &500_000);
+    vault.deposit(&non_admin, &500_000, &None);
 
     vault.pause(&admin);
 
@@ -233,7 +233,7 @@ fn test_emergency_withdraw_zero_shares_rejected() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
     vault.pause(&admin);
 
     let result = vault.try_emergency_withdraw(&user, &0);
@@ -246,7 +246,7 @@ fn test_emergency_withdraw_insufficient_shares_rejected() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
     vault.pause(&admin);
 
     // User has 1_000_000 shares, tries to withdraw 2_000_000
@@ -279,7 +279,7 @@ fn test_emergency_withdraw_updates_total_shares() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     assert_eq!(vault.total_shares(), 1_000_000);
     vault.pause(&admin);
@@ -296,7 +296,7 @@ fn test_emergency_withdraw_partial_then_unpause_normal_withdraw() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
 
     // Pause and do an emergency partial withdrawal
     vault.pause(&admin);

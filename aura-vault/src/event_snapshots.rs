@@ -134,7 +134,7 @@ mod event_snapshots {
         let amount: i128 = 1_000_000;
         mint(&env, &token, &admin, &user, amount);
 
-        vault.deposit(&user, &amount);
+        vault.deposit(&user, &amount, &None);
 
         let events = vault_events(&env, &vault_addr);
         assert_eq!(events.len(), 1, "expected exactly 1 vault event after first deposit");
@@ -184,7 +184,7 @@ mod event_snapshots {
         // Seed
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 1_000_000);
-        vault.deposit(&alice, &1_000_000);
+        vault.deposit(&alice, &1_000_000, &None);
 
         // Harvest: 500_000 → total_deposited=1_500_000, total_shares=1_000_000
         mint(&env, &token, &admin, &admin, 500_000);
@@ -195,7 +195,7 @@ mod event_snapshots {
         let deposit_amount: i128 = 600_000;
         mint(&env, &token, &admin, &bob, deposit_amount);
 
-        vault.deposit(&bob, &deposit_amount);
+        vault.deposit(&bob, &deposit_amount, &None);
 
         let events = vault_events(&env, &vault_addr);
         // deposit(alice), harvest(admin), deposit(bob) — take the last one
@@ -239,7 +239,7 @@ mod event_snapshots {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         let shares: i128 = 1_000_000;
         vault.withdraw(&user, &shares);
@@ -283,7 +283,7 @@ mod event_snapshots {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         // Harvest adds 500_000
         mint(&env, &token, &admin, &admin, 500_000);
@@ -332,7 +332,7 @@ mod event_snapshots {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         let keeper = Address::generate(&env);
         let yield_amount: i128 = 300_000;
@@ -382,7 +382,7 @@ mod event_snapshots {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         let yield_amount: i128 = 1_000_000;
         mint(&env, &token, &admin, &admin, yield_amount);
@@ -512,7 +512,7 @@ mod event_snapshots {
         // Seed the vault so total_deposited = 1_000_000
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         // Directly inject extra tokens into the vault without going through
         // the deposit function to trigger a balance mismatch on the next call.
@@ -523,7 +523,7 @@ mod event_snapshots {
         // and emit the suspicious event before returning BalanceMismatch.
         let attacker = Address::generate(&env);
         mint(&env, &token, &admin, &attacker, 100_000);
-        let result = vault.try_deposit(&attacker, &100_000);
+        let result = vault.try_deposit(&attacker, &100_000, &None);
         assert!(result.is_err(), "deposit should have failed with BalanceMismatch");
 
         let all_vault_events = vault_events(&env, &vault_addr);
@@ -577,7 +577,7 @@ mod event_snapshots {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         mint(&env, &token, &admin, &admin, 100_000);
         vault.harvest(&admin, &100_000);

@@ -354,7 +354,7 @@ mod prop_sequence_tests {
             // Seed the vault so harvest doesn't fail with ZeroShares
             let user = Address::generate(&env);
             StellarAssetClient::new(&env, &token).mint(&user, &1_000_000);
-            vault.deposit(&user, &1_000_000);
+            vault.deposit(&user, &1_000_000, &None);
 
             let before = vault.total_assets();
             StellarAssetClient::new(&env, &token).mint(&admin, &amount);

@@ -51,7 +51,7 @@ fn test_first_deposit_seed_ratio_one_to_one() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000);
-    let minted = vault.deposit(&user, &1_000);
+    let minted = vault.deposit(&user, &1_000, &None);
 
     // Exact 1:1 seed ratio
     assert_eq!(minted, 1_000, "first depositor must receive exactly 1:1 shares");
@@ -66,7 +66,7 @@ fn test_first_deposit_large_amount_seed_ratio() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000_000);
-    let minted = vault.deposit(&user, &1_000_000_000);
+    let minted = vault.deposit(&user, &1_000_000_000, &None);
 
     assert_eq!(minted, 1_000_000_000, "first deposit of any size must be 1:1");
     assert_eq!(vault.balance_of(&user), 1_000_000_000);
@@ -79,7 +79,7 @@ fn test_first_deposit_minimum_amount_seed_ratio() {
     let user = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1);
-    let minted = vault.deposit(&user, &1);
+    let minted = vault.deposit(&user, &1, &None);
 
     assert_eq!(minted, 1, "even 1 stroop first deposit must be 1:1");
     assert_eq!(vault.total_assets(), 1);
@@ -98,11 +98,11 @@ fn test_second_deposit_no_harvest_uses_share_formula() {
 
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 1_000);
-    vault.deposit(&alice, &1_000); // seeds the vault: 1000 shares / 1000 assets
+    vault.deposit(&alice, &1_000, &None); // seeds the vault: 1000 shares / 1000 assets
 
     let bob = Address::generate(&env);
     mint(&env, &token, &admin, &bob, 500);
-    let minted = vault.deposit(&bob, &500);
+    let minted = vault.deposit(&bob, &500, &None);
 
     // floor(500 × 1000 / 1000) = 500
     assert_eq!(minted, 500, "second deposit at 1:1 price must mint exactly 500 shares");
@@ -121,7 +121,7 @@ fn test_second_deposit_after_harvest_formula_exact_integer() {
 
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 1_000);
-    vault.deposit(&alice, &1_000); // 1000 shares / 1000 assets
+    vault.deposit(&alice, &1_000, &None); // 1000 shares / 1000 assets
 
     // Harvest 200 tokens: price rises to 1.2 (1200 assets / 1000 shares)
     mint(&env, &token, &admin, &admin, 200);
@@ -130,7 +130,7 @@ fn test_second_deposit_after_harvest_formula_exact_integer() {
 
     let bob = Address::generate(&env);
     mint(&env, &token, &admin, &bob, 600);
-    let minted = vault.deposit(&bob, &600);
+    let minted = vault.deposit(&bob, &600, &None);
 
     // Exact integer: floor(600 × 1_000 / 1_200) = 500
     assert_eq!(minted, 500, "expected floor(600×1000/1200) = 500 shares");
@@ -151,7 +151,7 @@ fn test_deposit_after_harvest_mints_fewer_shares() {
     // First depositor seeds at 1:1
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 10_000);
-    vault.deposit(&alice, &10_000); // 10_000 shares / 10_000 assets
+    vault.deposit(&alice, &10_000, &None); // 10_000 shares / 10_000 assets
 
     // Harvest boosts share price: 10_000 assets + 5_000 yield = 15_000 assets / 10_000 shares
     mint(&env, &token, &admin, &admin, 5_000);
@@ -160,7 +160,7 @@ fn test_deposit_after_harvest_mints_fewer_shares() {
     // Bob deposits the same 10_000 tokens that Alice deposited
     let bob = Address::generate(&env);
     mint(&env, &token, &admin, &bob, 10_000);
-    let bob_shares = vault.deposit(&bob, &10_000);
+    let bob_shares = vault.deposit(&bob, &10_000, &None);
 
     // Alice got 10_000 shares; Bob should get fewer since price is now 1.5
     // floor(10_000 × 10_000 / 15_000) = floor(6666.67) = 6_666
@@ -182,7 +182,7 @@ fn test_deposit_after_multiple_harvests_mints_even_fewer_shares() {
 
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 1_000_000);
-    vault.deposit(&alice, &1_000_000); // 1_000_000 shares / 1_000_000 assets
+    vault.deposit(&alice, &1_000_000, &None); // 1_000_000 shares / 1_000_000 assets
 
     // First harvest: price → 2.0
     mint(&env, &token, &admin, &admin, 1_000_000);
@@ -196,7 +196,7 @@ fn test_deposit_after_multiple_harvests_mints_even_fewer_shares() {
 
     let bob = Address::generate(&env);
     mint(&env, &token, &admin, &bob, 1_000_000);
-    let bob_shares = vault.deposit(&bob, &1_000_000);
+    let bob_shares = vault.deposit(&bob, &1_000_000, &None);
 
     // floor(1_000_000 × 1_000_000 / 3_000_000) = floor(333_333.33) = 333_333
     assert_eq!(bob_shares, 333_333);
@@ -223,7 +223,7 @@ fn test_deposit_rounds_to_zero_shares_returns_zero_amount_error() {
     // Seed the vault with 1 token → 1 share
     let seeder = Address::generate(&env);
     mint(&env, &token, &admin, &seeder, 1);
-    vault.deposit(&seeder, &1);
+    vault.deposit(&seeder, &1, &None);
 
     // Massively inflate the price: inject 1_000_000 tokens of yield with only 1 share outstanding.
     // Now price = 1_000_001 tokens per share.
@@ -234,7 +234,7 @@ fn test_deposit_rounds_to_zero_shares_returns_zero_amount_error() {
     // A deposit of 1 token yields floor(1 × 1 / 1_000_001) = 0 shares → ZeroAmount
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1);
-    let result = vault.try_deposit(&user, &1);
+    let result = vault.try_deposit(&user, &1, &None);
     assert_eq!(
         result,
         Err(Ok(VaultError::ZeroAmount)),
@@ -250,7 +250,7 @@ fn test_deposit_just_below_share_price_returns_zero_amount() {
     // Vault: 1 share / 1000 assets  (price = 1000 per share)
     let seeder = Address::generate(&env);
     mint(&env, &token, &admin, &seeder, 1);
-    vault.deposit(&seeder, &1);
+    vault.deposit(&seeder, &1, &None);
     mint(&env, &token, &admin, &admin, 999);
     vault.harvest(&admin, &999);
     assert_eq!(vault.total_assets(), 1_000);
@@ -258,12 +258,12 @@ fn test_deposit_just_below_share_price_returns_zero_amount() {
     // Deposit 999 → floor(999 × 1 / 1000) = 0 → ZeroAmount
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 999);
-    let result = vault.try_deposit(&user, &999);
+    let result = vault.try_deposit(&user, &999, &None);
     assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
 
     // Deposit exactly 1000 → floor(1000 × 1 / 1000) = 1 → succeeds
     mint(&env, &token, &admin, &user, 1);
-    let minted = vault.deposit(&user, &1_000);
+    let minted = vault.deposit(&user, &1_000, &None);
     assert_eq!(minted, 1, "deposit of exactly the share price must mint 1 share");
 }
 
@@ -286,7 +286,7 @@ fn test_share_price_formula_exact_integer_arithmetic() {
 
     // Step 1: Alice deposits 10_000 at 1:1 seed
     mint(&env, &token, &admin, &alice, 10_000);
-    let alice_shares = vault.deposit(&alice, &10_000);
+    let alice_shares = vault.deposit(&alice, &10_000, &None);
     assert_eq!(alice_shares, 10_000);
 
     // Step 2: Harvest 5_000 → price = 1.5
@@ -295,7 +295,7 @@ fn test_share_price_formula_exact_integer_arithmetic() {
 
     // Step 3: Bob deposits 15_000 → floor(15_000 × 10_000 / 15_000) = 10_000 shares
     mint(&env, &token, &admin, &bob, 15_000);
-    let bob_shares = vault.deposit(&bob, &15_000);
+    let bob_shares = vault.deposit(&bob, &15_000, &None);
     assert_eq!(bob_shares, 10_000, "floor(15000×10000/15000) = 10000");
 
     // Step 4: Harvest 6_000 → total_assets = 36_000, total_shares = 20_000 → price = 1.8
@@ -305,7 +305,7 @@ fn test_share_price_formula_exact_integer_arithmetic() {
 
     // Step 5: Carol deposits 18_000 → floor(18_000 × 20_000 / 36_000) = 10_000 shares
     mint(&env, &token, &admin, &carol, 18_000);
-    let carol_shares = vault.deposit(&carol, &18_000);
+    let carol_shares = vault.deposit(&carol, &18_000, &None);
     assert_eq!(carol_shares, 10_000, "floor(18000×20000/36000) = 10000");
 
     // State: 30_000 total shares, 54_000 total assets → price = 1.8

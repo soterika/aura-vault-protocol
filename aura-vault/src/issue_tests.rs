@@ -85,7 +85,7 @@ fn test_383_share_price_after_seed_deposit_equals_precision() {
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 5_000_000);
 
-    vault.deposit(&user, &5_000_000_i128);
+    vault.deposit(&user, &5_000_000_i128, &None);
 
     // share_price = total_deposited * precision / total_shares
     //             = 5_000_000 * 10_000_000 / 5_000_000 = 10_000_000
@@ -98,7 +98,7 @@ fn test_383_share_price_increases_after_harvest() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 5_000_000);
-    vault.deposit(&user, &5_000_000_i128);
+    vault.deposit(&user, &5_000_000_i128, &None);
 
     let price_before = vault.share_price();
 
@@ -116,7 +116,7 @@ fn test_383_custom_6_decimal_precision() {
     let (env, vault, admin, token) = setup_with_precision(1_000_000);
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000_i128);
+    vault.deposit(&user, &1_000_000_i128, &None);
 
     // 1:1 seed → share_price = 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
     assert_eq!(vault.share_price(), 1_000_000_i128);
@@ -172,7 +172,7 @@ fn test_382_deposit_requires_caller_auth() {
         },
     }]);
 
-    let result = vault.try_deposit(&user, &1_000_000_i128);
+    let result = vault.try_deposit(&user, &1_000_000_i128, &None);
     // Should fail — auth provided by attacker, not user.
     assert!(
         result.is_err(),
@@ -198,7 +198,7 @@ fn test_382_withdraw_requires_caller_auth() {
     vault.set_fees(&admin, &0_u32, &0_u32);
 
     StellarAssetClient::new(&env, &token_address).mint(&user, &1_000_000);
-    vault.deposit(&user, &1_000_000_i128);
+    vault.deposit(&user, &1_000_000_i128, &None);
 
     // Attempt withdraw with attacker's auth instead of user's auth.
     let attacker = Address::generate(&env);
@@ -260,7 +260,7 @@ fn test_382_harvest_requires_caller_auth() {
 
     // Seed the vault
     StellarAssetClient::new(&env, &token_address).mint(&user, &1_000_000);
-    vault.deposit(&user, &1_000_000_i128);
+    vault.deposit(&user, &1_000_000_i128, &None);
 
     // Try to harvest with attacker auth, not keeper auth
     let attacker = Address::generate(&env);
@@ -306,7 +306,7 @@ fn test_380_bump_storage_with_user_bumps_more_keys() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000_i128);
+    vault.deposit(&user, &1_000_000_i128, &None);
 
     let count_without_user = vault.bump_storage(&None);
     let count_with_user = vault.bump_storage(&Some(user));
@@ -353,7 +353,7 @@ fn test_381_export_state_reflects_current_vault_state() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 2_000_000);
-    vault.deposit(&user, &2_000_000_i128);
+    vault.deposit(&user, &2_000_000_i128, &None);
 
     // Inject 200_000 yield
     mint(&env, &token, &admin, &user, 200_000);
@@ -373,7 +373,7 @@ fn test_381_export_state_fields() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000_i128);
+    vault.deposit(&user, &1_000_000_i128, &None);
 
     let snapshot = vault.export_state();
 

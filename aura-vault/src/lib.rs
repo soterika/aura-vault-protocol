@@ -341,8 +341,11 @@ impl AuraVault {
     /// ```
     ///
     /// Enforces the flash-loan guard before executing (actual on-chain balance
-    /// must equal `total_deposited`). On success, emits a `deposit` event with
-    /// topics `(event_name, caller, amount)` and data
+    /// must equal `total_deposited`). If `referrer` is `Some(addr)` and
+    /// `addr != caller`, the on-chain referral count for `addr` is incremented
+    /// and a `deposit_with_referral` event is emitted alongside the standard
+    /// `deposit` event. On success, emits a `deposit` event with topics
+    /// `(event_name, caller, amount)` and data
     /// `(new_shares, new_total_shares, new_total_deposited)`.
     ///
     /// # Parameters
@@ -351,6 +354,9 @@ impl AuraVault {
     /// - `caller` — Address depositing tokens; must authorise this call.
     /// - `amount` — Number of underlying tokens to deposit, in the token's
     ///   smallest unit (e.g. stroops for a 7-decimal Stellar token). Must be > 0.
+    /// - `referrer` — Optional referrer address for off-chain reward tracking.
+    ///   If `Some`, must differ from `caller`; otherwise
+    ///   [`VaultError::SelfReferral`] is returned. No on-chain bonus is issued.
     ///
     /// # Returns
     ///
@@ -363,9 +369,17 @@ impl AuraVault {
     /// - [`VaultError::VaultPaused`] — vault is paused.
     /// - [`VaultError::BalanceMismatch`] — flash-loan guard tripped.
     /// - [`VaultError::MathOverflow`] — arithmetic overflow in share formula.
-    pub fn deposit(env: Env, caller: Address, amount: i128) -> Result<i128, VaultError> {
+    /// - [`VaultError::SelfReferral`] — `referrer == Some(caller)`.
+    pub fn deposit(env: Env, caller: Address, amount: i128, referrer: Option<Address>) -> Result<i128, VaultError> {
         with_reentrancy_guard(&env, || {
             caller.require_auth();
+
+            // Validate referrer: must not be the same as the depositor.
+            if let Some(ref ref_addr) = referrer {
+                if ref_addr == &caller {
+                    return Err(VaultError::SelfReferral);
+                }
+            }
 
             if amount <= 0 {
                 return Err(VaultError::ZeroAmount);
@@ -2341,6 +2355,7 @@ impl AuraVault {
             28 => Some(VaultError::NotWhitelisted.message()),
             29 => Some(VaultError::BelowMinDeposit.message()),
             30 => Some(VaultError::Reentrancy.message()),
+            31 => Some(VaultError::SelfReferral.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))
@@ -2453,6 +2468,26 @@ impl AuraVault {
     /// Query the minimum deposit amount. Read-only, no auth required.
     pub fn min_deposit(env: Env) -> i128 {
         get_min_deposit(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Referral tracking
+    // -----------------------------------------------------------------------
+
+    /// Return the number of deposits attributed to `referrer`.
+    ///
+    /// Incremented each time a depositor passes `Some(referrer)` to
+    /// [`deposit`]. Intended for off-chain reward calculation; no on-chain
+    /// bonus is distributed by this contract.
+    ///
+    /// Read-only; no authorization required.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` — Soroban execution environment.
+    /// - `referrer` — The address whose referral count to query.
+    pub fn get_referral_count(env: Env, referrer: Address) -> u32 {
+        storage::get_referral_count(&env, &referrer)
     }
 
     // -----------------------------------------------------------------------

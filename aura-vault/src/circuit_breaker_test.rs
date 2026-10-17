@@ -60,7 +60,7 @@ mod circuit_breaker_tests {
         let seeder = Address::generate(env);
         let seed_amount = 1_000_000_i128;
         mint(env, token, admin, &seeder, seed_amount);
-        vault.deposit(&seeder, &seed_amount);
+        vault.deposit(&seeder, &seed_amount, &None);
         seed_amount
     }
 
@@ -262,7 +262,7 @@ mod circuit_breaker_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000);
-        let result = vault.try_deposit(&user, &1_000_i128);
+        let result = vault.try_deposit(&user, &1_000_i128, &None);
         assert_eq!(result, Err(Ok(VaultError::VaultPaused)));
     }
 

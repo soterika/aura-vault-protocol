@@ -114,7 +114,7 @@ fn gas_deposit() {
     mint(&env, &token, &admin, &user, 1_000_000);
 
     measure(&env, "deposit", || {
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
     });
 }
 
@@ -123,7 +123,7 @@ fn gas_withdraw() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None);
     let shares = vault.balance_of(&user);
 
     measure(&env, "withdraw", || {
@@ -137,7 +137,7 @@ fn gas_harvest() {
     // Need at least one depositor so total_shares > 0.
     let depositor = Address::generate(&env);
     mint(&env, &token, &admin, &depositor, 1_000_000);
-    vault.deposit(&depositor, &1_000_000);
+    vault.deposit(&depositor, &1_000_000, &None);
 
     let keeper = Address::generate(&env);
     mint(&env, &token, &admin, &keeper, 500_000);
@@ -159,7 +159,7 @@ fn gas_harvest_token() {
     // Seed depositor.
     let depositor = Address::generate(&env);
     mint(&env, &token, &admin, &depositor, 1_000_000);
-    vault.deposit(&depositor, &1_000_000);
+    vault.deposit(&depositor, &1_000_000, &None);
 
     // Give keeper alt tokens.
     let keeper = Address::generate(&env);
@@ -239,7 +239,7 @@ fn gas_withdraw_fees() {
 
     let depositor = Address::generate(&env);
     mint(&env, &token, &admin, &depositor, 1_000_000);
-    vault.deposit(&depositor, &1_000_000);
+    vault.deposit(&depositor, &1_000_000, &None);
 
     let keeper = Address::generate(&env);
     mint(&env, &token, &admin, &keeper, 100_000);

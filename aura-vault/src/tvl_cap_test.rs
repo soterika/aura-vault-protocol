@@ -51,7 +51,7 @@ mod tvl_cap_tests {
         // Deposit a large amount — should succeed without any cap check
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000_000);
-        let minted = vault.deposit(&user, &1_000_000_000);
+        let minted = vault.deposit(&user, &1_000_000_000, &None);
         assert_eq!(minted, 1_000_000_000);
         assert_eq!(vault.total_assets(), 1_000_000_000);
     }
@@ -72,7 +72,7 @@ mod tvl_cap_tests {
         // Deposit 1_000_000 — within cap
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        let minted = vault.deposit(&user, &1_000_000);
+        let minted = vault.deposit(&user, &1_000_000, &None);
         assert_eq!(minted, 1_000_000);
         assert_eq!(vault.total_assets(), 1_000_000);
     }
@@ -85,7 +85,7 @@ mod tvl_cap_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 5_000_000);
-        let minted = vault.deposit(&user, &5_000_000);
+        let minted = vault.deposit(&user, &5_000_000, &None);
         assert_eq!(minted, 5_000_000);
         assert_eq!(vault.total_assets(), 5_000_000);
     }
@@ -103,13 +103,13 @@ mod tvl_cap_tests {
         // First deposit fills the vault to exactly the cap
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 1_000_000);
-        vault.deposit(&alice, &1_000_000);
+        vault.deposit(&alice, &1_000_000, &None);
         assert_eq!(vault.total_assets(), 1_000_000);
 
         // Second deposit of any amount exceeds the cap
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 1);
-        let result = vault.try_deposit(&bob, &1);
+        let result = vault.try_deposit(&bob, &1, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
     }
 
@@ -121,11 +121,11 @@ mod tvl_cap_tests {
 
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 500_000);
-        vault.deposit(&alice, &500_000);
+        vault.deposit(&alice, &500_000, &None);
 
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 1);
-        let result = vault.try_deposit(&bob, &1);
+        let result = vault.try_deposit(&bob, &1, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
     }
 
@@ -137,7 +137,7 @@ mod tvl_cap_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 2_000_000);
-        let result = vault.try_deposit(&user, &2_000_000);
+        let result = vault.try_deposit(&user, &2_000_000, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
     }
 
@@ -154,25 +154,25 @@ mod tvl_cap_tests {
         // Deposit 2_000_000 — within cap
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 2_000_000);
-        vault.deposit(&alice, &2_000_000);
+        vault.deposit(&alice, &2_000_000, &None);
         assert_eq!(vault.total_assets(), 2_000_000);
 
         // Deposit 500_000 — still within cap (2_000_000 + 500_000 = 2_500_000 ≤ 3_000_000)
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 500_000);
-        vault.deposit(&bob, &500_000);
+        vault.deposit(&bob, &500_000, &None);
         assert_eq!(vault.total_assets(), 2_500_000);
 
         // Deposit 600_000 — would exceed cap (2_500_000 + 600_000 = 3_100_000 > 3_000_000)
         let carol = Address::generate(&env);
         mint(&env, &token, &admin, &carol, 600_000);
-        let result = vault.try_deposit(&carol, &600_000);
+        let result = vault.try_deposit(&carol, &600_000, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
 
         // Deposit exactly the remaining space (500_000) — must succeed
         let dave = Address::generate(&env);
         mint(&env, &token, &admin, &dave, 500_000);
-        vault.deposit(&dave, &500_000);
+        vault.deposit(&dave, &500_000, &None);
         assert_eq!(vault.total_assets(), 3_000_000);
     }
 
@@ -189,7 +189,7 @@ mod tvl_cap_tests {
         // Start uncapped — deposit freely
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 5_000_000);
-        vault.deposit(&alice, &5_000_000);
+        vault.deposit(&alice, &5_000_000, &None);
         assert_eq!(vault.total_assets(), 5_000_000);
 
         // Admin lowers cap to 3_000_000 (below current total_assets)
@@ -199,7 +199,7 @@ mod tvl_cap_tests {
         // Any new deposit is now rejected
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 1);
-        let result = vault.try_deposit(&bob, &1);
+        let result = vault.try_deposit(&bob, &1, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
     }
 
@@ -211,19 +211,19 @@ mod tvl_cap_tests {
 
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 1_000_000);
-        vault.deposit(&alice, &1_000_000);
+        vault.deposit(&alice, &1_000_000, &None);
 
         // Bob is blocked under old cap
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 1_000_000);
-        let result = vault.try_deposit(&bob, &1_000_000);
+        let result = vault.try_deposit(&bob, &1_000_000, &None);
         assert_eq!(result, Err(Ok(VaultError::TvlCapExceeded)));
 
         // Admin raises cap to 2_000_000
         vault.set_tvl_cap(&admin, &2_000_000);
 
         // Bob's deposit succeeds now
-        vault.deposit(&bob, &1_000_000);
+        vault.deposit(&bob, &1_000_000, &None);
         assert_eq!(vault.total_assets(), 2_000_000);
     }
 
@@ -236,19 +236,19 @@ mod tvl_cap_tests {
         // Vault full at 100_000
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 100_000);
-        vault.deposit(&alice, &100_000);
+        vault.deposit(&alice, &100_000, &None);
 
         // Bob is blocked
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 1);
-        assert_eq!(vault.try_deposit(&bob, &1), Err(Ok(VaultError::TvlCapExceeded)));
+        assert_eq!(vault.try_deposit(&bob, &1, &None), Err(Ok(VaultError::TvlCapExceeded)));
 
         // Admin disables the cap
         vault.set_tvl_cap(&admin, &0);
         assert_eq!(vault.get_tvl_cap(), 0);
 
         // Bob's deposit now succeeds
-        vault.deposit(&bob, &1);
+        vault.deposit(&bob, &1, &None);
         assert_eq!(vault.total_assets(), 100_001);
     }
 
@@ -273,7 +273,7 @@ mod tvl_cap_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None);
 
         // Withdraw all shares — must succeed regardless of cap
         let shares = vault.balance_of(&user);

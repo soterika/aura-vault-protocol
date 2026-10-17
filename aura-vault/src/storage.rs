@@ -84,6 +84,11 @@ pub enum DataKey {
     // -----------------------------------------------------------------------
     /// Reentrancy guard lock flag.
     ReentrancyGuard,
+    // -----------------------------------------------------------------------
+    // Referral tracking
+    // -----------------------------------------------------------------------
+    /// Per-referrer deposit count (persistent storage).
+    ReferralCount(Address),
     // ---------------------------------------------------------------------------
     // Multi-sig admin operations (Issue #375)
     // ---------------------------------------------------------------------------
@@ -562,6 +567,31 @@ pub fn get_decimals(env: &Env) -> u32 {
 
 pub fn set_decimals(env: &Env, decimals: u32) {
     env.storage().instance().set(&DataKey::Decimals, &decimals);
+}
+
+// ---------------------------------------------------------------------------
+// Referral tracking helpers
+// ---------------------------------------------------------------------------
+
+/// Returns the number of deposits made through `referrer`.
+pub fn get_referral_count(env: &Env, referrer: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ReferralCount(referrer.clone()))
+        .unwrap_or(0u32)
+}
+
+/// Increments the referral deposit count for `referrer` by 1.
+pub fn increment_referral_count(env: &Env, referrer: &Address) {
+    let current = get_referral_count(env, referrer);
+    let new_count = current.saturating_add(1);
+    env.storage()
+        .persistent()
+        .set(&DataKey::ReferralCount(referrer.clone()), &new_count);
+    let key = DataKey::ReferralCount(referrer.clone());
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
 }
 
 // ---------------------------------------------------------------------------
