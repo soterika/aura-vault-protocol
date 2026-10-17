@@ -1,5 +1,6 @@
 use soroban_sdk::{Address, Env, Vec, Symbol, BytesN, String};
 use crate::errors::VaultError;
+use crate::InvariantCheckResult;
 
 /// Public ABI for AuraVault.
 ///
@@ -721,5 +722,32 @@ pub trait AuraVaultTrait {
     ///
     /// Read-only; no authorization required.
     fn list_price_snapshots(env: Env, timestamps: Vec<u64>, from: u64, to: u64) -> Vec<(u64, i128)>;
+
+    // -----------------------------------------------------------------------
+    // Invariant health-check — Issue #931
+    // -----------------------------------------------------------------------
+
+    /// Validate all critical vault invariants and return a structured result.
+    ///
+    /// View-only — never modifies state.  Called automatically by the CI
+    /// upgrade test suite after every contract upgrade to verify vault health.
+    ///
+    /// # Invariants checked
+    ///
+    /// 1. `total_shares > 0` implies `total_assets > 0` (solvency).
+    /// 2. Admin's share balance ≤ `total_shares` (balance sample check).
+    /// 3. Vault is either fully initialised (admin + token set) or fully
+    ///    uninitialised — never in a partial state.
+    /// 4. Admin address is present once the vault is live.
+    /// 5. `perf_fee_bps <= 10_000` (fee cannot exceed 100 %).
+    ///
+    /// # Returns
+    ///
+    /// - [`InvariantCheckResult::AllPassed`] — all invariants pass.
+    /// - [`InvariantCheckResult::Failing`] — first failing invariant with a
+    ///   descriptive message.
+    ///
+    /// Read-only; no authorization required.  Never reverts.
+    fn check_invariants(env: Env) -> InvariantCheckResult;
 }
 

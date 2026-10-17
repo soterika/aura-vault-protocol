@@ -73,7 +73,45 @@ mod cross_contract_safety_test;
 #[cfg(test)]
 mod reentrancy_test;
 
-use soroban_sdk::{contract, contractimpl, contractclient, token, Address, Env, Vec, Symbol};
+use soroban_sdk::{contract, contractimpl, contractclient, contracttype, token, Address, Env, String, Vec, Symbol};
+
+// ---------------------------------------------------------------------------
+// InvariantCheckResult — structured return type for check_invariants() (Issue #931)
+//
+// Variants:
+//   Ok      — all invariants passed; the vault state is consistent.
+//   Failing — the first invariant that failed; `description` contains a
+//             human-readable explanation of what went wrong.
+//
+// The `description` field is a Soroban `String` so it is included in the ABI
+// and can be surfaced directly by CI tooling, wallet UIs, or monitoring without
+// additional off-chain message lookup.
+// ---------------------------------------------------------------------------
+
+/// Structured result returned by [`AuraVault::check_invariants`].
+///
+/// A result of `Ok` means all five vault invariants pass.  A result of
+/// `Failing` means the first invariant that was violated, with a descriptive
+/// message in `description`.
+///
+/// # Invariants
+///
+/// 1. **Solvency** — if `total_shares > 0` then `total_assets > 0`.
+/// 2. **Balance sample** — for any address whose share balance is tracked,
+///    `balance_of(addr) <= total_shares`.
+/// 3. **Initialization consistency** — the vault is either fully initialised
+///    (admin + token both set) or not at all; never partial.
+/// 4. **Admin presence** — the admin address is set (vault is live and
+///    governed).
+/// 5. **Fee sanity** — `perf_fee_bps <= 10_000` (≤ 100 %).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InvariantCheckResult {
+    /// All invariants pass — vault state is consistent.
+    AllPassed,
+    /// The first failing invariant; `description` explains what went wrong.
+    Failing(String),
+}
 
 // ---------------------------------------------------------------------------
 // AuraPriceOracle external contract interface (Issue #348)
@@ -2117,6 +2155,147 @@ impl AuraVault {
     /// - `address` — The Stellar account address to query.
     pub fn balance_of(env: Env, address: Address) -> i128 {
         get_balance(&env, &address)
+    }
+
+    // -----------------------------------------------------------------------
+    // check_invariants — on-chain view health-check (Issue #931)
+    // -----------------------------------------------------------------------
+    /// Validate all critical AuraVault invariants and return a structured result.
+    ///
+    /// This is a **view-only** function; it reads state but never writes to it.
+    /// Intended to be called automatically in the CI upgrade test suite and by
+    /// monitoring infrastructure after every upgrade to verify contract health.
+    ///
+    /// # Invariants checked (in order)
+    ///
+    /// 1. **Solvency** — `total_shares > 0` implies `total_assets > 0`.
+    ///    An outstanding share supply with no backing assets is a critical
+    ///    accounting error.
+    ///
+    /// 2. **Balance sample** — `admin_balance_of <= total_shares`, where
+    ///    `admin_balance_of` is the admin address's current share balance.
+    ///    This is a representative sample check that no single address can
+    ///    hold more shares than the global total.
+    ///
+    /// 3. **Initialization consistency** — the vault is either fully
+    ///    initialised (admin AND underlying token both set) or completely
+    ///    uninitialised (neither set).  A partial state (one set, other not)
+    ///    is a storage corruption indicator.
+    ///
+    /// 4. **Admin presence** — the admin address is set.  An uninitialised
+    ///    vault has no admin, which is fine before `initialize`; but after the
+    ///    vault is live this invariant must hold.
+    ///
+    /// 5. **Fee sanity** — `perf_fee_bps <= 10_000` (≤ 100 %).  A fee above
+    ///    10 000 bps is impossible to apply correctly and indicates storage
+    ///    corruption or an erroneous admin action.
+    ///
+    /// # Returns
+    ///
+    /// - [`InvariantCheckResult::AllPassed`] — all invariants pass.
+    /// - [`InvariantCheckResult::Failing`] — the first failing invariant with
+    ///   a descriptive message.
+    ///
+    /// # Notes
+    ///
+    /// - No authorisation is required (read-only view).
+    /// - Never reverts: all paths return a result value, even for an
+    ///   uninitialised vault.
+    pub fn check_invariants(env: Env) -> InvariantCheckResult {
+        let total_shares  = get_total_shares(&env);
+        let total_assets  = get_total_deposited(&env);
+        let admin_opt     = get_admin(&env);
+        let token_opt     = get_token(&env);
+        let perf_fee_bps  = storage::get_perf_fee_bps(&env);
+
+        // ------------------------------------------------------------------
+        // Invariant 1: total_shares > 0 implies total_assets > 0
+        //
+        // If there are outstanding shares but the vault tracks zero assets,
+        // shareholders would redeem nothing — this is a critical solvency
+        // invariant.
+        // ------------------------------------------------------------------
+        if total_shares > 0 && total_assets <= 0 {
+            return InvariantCheckResult::Failing(
+                soroban_sdk::String::from_str(
+                    &env,
+                    "INV1: total_shares > 0 but total_assets == 0 (solvency invariant violated)",
+                )
+            );
+        }
+
+        // ------------------------------------------------------------------
+        // Invariant 2: sample balance check — admin share balance <= total_shares
+        //
+        // We cannot iterate all addresses on-chain; we instead sample the
+        // admin address as a representative.  If the admin balance is stored,
+        // it must not exceed the total.
+        // ------------------------------------------------------------------
+        if let Some(ref admin) = admin_opt {
+            let admin_balance = get_balance(&env, admin);
+            if admin_balance > total_shares {
+                return InvariantCheckResult::Failing(
+                    soroban_sdk::String::from_str(
+                        &env,
+                        "INV2: admin balance_of > total_shares (balance sample invariant violated)",
+                    )
+                );
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Invariant 3: initialization consistency
+        //
+        // Both admin and token must be set together, or neither.  A partial
+        // state indicates storage corruption or a failed initialisation.
+        // ------------------------------------------------------------------
+        let has_admin = admin_opt.is_some();
+        let has_token = token_opt.is_some();
+        if has_admin != has_token {
+            return InvariantCheckResult::Failing(
+                soroban_sdk::String::from_str(
+                    &env,
+                    "INV3: vault is in partial init state (admin XOR token is set)",
+                )
+            );
+        }
+
+        // ------------------------------------------------------------------
+        // Invariant 4: admin address is present
+        //
+        // Once the vault is live (both admin and token set), the admin must
+        // always be present to allow governance, pause, and upgrades.
+        // We only check this when the vault is fully initialised.
+        // ------------------------------------------------------------------
+        if has_token && admin_opt.is_none() {
+            return InvariantCheckResult::Failing(
+                soroban_sdk::String::from_str(
+                    &env,
+                    "INV4: vault token is set but admin address is missing",
+                )
+            );
+        }
+
+        // ------------------------------------------------------------------
+        // Invariant 5: perf_fee_bps <= 10_000 (cannot exceed 100%)
+        //
+        // Any value above 10 000 basis points is mathematically invalid —
+        // it would claim more than 100 % of yield.  The maximum configured
+        // in fee.rs is MAX_PERF_FEE_BPS = 2 000 (20 %); values above that
+        // are also suspicious but we apply the absolute mathematical limit
+        // here since that is what the issue spec requires.
+        // ------------------------------------------------------------------
+        if perf_fee_bps > 10_000 {
+            return InvariantCheckResult::Failing(
+                soroban_sdk::String::from_str(
+                    &env,
+                    "INV5: perf_fee_bps > 10000 (fee exceeds 100%, fee sanity invariant violated)",
+                )
+            );
+        }
+
+        // All invariants passed.
+        InvariantCheckResult::AllPassed
     }
 
     // -----------------------------------------------------------------------
