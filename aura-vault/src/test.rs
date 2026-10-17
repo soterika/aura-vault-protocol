@@ -1125,3 +1125,288 @@ fn test_events_emitted_on_full_flow() {
     let status = vault.operation_status(&op_id);
     assert_eq!(status, Some(soroban_sdk::String::from_str(&_env, "Executed")));
 }
+
+// ===========================================================================
+// Emergency withdraw tests
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// AC1: emergency_withdraw works when vault is paused
+// ---------------------------------------------------------------------------
+
+/// Basic happy path: user can recover their tokens via emergency_withdraw while
+/// the vault is paused.
+#[test]
+fn test_emergency_withdraw_during_pause_succeeds() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    vault.pause(&admin);
+    assert!(vault.is_paused());
+
+    let shares = vault.balance_of(&user);
+    let tokens_out = vault.emergency_withdraw(&user, &shares);
+
+    assert_eq!(tokens_out, 1_000_000);
+    assert_eq!(vault.balance_of(&user), 0);
+    assert_eq!(vault.total_assets(), 0);
+}
+
+/// Multiple users can each perform emergency_withdraw while the vault is paused.
+#[test]
+fn test_emergency_withdraw_multiple_users_during_pause() {
+    let (env, vault, admin, token) = setup();
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 1_000_000);
+    mint(&env, &token, &admin, &bob, 2_000_000);
+    vault.deposit(&alice, &1_000_000);
+    vault.deposit(&bob, &2_000_000);
+
+    vault.pause(&admin);
+
+    let alice_shares = vault.balance_of(&alice);
+    let bob_shares = vault.balance_of(&bob);
+    let alice_out = vault.emergency_withdraw(&alice, &alice_shares);
+    let bob_out = vault.emergency_withdraw(&bob, &bob_shares);
+
+    assert_eq!(alice_out, 1_000_000);
+    assert_eq!(bob_out, 2_000_000);
+    assert_eq!(vault.total_assets(), 0);
+}
+
+/// emergency_withdraw correctly computes the share-proportional redemption
+/// amount when yield was harvested before the pause.
+#[test]
+fn test_emergency_withdraw_reflects_accrued_yield() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    // Harvest 500_000 → total assets = 1_500_000, shares unchanged
+    mint(&env, &token, &admin, &admin, 500_000);
+    vault.harvest(&admin, &500_000);
+    assert_eq!(vault.total_assets(), 1_500_000);
+
+    vault.pause(&admin);
+
+    let shares = vault.balance_of(&user);
+    // redeem_amount = floor(shares × total_deposited / total_shares)
+    //               = floor(1_000_000 × 1_500_000 / 1_000_000) = 1_500_000
+    let tokens_out = vault.emergency_withdraw(&user, &shares);
+    assert_eq!(tokens_out, 1_500_000);
+}
+
+/// emergency_withdraw does not charge any performance fee (unlike normal withdraw
+/// which charges whatever is configured, and harvest which charges the perf fee).
+#[test]
+fn test_emergency_withdraw_no_fee_charged() {
+    let (env, vault, admin, token) = setup();
+
+    // Set a 10% performance fee so it would normally apply
+    vault.set_fees(&admin, &1000_u32, &0_u32);
+
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    vault.pause(&admin);
+
+    let shares = vault.balance_of(&user);
+    let tokens_out = vault.emergency_withdraw(&user, &shares);
+
+    // Full 1_000_000 returned — no fee deducted
+    assert_eq!(tokens_out, 1_000_000);
+    // Total fees collected must still be 0 (no harvest was run)
+    assert_eq!(vault.total_fees_collected(), 0);
+}
+
+/// emergency_withdraw with partial share redemption leaves the remainder
+/// intact for subsequent claims.
+#[test]
+fn test_emergency_withdraw_partial_shares() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 2_000_000);
+    vault.deposit(&user, &2_000_000);
+
+    vault.pause(&admin);
+
+    // Redeem half
+    let tokens_out = vault.emergency_withdraw(&user, &1_000_000);
+    assert_eq!(tokens_out, 1_000_000);
+    assert_eq!(vault.balance_of(&user), 1_000_000);
+    assert_eq!(vault.total_assets(), 1_000_000);
+
+    // Redeem the rest
+    let tokens_out2 = vault.emergency_withdraw(&user, &1_000_000);
+    assert_eq!(tokens_out2, 1_000_000);
+    assert_eq!(vault.balance_of(&user), 0);
+    assert_eq!(vault.total_assets(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// AC2: emergency_withdraw cannot be called when vault is NOT paused
+// ---------------------------------------------------------------------------
+
+/// When the vault is operating normally (unpaused), emergency_withdraw must
+/// reject with VaultNotPaused.
+#[test]
+fn test_emergency_withdraw_fails_when_not_paused() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    // Vault is NOT paused
+    assert!(!vault.is_paused());
+
+    let shares = vault.balance_of(&user);
+    let result = vault.try_emergency_withdraw(&user, &shares);
+    assert_eq!(result, Err(Ok(VaultError::VaultNotPaused)));
+}
+
+/// After pause then unpause, emergency_withdraw must again be blocked.
+#[test]
+fn test_emergency_withdraw_blocked_after_unpause() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    vault.pause(&admin);
+    vault.unpause(&admin);
+
+    // Vault is no longer paused
+    assert!(!vault.is_paused());
+
+    let shares = vault.balance_of(&user);
+    let result = vault.try_emergency_withdraw(&user, &shares);
+    assert_eq!(result, Err(Ok(VaultError::VaultNotPaused)));
+}
+
+// ---------------------------------------------------------------------------
+// Normal withdraw is blocked when paused, emergency_withdraw is not
+// ---------------------------------------------------------------------------
+
+/// Confirms the two functions have complementary preconditions:
+/// - `withdraw` is blocked when paused (VaultPaused)
+/// - `emergency_withdraw` succeeds when paused
+#[test]
+fn test_withdraw_blocked_but_emergency_withdraw_allowed_during_pause() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+    let shares = vault.balance_of(&user);
+
+    vault.pause(&admin);
+
+    // Normal withdraw is blocked
+    let normal_result = vault.try_withdraw(&user, &shares);
+    assert_eq!(normal_result, Err(Ok(VaultError::VaultPaused)));
+
+    // Emergency withdraw succeeds
+    let tokens_out = vault.emergency_withdraw(&user, &shares);
+    assert_eq!(tokens_out, 1_000_000);
+}
+
+// ---------------------------------------------------------------------------
+// Error paths
+// ---------------------------------------------------------------------------
+
+/// emergency_withdraw with zero shares returns ZeroAmount.
+#[test]
+fn test_emergency_withdraw_zero_shares_returns_zero_amount() {
+    let (env, vault, admin, _token) = setup();
+    let user = Address::generate(&env);
+    vault.pause(&admin);
+    let result = vault.try_emergency_withdraw(&user, &0);
+    assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
+}
+
+/// emergency_withdraw with more shares than balance returns InsufficientShares.
+#[test]
+fn test_emergency_withdraw_insufficient_shares_returns_error() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    vault.pause(&admin);
+
+    let result = vault.try_emergency_withdraw(&user, &9_999_999);
+    assert_eq!(result, Err(Ok(VaultError::InsufficientShares)));
+}
+
+/// emergency_withdraw before initialisation returns NotInitialized.
+#[test]
+fn test_emergency_withdraw_before_init_returns_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let _token = env.register_stellar_asset_contract_v2(admin.clone()).address();
+    let vault_addr = env.register_contract(None, AuraVault);
+    let vault = AuraVaultClient::new(&env, &vault_addr);
+    let user = Address::generate(&env);
+    let result = vault.try_emergency_withdraw(&user, &100);
+    assert_eq!(result, Err(Ok(VaultError::NotInitialized)));
+}
+
+// ---------------------------------------------------------------------------
+// Round-trip / invariant checks
+// ---------------------------------------------------------------------------
+
+/// After an emergency withdrawal, total_shares correctly reflects the burned shares.
+#[test]
+fn test_emergency_withdraw_updates_total_shares() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+    vault.deposit(&user, &1_000_000);
+
+    vault.pause(&admin);
+
+    vault.emergency_withdraw(&user, &500_000);
+
+    // total_shares should be reduced by exactly the burned amount
+    assert_eq!(vault.total_shares(), 500_000);
+    assert_eq!(vault.total_assets(), 500_000);
+}
+
+/// Two depositors: one uses emergency_withdraw, the other uses it too.
+/// Ensures the share-to-asset ratio is preserved correctly between calls.
+#[test]
+fn test_emergency_withdraw_preserves_share_ratio() {
+    let (env, vault, admin, token) = setup();
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    mint(&env, &token, &admin, &alice, 1_000_000);
+    mint(&env, &token, &admin, &bob, 1_000_000);
+    vault.deposit(&alice, &1_000_000);
+    vault.deposit(&bob, &1_000_000);
+
+    // Inject yield before pause
+    mint(&env, &token, &admin, &admin, 400_000);
+    vault.harvest(&admin, &400_000);
+    // total_assets = 2_400_000, total_shares = 2_000_000
+    // share price = 1.2 tokens/share
+
+    vault.pause(&admin);
+
+    let alice_shares = vault.balance_of(&alice);
+    let alice_out = vault.emergency_withdraw(&alice, &alice_shares);
+    // floor(1_000_000 × 2_400_000 / 2_000_000) = 1_200_000
+    assert_eq!(alice_out, 1_200_000);
+
+    // Bob's remaining entitlement: 1_000_000 shares of 1_200_000 remaining assets
+    let bob_shares = vault.balance_of(&bob);
+    let bob_out = vault.emergency_withdraw(&bob, &bob_shares);
+    assert_eq!(bob_out, 1_200_000);
+
+    assert_eq!(vault.total_assets(), 0);
+    assert_eq!(vault.total_shares(), 0);
+}

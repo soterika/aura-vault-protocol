@@ -655,6 +655,128 @@ impl AuraVault {
     }
 
     // -----------------------------------------------------------------------
+    // emergency_withdraw — exit path available only while vault is paused
+    // -----------------------------------------------------------------------
+    /// Burn vault shares and redeem underlying tokens during an emergency pause.
+    ///
+    /// When the admin pauses the vault, users retain the right to exit via this
+    /// function. It is intentionally limited to the paused state so that it
+    /// cannot be exploited under normal operating conditions (use [`withdraw`]
+    /// when the vault is unpaused).
+    ///
+    /// Differences from [`withdraw`]:
+    /// - **Only callable when paused** — rejects with [`VaultError::VaultNotPaused`]
+    ///   if the vault is operating normally.
+    /// - **No harvest** — yield is not compounded before redemption.
+    /// - **No fees** — the full `redeem_amount` is transferred; no performance
+    ///   or withdrawal fee is deducted.
+    /// - **Emits `emergency_withdrawal`** event (not `withdraw`).
+    /// - **No withdrawal queue** — large redemptions bypass the queue and
+    ///   are always processed immediately, giving users a guaranteed exit.
+    ///
+    /// Follows strict **CEI** ordering: shares are burned and state is written
+    /// *before* the token transfer.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` — Soroban execution environment.
+    /// - `caller` — Address redeeming shares; must authorise this call.
+    /// - `shares` — Number of vault shares to burn. Must be > 0 and ≤
+    ///   `balance_of(caller)`.
+    ///
+    /// # Returns
+    ///
+    /// The number of underlying tokens transferred to `caller`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::ZeroAmount`] — `shares <= 0`, or redemption rounds to zero.
+    /// - [`VaultError::NotInitialized`] — vault has not been initialised.
+    /// - [`VaultError::VaultNotPaused`] — vault is not paused; use [`withdraw`].
+    /// - [`VaultError::InsufficientShares`] — caller holds fewer shares than requested.
+    /// - [`VaultError::InsufficientUnderlying`] — vault cannot cover the redemption.
+    /// - [`VaultError::MathOverflow`] — arithmetic overflow.
+    ///
+    /// [`withdraw`]: AuraVault::withdraw
+    pub fn emergency_withdraw(env: Env, caller: Address, shares: i128) -> Result<i128, VaultError> {
+        with_reentrancy_guard(&env, || {
+            caller.require_auth();
+
+            if shares <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+            if get_admin(&env).is_none() {
+                return Err(VaultError::NotInitialized);
+            }
+            // Emergency withdraw is ONLY allowed while paused.
+            // For normal operation, callers must use withdraw().
+            if !storage_is_paused(&env) {
+                return Err(VaultError::VaultNotPaused);
+            }
+
+            let token_addr = get_token(&env).ok_or(VaultError::NotInitialized)?;
+            let token = token::Client::new(&env, &token_addr);
+
+            let user_balance = get_balance(&env, &caller);
+            if shares > user_balance {
+                return Err(VaultError::InsufficientShares);
+            }
+
+            let total_deposited = get_total_deposited(&env);
+            let total_shares_count = get_total_shares(&env);
+
+            // Compute redemption amount: floor(shares × total_deposited / total_shares)
+            let numerator = shares
+                .checked_mul(total_deposited)
+                .ok_or(VaultError::MathOverflow)?;
+            let redeem_amount = numerator
+                .checked_div(total_shares_count)
+                .ok_or(VaultError::MathOverflow)?;
+
+            if redeem_amount <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+            if total_deposited < redeem_amount {
+                return Err(VaultError::InsufficientUnderlying);
+            }
+
+            // CEI — Effects: burn shares and update state before any token transfer.
+            let new_balance = user_balance - shares;
+            set_balance(&env, &caller, new_balance);
+            let new_total_shares = total_shares_count
+                .checked_sub(shares)
+                .ok_or(VaultError::MathOverflow)?;
+            set_total_shares(&env, new_total_shares);
+            // Keep yield checkpoints current so the user's accrued yield stays
+            // consistent if the vault is unpaused and they later claim it.
+            storage::set_user_checkpoint(&env, &caller, storage::get_cumulative_yps(&env));
+            storage::set_user_pending_yield(&env, &caller, storage::get_user_pending_yield(&env, &caller));
+            let new_total_deposited = total_deposited
+                .checked_sub(redeem_amount)
+                .ok_or(VaultError::MathOverflow)?;
+            set_total_deposited(&env, new_total_deposited);
+
+            bump_persistent(&env, &caller);
+            bump_instance(&env);
+
+            // Interaction: transfer underlying tokens to caller (no fee deducted).
+            let vault_addr = env.current_contract_address();
+            let pre_withdraw_balance = token.balance(&vault_addr);
+            token.transfer(&vault_addr, &caller, &redeem_amount);
+            assert_outgoing_transfer(&token, &vault_addr, pre_withdraw_balance, redeem_amount)?;
+
+            // Event: topics = ("emergency_withdrawal", caller, shares) — indexed.
+            // data  = (redeem_amount, new_total_shares, new_total_deposited)
+            env.events().publish(
+                (Symbol::new(&env, "emergency_withdrawal"), caller.clone(), shares),
+                (redeem_amount, new_total_shares, new_total_deposited),
+            );
+
+            Ok(redeem_amount)
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // Withdrawal queue configuration — admin-only
     //
     // When a withdrawal request exceeds `withdrawal_queue_threshold`, the
@@ -2341,6 +2463,7 @@ impl AuraVault {
             28 => Some(VaultError::NotWhitelisted.message()),
             29 => Some(VaultError::BelowMinDeposit.message()),
             30 => Some(VaultError::Reentrancy.message()),
+            31 => Some(VaultError::VaultNotPaused.message()),
             _  => None,
         };
         msg.map(|s| soroban_sdk::String::from_str(&env, s))

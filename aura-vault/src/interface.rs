@@ -136,6 +136,53 @@ pub trait AuraVaultTrait {
     /// ```
     fn withdraw(env: Env, caller: Address, shares: i128) -> Result<i128, VaultError>;
 
+    /// Emergency withdrawal of underlying tokens during a vault pause.
+    ///
+    /// Allows users to redeem their shares and recover underlying tokens even
+    /// while the vault is paused. This provides a guaranteed exit path during
+    /// an emergency without requiring the admin to unpause first.
+    ///
+    /// Key differences from [`withdraw`]:
+    /// - **Requires the vault to be paused** — returns
+    ///   [`VaultError::VaultNotPaused`] when the vault is operating normally.
+    ///   Use the regular [`withdraw`] function when the vault is unpaused.
+    /// - **No harvest step** — yield is not auto-compounded before redemption.
+    /// - **Fee waived** — no performance or withdrawal fee is charged.
+    /// - **Emits `emergency_withdrawal` event** (not `withdraw`).
+    ///
+    /// Calculates the redemption amount using:
+    ///
+    /// ```text
+    /// redeem_amount = floor(shares × total_deposited / total_shares)
+    /// ```
+    ///
+    /// Follows strict **CEI** ordering: shares are burned and state is written
+    /// *before* the token transfer to prevent reentrancy.
+    ///
+    /// # Parameters
+    ///
+    /// - `env` — Soroban execution environment.
+    /// - `caller` — Address redeeming shares. Must authorise this call.
+    /// - `shares` — Number of vault shares to burn. Must be > 0 and ≤
+    ///   `balance_of(caller)`.
+    ///
+    /// # Returns
+    ///
+    /// The number of underlying tokens transferred to `caller`.
+    ///
+    /// # Errors
+    ///
+    /// - [`VaultError::ZeroAmount`] — `shares <= 0`, or redemption rounds to zero.
+    /// - [`VaultError::NotInitialized`] — vault has not been initialised.
+    /// - [`VaultError::VaultNotPaused`] — vault is not currently paused; use
+    ///   the normal [`withdraw`] function.
+    /// - [`VaultError::InsufficientShares`] — caller holds fewer shares than requested.
+    /// - [`VaultError::InsufficientUnderlying`] — vault balance cannot cover redemption.
+    /// - [`VaultError::MathOverflow`] — arithmetic overflow.
+    ///
+    /// [`withdraw`]: AuraVaultTrait::withdraw
+    fn emergency_withdraw(env: Env, caller: Address, shares: i128) -> Result<i128, VaultError>;
+
     /// Inject yield tokens into the vault without minting new shares.
     ///
     /// Any caller (keeper) may call this to increase `total_deposited`, which

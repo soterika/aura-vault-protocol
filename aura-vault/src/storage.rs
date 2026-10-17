@@ -85,6 +85,11 @@ pub enum DataKey {
     /// Reentrancy guard lock flag.
     ReentrancyGuard,
     // ---------------------------------------------------------------------------
+    // Role-based access control (RBAC)
+    // ---------------------------------------------------------------------------
+    /// Per-address role bitmask (u32). Bits defined by ADMIN_ROLE, KEEPER_ROLE, etc.
+    Role(Address),
+    // ---------------------------------------------------------------------------
     // Multi-sig admin operations (Issue #375)
     // ---------------------------------------------------------------------------
     /// Ordered list of current multi-sig signers
@@ -106,6 +111,20 @@ pub enum DataKey {
 pub const ADMIN_ROLE: u32 = 1 << 0;
 pub const KEEPER_ROLE: u32 = 1 << 1;
 pub const GUARDIAN_ROLE: u32 = 1 << 2;
+
+/// Check whether `addr` has been granted the specified role bitmask.
+///
+/// Role assignments are stored in instance storage as a u32 bitmask under a
+/// `Role(address)` key.  Returns `false` for any address that has no role
+/// entry (i.e. not yet assigned).
+pub fn has_role(env: &Env, addr: &Address, role: u32) -> bool {
+    let stored: u32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::Role(addr.clone()))
+        .unwrap_or(0);
+    stored & role != 0
+}
 
 pub const DAY_IN_LEDGERS: u32 = 17_280;
 pub const INSTANCE_LIFETIME_THRESHOLD: u32 = DAY_IN_LEDGERS * 7;
