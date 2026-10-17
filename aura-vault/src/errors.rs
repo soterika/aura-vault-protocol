@@ -289,6 +289,10 @@ pub enum VaultError {
     ThresholdNotMet        = 40,
     /// The provided signer threshold is invalid for the current signer set.
     InvalidThreshold       = 41,
+    /// The batch exceeds the maximum allowed number of recipients (50).
+    BatchTooLarge          = 42,
+    /// The batch recipient list is empty.
+    BatchEmpty             = 43,
 }
 
 impl VaultError {
@@ -336,6 +340,8 @@ impl VaultError {
             VaultError::OperationAlreadySigned => "Signer has already signed this operation",
             VaultError::ThresholdNotMet => "Operation signature threshold has not been met",
             VaultError::InvalidThreshold => "Invalid multi-sig threshold",
+            VaultError::BatchTooLarge => "Batch exceeds the maximum of 50 recipients",
+            VaultError::BatchEmpty => "Batch recipient list is empty",
         }
     }
 }
