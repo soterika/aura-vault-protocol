@@ -239,8 +239,17 @@ pub enum VaultError {
     /// **Resolution:** This is an internal safeguard; adjust the yield amount
     /// slightly or contact the vault admin if it persists.
     DistributionAccuracyError = 18,
-    /// Harvest attempted before the configured cooldown period has elapsed
-    HarvestCooldown        = 19,
+
+    /// The provided nonce does not match the expected per-address nonce.
+    ///
+    /// **Trigger:** `deposit(caller, amount, nonce)` called with a `nonce` that
+    /// does not equal `get_nonce(caller)`. This guards against replay attacks
+    /// where a signed transaction could be resubmitted multiple times.
+    ///
+    /// **Resolution:** Fetch the current nonce with `get_nonce(address)` and
+    /// retry the deposit with the returned value.
+    InvalidNonce           = 19,
+
     /// Withdrawal is queued and will be processed after the unbonding period
     WithdrawalQueued       = 20,
     /// Withdrawal queue entry does not exist or has already been processed
@@ -313,7 +322,7 @@ impl VaultError {
             VaultError::TvlCapExceeded => "Deposit exceeds vault TVL cap",
             VaultError::YieldTooSmall => "Yield amount is too small to distribute",
             VaultError::DistributionAccuracyError => "Yield distribution accuracy error",
-            VaultError::HarvestCooldown => "Harvest attempted before cooldown elapsed",
+            VaultError::InvalidNonce => "Deposit nonce mismatch; replay attack protection",
             VaultError::WithdrawalQueued => "Withdrawal queued due to threshold",
             VaultError::QueueEntryNotFound => "Withdrawal queue entry not found",
             VaultError::QueueUnbondingPending => "Withdrawal unbonding period is pending",

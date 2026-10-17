@@ -84,6 +84,13 @@ pub enum DataKey {
     // -----------------------------------------------------------------------
     /// Reentrancy guard lock flag.
     ReentrancyGuard,
+    // -----------------------------------------------------------------------
+    // Per-address deposit nonce (replay-attack prevention)
+    // -----------------------------------------------------------------------
+    /// Monotonically increasing nonce for `deposit` calls.  Starts at 0 for
+    /// every new address.  Must be supplied by the caller and is incremented
+    /// atomically on every successful deposit.
+    Nonce(Address),
     // ---------------------------------------------------------------------------
     // Multi-sig admin operations (Issue #375)
     // ---------------------------------------------------------------------------
@@ -586,6 +593,44 @@ pub fn enter_reentrancy_guard(env: &Env) -> Result<(), VaultError> {
 
 pub fn exit_reentrancy_guard(env: &Env) {
     set_reentrancy_lock(env, false);
+}
+
+// ---------------------------------------------------------------------------
+// Per-address deposit nonce helpers (replay-attack prevention)
+// ---------------------------------------------------------------------------
+
+/// Return the current deposit nonce for `addr`.  Returns `0` for addresses
+/// that have never deposited (their first valid nonce is `0`).
+pub fn get_nonce(env: &Env, addr: &Address) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Nonce(addr.clone()))
+        .unwrap_or(0u64)
+}
+
+/// Overwrite the stored nonce.  Use `increment_nonce` instead in production
+/// code; this setter is provided for testing and migration convenience.
+pub fn set_nonce(env: &Env, addr: &Address, nonce: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Nonce(addr.clone()), &nonce);
+}
+
+/// Atomically increment the nonce for `addr` by 1 and persist the new value.
+///
+/// Returns `Err(VaultError::MathOverflow)` on the astronomically unlikely
+/// event that the nonce wraps past `u64::MAX`.
+pub fn increment_nonce(env: &Env, addr: &Address) -> Result<(), VaultError> {
+    let current = get_nonce(env, addr);
+    let next = current.checked_add(1).ok_or(VaultError::MathOverflow)?;
+    set_nonce(env, addr, next);
+    // Keep the nonce entry alive for the standard 30-day window.
+    env.storage().persistent().extend_ttl(
+        &DataKey::Nonce(addr.clone()),
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
