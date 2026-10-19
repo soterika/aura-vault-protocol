@@ -61,7 +61,7 @@ mod issue_346_351_352_348_tests {
     fn seed_vault(env: &Env, vault: &AuraVaultClient, admin: &Address, token: &Address) {
         let seeder = Address::generate(env);
         mint(env, token, admin, &seeder, 1_000_000);
-        vault.deposit(&seeder, &1_000_000);
+        vault.deposit(&seeder, &1_000_000, &None::<i128>);
     }
 
     // -----------------------------------------------------------------------
@@ -81,7 +81,7 @@ mod issue_346_351_352_348_tests {
         let (env, vault, admin, token) = setup();
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 500_000);
-        let shares = vault.deposit(&depositor, &500_000);
+        let shares = vault.deposit(&depositor, &500_000, &None::<i128>);
         assert_eq!(vault.total_supply(), shares);
         assert_eq!(vault.total_supply(), 500_000); // first deposit is 1:1
     }
@@ -95,8 +95,8 @@ mod issue_346_351_352_348_tests {
         mint(&env, &token, &admin, &alice, 1_000_000);
         mint(&env, &token, &admin, &bob, 1_000_000);
 
-        vault.deposit(&alice, &1_000_000);
-        vault.deposit(&bob, &1_000_000);
+        vault.deposit(&alice, &1_000_000, &None::<i128>);
+        vault.deposit(&bob, &1_000_000, &None::<i128>);
 
         // Both deposited same amount at 1:1 seed → 2_000_000 total shares
         assert_eq!(vault.total_supply(), 2_000_000);
@@ -108,7 +108,7 @@ mod issue_346_351_352_348_tests {
         let (env, vault, admin, token) = setup();
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 1_000_000);
-        vault.deposit(&depositor, &1_000_000);
+        vault.deposit(&depositor, &1_000_000, &None::<i128>);
         assert_eq!(vault.total_supply(), 1_000_000);
 
         vault.withdraw(&depositor, &500_000);
@@ -121,7 +121,7 @@ mod issue_346_351_352_348_tests {
         let (env, vault, admin, token) = setup();
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 750_000);
-        vault.deposit(&depositor, &750_000);
+        vault.deposit(&depositor, &750_000, &None::<i128>);
 
         assert_eq!(vault.total_supply(), vault.total_shares());
     }
@@ -136,7 +136,7 @@ mod issue_346_351_352_348_tests {
         let (env, vault, admin, token) = setup();
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 1_000_000);
-        vault.deposit(&depositor, &1_000_000);
+        vault.deposit(&depositor, &1_000_000, &None::<i128>);
 
         // No oracle configured — must return 0 without reverting
         let usd_value = vault.total_assets_usd();
@@ -175,7 +175,7 @@ mod issue_346_351_352_348_tests {
         // Deposit 1_000_000 tokens (1 token with 6 decimals in this test)
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 1_000_000);
-        vault.deposit(&depositor, &1_000_000);
+        vault.deposit(&depositor, &1_000_000, &None::<i128>);
 
         // Set oracle; oracle returns $2.00 per token (2_000_000 micro-USD)
         vault.set_oracle_address(&admin, &oracle_addr);
@@ -404,7 +404,7 @@ mod issue_346_351_352_348_tests {
         // seed deposit of 1_000_000
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, 1_000_000);
-        vault.deposit(&seeder, &1_000_000);
+        vault.deposit(&seeder, &1_000_000, &None::<i128>);
 
         // harvest 0 yield — just to trigger snapshot at 1:1 ratio
         let keeper = Address::generate(&env);

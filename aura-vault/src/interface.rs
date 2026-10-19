@@ -72,6 +72,10 @@ pub trait AuraVaultTrait {
     /// - `caller` — Address depositing tokens. Must authorise this call.
     /// - `amount` — Number of underlying tokens to deposit (in the token's
     ///   smallest unit, i.e. stroops for a 7-decimal token). Must be > 0.
+    /// - `min_shares_out` — Optional slippage guard. When `Some(min)`, the
+    ///   call reverts with [`VaultError::SlippageExceeded`] if the computed
+    ///   share count is less than `min`. Pass `None` to disable the check
+    ///   (backward-compatible behaviour).
     ///
     /// # Returns
     ///
@@ -81,6 +85,7 @@ pub trait AuraVaultTrait {
     ///
     /// - [`VaultError::ZeroAmount`] — `amount <= 0`, or the share formula
     ///   rounds to zero (deposit too small relative to vault size).
+    /// - [`VaultError::SlippageExceeded`] — computed shares < `min_shares_out`.
     /// - [`VaultError::NotInitialized`] — vault has not been initialised.
     /// - [`VaultError::VaultPaused`] — vault is currently paused.
     /// - [`VaultError::BalanceMismatch`] — flash-loan guard tripped.
@@ -90,10 +95,10 @@ pub trait AuraVaultTrait {
     ///
     /// ```no_run
     /// // In a Soroban test environment:
-    /// // let shares = vault_client.deposit(&caller, &1_000_000_i128);
+    /// // let shares = vault_client.deposit(&caller, &1_000_000_i128, &None::<i128>);
     /// // assert!(shares > 0);
     /// ```
-    fn deposit(env: Env, caller: Address, amount: i128) -> Result<i128, VaultError>;
+    fn deposit(env: Env, caller: Address, amount: i128, min_shares_out: Option<i128>) -> Result<i128, VaultError>;
 
     /// Burn vault shares and redeem the proportional underlying tokens.
     ///

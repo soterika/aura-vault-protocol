@@ -56,7 +56,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let shares_before = vault.balance_of(&user);
         vault.withdraw(&user, &shares_before);
@@ -73,7 +73,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let attacker = Address::generate(&env);
         mint(&env, &token, &admin, &attacker, 1_000_000);
-        vault.deposit(&attacker, &1_000_000);
+        vault.deposit(&attacker, &1_000_000, &None::<i128>);
 
         let shares = vault.balance_of(&attacker);
         vault.withdraw(&attacker, &shares);
@@ -90,8 +90,8 @@ mod security_tests {
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 2_000_000);
 
-        vault.deposit(&user, &1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Exactly 2_000_000 shares — no double-minting.
         assert_eq!(vault.balance_of(&user), 2_000_000);
@@ -109,11 +109,11 @@ mod security_tests {
         // Seed the vault so the share formula path is exercised (not the 1:1 path).
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, 1);
-        vault.deposit(&seeder, &1);
+        vault.deposit(&seeder, &1, &None::<i128>);
 
         let attacker = Address::generate(&env);
         mint(&env, &token, &admin, &attacker, i128::MAX);
-        let result = vault.try_deposit(&attacker, &i128::MAX);
+        let result = vault.try_deposit(&attacker, &i128::MAX, &None::<i128>);
         // Must error (MathOverflow or ZeroAmount from rounding — either is safe).
         assert!(result.is_err(), "i128::MAX deposit must be rejected");
     }
@@ -126,13 +126,13 @@ mod security_tests {
         // Seed with a large share count to maximise numerator.
         mint(&env, &token, &admin, &seeder, i128::MAX / 2);
         // Use 1:1 first deposit path.
-        vault.deposit(&seeder, &(i128::MAX / 2));
+        vault.deposit(&seeder, &(i128::MAX / 2), &None::<i128>);
 
         // A second depositor at half max causes numerator to overflow.
         let attacker = Address::generate(&env);
         let large = i128::MAX / 2 + 1;
         mint(&env, &token, &admin, &attacker, large);
-        let result = vault.try_deposit(&attacker, &large);
+        let result = vault.try_deposit(&attacker, &large, &None::<i128>);
         assert!(result.is_err());
     }
 
@@ -151,7 +151,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 100);
-        vault.deposit(&user, &100);
+        vault.deposit(&user, &100, &None::<i128>);
 
         let result = vault.try_withdraw(&user, &101);
         assert_eq!(result, Err(Ok(VaultError::InsufficientShares)));
@@ -162,7 +162,7 @@ mod security_tests {
     fn test_overflow_negative_deposit_rejected() {
         let (env, vault, _admin, _token) = setup();
         let user = Address::generate(&env);
-        let result = vault.try_deposit(&user, &-1);
+        let result = vault.try_deposit(&user, &-1, &None::<i128>);
         assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
     }
 
@@ -287,7 +287,7 @@ mod security_tests {
         let (env2, vault2, admin2, token2) = setup();
         let user = Address::generate(&env2);
         mint(&env2, &token2, &admin2, &user, 500_000);
-        vault2.deposit(&user, &500_000);
+        vault2.deposit(&user, &500_000, &None::<i128>);
 
         // Inject extra tokens directly (simulating flash-loan manipulation).
         let vault2_addr = vault2.address.clone();
@@ -298,7 +298,7 @@ mod security_tests {
         // Next deposit must detect the mismatch.
         let depositor = Address::generate(&env2);
         mint(&env2, &token2, &admin2, &depositor, 1_000);
-        let result = vault2.try_deposit(&depositor, &1_000);
+        let result = vault2.try_deposit(&depositor, &1_000, &None::<i128>);
         assert_eq!(result, Err(Ok(VaultError::BalanceMismatch)));
     }
 
@@ -308,7 +308,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Inject extra tokens.
         let vault_addr = vault.address.clone();
@@ -327,7 +327,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Inject extra tokens.
         let vault_addr = vault.address.clone();
@@ -348,7 +348,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let honest = Address::generate(&env);
         mint(&env, &token, &admin, &honest, 1_000_000);
-        vault.deposit(&honest, &1_000_000);
+        vault.deposit(&honest, &1_000_000, &None::<i128>);
 
         // Attacker tries to inflate total_assets by direct transfer,
         // then deposit to acquire shares at inflated price.
@@ -359,7 +359,7 @@ mod security_tests {
             .transfer(&attacker, &vault_addr, &9_000_000);
 
         mint(&env, &token, &admin, &attacker, 100);
-        let result = vault.try_deposit(&attacker, &100);
+        let result = vault.try_deposit(&attacker, &100, &None::<i128>);
         assert_eq!(result, Err(Ok(VaultError::BalanceMismatch)));
     }
 
@@ -376,7 +376,7 @@ mod security_tests {
         for _ in 0..3 {
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, 1_000);
-            let result = vault.try_deposit(&user, &1_000);
+            let result = vault.try_deposit(&user, &1_000, &None::<i128>);
             assert_eq!(result, Err(Ok(VaultError::VaultPaused)));
         }
     }
@@ -387,7 +387,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         mint(&env, &token, &admin, &admin, 1_000);
         vault.pause(&admin);
-        let result = vault.try_deposit(&admin, &1_000);
+        let result = vault.try_deposit(&admin, &1_000, &None::<i128>);
         assert_eq!(result, Err(Ok(VaultError::VaultPaused)));
     }
 
@@ -397,7 +397,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
 
@@ -421,7 +421,7 @@ mod security_tests {
         // Seed with 1 share.
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, 1);
-        vault.deposit(&seeder, &1);
+        vault.deposit(&seeder, &1, &None::<i128>);
 
         // Inflate total_assets drastically via harvest so share price ≫ 1.
         // 1 share worth 1_000_000_001 tokens.
@@ -431,7 +431,7 @@ mod security_tests {
         // Victim deposits 1 token — would get 0 shares (floor division).
         let victim = Address::generate(&env);
         mint(&env, &token, &admin, &victim, 1);
-        let result = vault.try_deposit(&victim, &1);
+        let result = vault.try_deposit(&victim, &1, &None::<i128>);
         assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
     }
 
@@ -455,7 +455,7 @@ mod security_tests {
         let (env, vault, admin, token) = setup();
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 5_000_000);
-        vault.deposit(&alice, &5_000_000);
+        vault.deposit(&alice, &5_000_000, &None::<i128>);
 
         let shares = vault.balance_of(&alice);
         let assets_before = vault.total_assets();
@@ -464,7 +464,7 @@ mod security_tests {
 
         // All mutations blocked.
         let stranger = Address::generate(&env);
-        assert!(vault.try_deposit(&stranger, &1).is_err());
+        assert!(vault.try_deposit(&stranger, &1, &None::<i128>).is_err());
         assert!(vault.try_withdraw(&alice, &1).is_err());
 
         vault.unpause(&admin);

@@ -101,7 +101,7 @@ proptest! {
         let user = Address::generate(&env);
 
         mint(&env, &token, &admin, &user, amount);
-        let minted = vault.deposit(&user, &amount);
+        let minted = vault.deposit(&user, &amount, &None::<i128>);
 
         // Effects verified
         prop_assert_eq!(minted, amount, "first deposit must get 1:1 shares");
@@ -132,14 +132,14 @@ proptest! {
         // Seed vault to establish baseline
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, seed_amount);
-        vault.deposit(&seeder, &seed_amount);
+        vault.deposit(&seeder, &seed_amount, &None::<i128>);
 
         // Random prior depositors — each deposits and some withdraw
         let mut prior_users: std::vec::Vec<Address> = std::vec::Vec::new();
         for (i, &dep_amount) in pre_deposits.iter().enumerate() {
             let u = Address::generate(&env);
             mint(&env, &token, &admin, &u, dep_amount);
-            let shares = vault.deposit(&u, &dep_amount);
+            let shares = vault.deposit(&u, &dep_amount, &None::<i128>);
             if i % 2 == 0 {
                 // Half the users withdraw immediately to vary vault state
                 vault.withdraw(&u, &shares);
@@ -153,7 +153,7 @@ proptest! {
         mint(&env, &token, &admin, &target_user, target_amount);
 
         let total_shares_before = vault.total_assets(); // snapshot
-        let result = vault.try_deposit(&target_user, &target_amount);
+        let result = vault.try_deposit(&target_user, &target_amount, &None::<i128>);
 
         match result {
             Ok(minted) => {
@@ -205,7 +205,7 @@ proptest! {
         // Seed the vault
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, seed);
-        vault.deposit(&seeder, &seed);
+        vault.deposit(&seeder, &seed, &None::<i128>);
 
         // Harvest: raises share price
         mint(&env, &token, &admin, &admin, yield_amount);
@@ -217,7 +217,7 @@ proptest! {
         // Now deposit at the inflated price
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, deposit_amount);
-        let result = vault.try_deposit(&user, &deposit_amount);
+        let result = vault.try_deposit(&user, &deposit_amount, &None::<i128>);
 
         match result {
             Ok(minted) => {
@@ -284,7 +284,7 @@ proptest! {
         // Seed the vault
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, seed);
-        vault.deposit(&seeder, &seed);
+        vault.deposit(&seeder, &seed, &None::<i128>);
 
         let snapshot_assets = vault.total_assets();
         let snapshot_shares = vault.balance_of(&seeder);
@@ -304,7 +304,7 @@ proptest! {
         // The exact error type from Soroban on insufficient balance is a host panic,
         // so we use std::panic::catch_unwind to handle it.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            vault.deposit(&attacker, &attempt_amount)
+            vault.deposit(&attacker, &attempt_amount, &None::<i128>)
         }));
 
         // Whether it panicked or returned an error, vault state must be unchanged
@@ -346,7 +346,7 @@ proptest! {
         let mut user_shares: std::vec::Vec<i128> = std::vec::Vec::new();
         for (user, &amount) in users.iter().zip(amounts.iter()) {
             mint(&env, &token, &admin, user, amount);
-            match vault.try_deposit(user, &amount) {
+            match vault.try_deposit(user, &amount, &None::<i128>) {
                 Ok(shares) => {
                     user_shares.push(shares);
                     prop_assert!(shares > 0);
@@ -405,7 +405,7 @@ proptest! {
 
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, seed);
-        vault.deposit(&seeder, &seed); // 1 share in vault
+        vault.deposit(&seeder, &seed, &None::<i128>); // 1 share in vault
 
         // Inflate price by yield_factor
         let yield_amount = seed * (yield_factor - 1);
@@ -420,7 +420,7 @@ proptest! {
         if small_amount > 0 {
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, small_amount);
-            let result = vault.try_deposit(&user, &small_amount);
+            let result = vault.try_deposit(&user, &small_amount, &None::<i128>);
             match result {
                 Err(Ok(VaultError::ZeroAmount)) => {
                     // Correct — no state mutation
@@ -457,7 +457,7 @@ mod cei_deterministic {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let tracked = vault.total_assets();
         let real = StellarAssetClient::new(&env, &token).balance(&vault.address);
@@ -471,7 +471,7 @@ mod cei_deterministic {
 
         let alice = Address::generate(&env);
         mint(&env, &token, &admin, &alice, 10_000);
-        vault.deposit(&alice, &10_000);
+        vault.deposit(&alice, &10_000, &None::<i128>);
 
         // Harvest — effects (total_deposited += yield) must be committed
         mint(&env, &token, &admin, &admin, 5_000);
@@ -482,7 +482,7 @@ mod cei_deterministic {
 
         let bob = Address::generate(&env);
         mint(&env, &token, &admin, &bob, 15_000);
-        let bob_shares = vault.deposit(&bob, &15_000);
+        let bob_shares = vault.deposit(&bob, &15_000, &None::<i128>);
         // floor(15_000 × 10_000 / 15_000) = 10_000
         assert_eq!(bob_shares, 10_000);
 
@@ -497,7 +497,7 @@ mod cei_deterministic {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 5_000_000);
-        vault.deposit(&user, &5_000_000);
+        vault.deposit(&user, &5_000_000, &None::<i128>);
 
         let shares = vault.balance_of(&user);
         vault.withdraw(&user, &shares);
@@ -518,7 +518,7 @@ mod cei_deterministic {
         for &amount in amounts {
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, amount);
-            vault.deposit(&user, &amount);
+            vault.deposit(&user, &amount, &None::<i128>);
             total_deposited += amount;
 
             // CEI invariant after EVERY single deposit
@@ -541,7 +541,7 @@ mod cei_deterministic {
         let user = Address::generate(&env);
         let large = i128::MAX / 4; // safe for checked arithmetic
         mint(&env, &token, &admin, &user, large);
-        let minted = vault.deposit(&user, &large);
+        let minted = vault.deposit(&user, &large, &None::<i128>);
         assert_eq!(minted, large); // first deposit: 1:1
         let real = StellarAssetClient::new(&env, &token).balance(&vault.address);
         assert_eq!(vault.total_assets(), real, "CEI: real == tracked after large deposit");

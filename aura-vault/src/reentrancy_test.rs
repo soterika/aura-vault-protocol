@@ -73,13 +73,13 @@ fn test_deposit_blocked_when_reentrancy_locked() {
     // Simulate an ongoing mutating execution that holds the lock
     enter_reentrancy_guard(&env).unwrap();
 
-    let res = vault.try_deposit(&user, &100_000);
+    let res = vault.try_deposit(&user, &100_000, &None::<i128>);
     assert_eq!(res.unwrap_err().unwrap(), VaultError::Reentrancy);
 
     exit_reentrancy_guard(&env);
 
     // Once released, deposit works normally
-    let shares = vault.deposit(&user, &100_000);
+    let shares = vault.deposit(&user, &100_000, &None::<i128>);
     assert_eq!(shares, 100_000);
 }
 
@@ -88,7 +88,7 @@ fn test_withdraw_blocked_when_reentrancy_locked() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &500_000);
+    vault.deposit(&user, &500_000, &None::<i128>);
 
     // Hold lock
     enter_reentrancy_guard(&env).unwrap();
@@ -108,7 +108,7 @@ fn test_harvest_blocked_when_reentrancy_locked() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &500_000);
+    vault.deposit(&user, &500_000, &None::<i128>);
 
     let keeper = Address::generate(&env);
     mint(&env, &token, &admin, &keeper, 100_000);
@@ -136,14 +136,14 @@ fn test_guard_cleared_on_zero_amount_error() {
     mint(&env, &token, &admin, &user, 1_000_000);
 
     // Deposit with 0 amount returns ZeroAmount
-    let res = vault.try_deposit(&user, &0);
+    let res = vault.try_deposit(&user, &0, &None::<i128>);
     assert_eq!(res.unwrap_err().unwrap(), VaultError::ZeroAmount);
 
     // Guard must NOT remain locked after error
     assert!(!is_reentrancy_locked(&env));
 
     // Subsequent valid deposit must succeed
-    assert!(vault.try_deposit(&user, &100_000).is_ok());
+    assert!(vault.try_deposit(&user, &100_000, &None::<i128>).is_ok());
 }
 
 #[test]
@@ -155,14 +155,14 @@ fn test_guard_cleared_on_pause_error() {
     vault.pause(&admin);
 
     // Deposit on paused vault returns VaultPaused
-    let res = vault.try_deposit(&user, &100_000);
+    let res = vault.try_deposit(&user, &100_000, &None::<i128>);
     assert_eq!(res.unwrap_err().unwrap(), VaultError::VaultPaused);
 
     // Guard must not remain locked
     assert!(!is_reentrancy_locked(&env));
 
     vault.unpause(&admin);
-    assert!(vault.try_deposit(&user, &100_000).is_ok());
+    assert!(vault.try_deposit(&user, &100_000, &None::<i128>).is_ok());
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn test_guard_cleared_on_insufficient_shares_error() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &100_000);
+    vault.deposit(&user, &100_000, &None::<i128>);
 
     // Withdraw more shares than held
     let res = vault.try_withdraw(&user, &999_999);
