@@ -242,7 +242,7 @@ mod prop_sequence_tests {
                 VaultOp::Deposit { actor_idx, amount } => {
                     let actor = &actors[*actor_idx];
                     mint(env, token, admin, actor, *amount);
-                    match vault.try_deposit(actor, amount) {
+                    match vault.try_deposit(actor, amount, &None::<i128>) {
                         Ok(Ok(minted)) => {
                             *shares.entry(*actor_idx).or_insert(0) += minted;
                         }
@@ -354,7 +354,7 @@ mod prop_sequence_tests {
             // Seed the vault so harvest doesn't fail with ZeroShares
             let user = Address::generate(&env);
             StellarAssetClient::new(&env, &token).mint(&user, &1_000_000);
-            vault.deposit(&user, &1_000_000);
+            vault.deposit(&user, &1_000_000, &None::<i128>);
 
             let before = vault.total_assets();
             StellarAssetClient::new(&env, &token).mint(&admin, &amount);
@@ -388,7 +388,7 @@ mod prop_sequence_tests {
                     VaultOp::Deposit { actor_idx, amount } => {
                         let actor = &actors[*actor_idx];
                         mint(&env, &token, &admin, actor, *amount);
-                        if let Ok(Ok(minted)) = vault.try_deposit(actor, amount) {
+                        if let Ok(Ok(minted)) = vault.try_deposit(actor, amount, &None::<i128>) {
                             *deposited.entry(*actor_idx).or_insert(0) += amount;
                             *shares.entry(*actor_idx).or_insert(0) += minted;
                         }
@@ -527,7 +527,7 @@ mod roundtrip_tests {
 
             // Mint and deposit
             mint(&env, &token, &admin, &user, amount);
-            let shares = vault.deposit(&user, &amount);
+            let shares = vault.deposit(&user, &amount, &None::<i128>);
 
             // Shares must be positive (zero-share deposits are rejected by
             // the contract with ZeroAmount; proptest should never reach here
@@ -566,14 +566,14 @@ mod roundtrip_tests {
             // ── Seed the vault (first depositor) ───────────────────────────
             let keeper = Address::generate(&env);
             mint(&env, &token, &admin, &keeper, seed_amount);
-            let seed_shares = vault.deposit(&keeper, &seed_amount);
+            let seed_shares = vault.deposit(&keeper, &seed_amount, &None::<i128>);
             prop_assume!(seed_shares > 0);
 
             // ── Second depositor ───────────────────────────────────────────
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, deposit_amount);
 
-            let shares = match vault.try_deposit(&user, &deposit_amount) {
+            let shares = match vault.try_deposit(&user, &deposit_amount, &None::<i128>) {
                 Ok(Ok(s)) => s,
                 // ZeroAmount: floor division rounded to zero — valid edge case,
                 // no gain is possible so the invariant trivially holds.

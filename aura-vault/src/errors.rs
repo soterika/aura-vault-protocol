@@ -289,6 +289,22 @@ pub enum VaultError {
     ThresholdNotMet        = 40,
     /// The provided signer threshold is invalid for the current signer set.
     InvalidThreshold       = 41,
+
+    // -----------------------------------------------------------------------
+    // 42: Slippage protection
+    // -----------------------------------------------------------------------
+
+    /// The computed share amount is below the caller-specified minimum.
+    ///
+    /// **Trigger:** `deposit(caller, amount, Some(min))` was called and the
+    /// share formula produced `new_shares < min`. This can happen when the
+    /// share price moves between transaction simulation and execution (e.g.
+    /// due to a preceding harvest or a front-run deposit).
+    ///
+    /// **Resolution:** Re-simulate the deposit to obtain the current share
+    /// count and either accept the new minimum, widen your slippage tolerance,
+    /// or retry later.
+    SlippageExceeded       = 42,
 }
 
 impl VaultError {
@@ -336,6 +352,7 @@ impl VaultError {
             VaultError::OperationAlreadySigned => "Signer has already signed this operation",
             VaultError::ThresholdNotMet => "Operation signature threshold has not been met",
             VaultError::InvalidThreshold => "Invalid multi-sig threshold",
+            VaultError::SlippageExceeded => "Deposit would mint fewer shares than the specified minimum",
         }
     }
 }

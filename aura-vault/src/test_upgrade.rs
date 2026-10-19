@@ -93,8 +93,8 @@ mod upgrade_tests {
         mint(&env, &token, &admin, &alice, 2_000_000);
         mint(&env, &token, &admin, &bob, 1_000_000);
 
-        let alice_shares = vault.deposit(&alice, &2_000_000);
-        let bob_shares   = vault.deposit(&bob, &1_000_000);
+        let alice_shares = vault.deposit(&alice, &2_000_000, &None::<i128>);
+        let bob_shares   = vault.deposit(&bob, &1_000_000, &None::<i128>);
 
         // Inject yield to push price-per-share above 1.0
         mint(&env, &token, &admin, &admin, 300_000);
@@ -159,7 +159,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &_admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let v0 = get_version(&env);
 
@@ -194,7 +194,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &_admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Corrupt the on-chain LayoutVersion to a value that doesn't match
         // the compiled CURRENT_LAYOUT_VERSION
@@ -264,7 +264,7 @@ mod upgrade_tests {
 
         // Seed deposits so there is state to preserve
         StellarAssetClient::new(&env, &token_address).mint(&non_admin, &1_000_000);
-        vault.deposit(&non_admin, &1_000_000);
+        vault.deposit(&non_admin, &1_000_000, &None::<i128>);
 
         // -----------------------------------------------------------------------
         // Verify admin CAN upgrade (baseline — guards pass for the real admin)
@@ -298,7 +298,7 @@ mod upgrade_tests {
 
         let seeder = Address::generate(&env_no_mock);
         StellarAssetClient::new(&env_no_mock, &token2).mint(&seeder, &500_000);
-        vault2.deposit(&seeder, &500_000);
+        vault2.deposit(&seeder, &500_000, &None::<i128>);
 
         // Remove all auth mocks — now require_auth will be enforced for real
         env_no_mock.mock_auths(&[]);
@@ -347,8 +347,8 @@ mod upgrade_tests {
         mint(&env, &token, &admin, &alice, 1_000_000);
         mint(&env, &token, &admin, &bob,   2_000_000);
 
-        vault.deposit(&alice, &1_000_000);
-        vault.deposit(&bob,   &2_000_000);
+        vault.deposit(&alice, &1_000_000, &None::<i128>);
+        vault.deposit(&bob, &2_000_000, &None::<i128>);
 
         // — Upgrade —
         vault.upgrade(&dummy_wasm_hash(&env, 0x11));
@@ -356,7 +356,7 @@ mod upgrade_tests {
         // — Post-upgrade: deposit by a new user —
         let carol = Address::generate(&env);
         mint(&env, &token, &admin, &carol, 1_500_000);
-        let carol_shares = vault.deposit(&carol, &1_500_000);
+        let carol_shares = vault.deposit(&carol, &1_500_000, &None::<i128>);
         assert!(carol_shares > 0, "deposit after upgrade must mint shares");
 
         // — Post-upgrade: withdraw —
@@ -377,14 +377,14 @@ mod upgrade_tests {
         // — Post-upgrade: pause / unpause —
         vault.pause(&admin);
         assert!(vault.is_paused(), "vault must be paused after upgrade");
-        let paused_deposit = vault.try_deposit(&carol, &1000);
+        let paused_deposit = vault.try_deposit(&carol, &1000, &None::<i128>);
         assert_eq!(paused_deposit, Err(Ok(VaultError::VaultPaused)));
         vault.unpause(&admin);
         assert!(!vault.is_paused(), "vault must be unpaused after upgrade");
 
         // — Post-upgrade: deposit works again after unpause —
         mint(&env, &token, &admin, &carol, 1_000);
-        let new_shares = vault.deposit(&carol, &1_000);
+        let new_shares = vault.deposit(&carol, &1_000, &None::<i128>);
         assert!(new_shares > 0, "deposit must work after unpause post-upgrade");
     }
 
@@ -424,7 +424,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 5_000_000);
-        vault.deposit(&user, &5_000_000);
+        vault.deposit(&user, &5_000_000, &None::<i128>);
 
         mint(&env, &token, &admin, &admin, 500_000);
         vault.harvest(&admin, &500_000);
@@ -449,7 +449,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let version_before = get_version(&env);
 
@@ -514,7 +514,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 500_000);
-        vault.deposit(&user, &500_000);
+        vault.deposit(&user, &500_000, &None::<i128>);
 
         vault.upgrade(&dummy_wasm_hash(&env, 0xBB));
 
@@ -554,7 +554,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let v0 = get_version(&env);
 
@@ -598,7 +598,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
         assert!(vault.is_paused());
@@ -613,7 +613,7 @@ mod upgrade_tests {
 
         // Operations must still be blocked
         assert_eq!(
-            vault.try_deposit(&user, &1_000),
+            vault.try_deposit(&user, &1_000, &None::<i128>),
             Err(Ok(VaultError::VaultPaused))
         );
     }
@@ -626,7 +626,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &_admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         let zero_hash = dummy_wasm_hash(&env, 0x00);
         // The contract itself accepts any hash; Soroban may reject at ledger
@@ -654,7 +654,7 @@ mod upgrade_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.upgrade(&dummy_wasm_hash(&env, 0xDD));
 
@@ -792,10 +792,10 @@ mod migration_data_integrity_tests {
         mint(&env, &token, &admin, &dave,  dave_deposit);
 
         // Deposits at 1:1 ratio (first depositor seeds the vault).
-        let alice_shares = vault.deposit(&alice, &alice_deposit);
-        let bob_shares   = vault.deposit(&bob,   &bob_deposit);
-        let carol_shares = vault.deposit(&carol, &carol_deposit);
-        let dave_shares  = vault.deposit(&dave,  &dave_deposit);
+        let alice_shares = vault.deposit(&alice, &alice_deposit, &None::<i128>);
+        let bob_shares   = vault.deposit(&bob, &bob_deposit, &None::<i128>);
+        let carol_shares = vault.deposit(&carol, &carol_deposit, &None::<i128>);
+        let dave_shares  = vault.deposit(&dave, &dave_deposit, &None::<i128>);
 
         // --- Invariant: shares must be positive after each deposit ---
         assert!(alice_shares > 0, "alice must receive shares on deposit");
@@ -979,7 +979,7 @@ mod migration_data_integrity_tests {
         mint(&env, &token, &admin, &eve, 1_000_000);
 
         // Deposit after upgrade must mint shares at the post-harvest exchange rate.
-        let eve_shares = vault.deposit(&eve, &1_000_000);
+        let eve_shares = vault.deposit(&eve, &1_000_000, &None::<i128>);
         assert!(
             eve_shares > 0,
             "[post-upgrade] deposit must succeed and mint shares after upgrade"
@@ -1000,7 +1000,7 @@ mod migration_data_integrity_tests {
 
         // Pause → deposits must be blocked.
         vault.pause(&admin);
-        let eve_extra = vault.try_deposit(&eve, &1_000);
+        let eve_extra = vault.try_deposit(&eve, &1_000, &None::<i128>);
         assert_eq!(
             eve_extra,
             Err(Ok(VaultError::VaultPaused)),
@@ -1010,7 +1010,7 @@ mod migration_data_integrity_tests {
         // Unpause → deposits resume.
         vault.unpause(&admin);
         mint(&env, &token, &admin, &eve, 1_000);
-        let extra_shares = vault.deposit(&eve, &1_000);
+        let extra_shares = vault.deposit(&eve, &1_000, &None::<i128>);
         assert!(
             extra_shares > 0,
             "[post-upgrade] deposit must resume after unpause post-upgrade"
@@ -1110,7 +1110,7 @@ mod migration_data_integrity_tests {
 
             let user = Address::generate(&env);
             mint(&env, &token, &admin, &user, deposit);
-            vault.deposit(&user, &deposit);
+            vault.deposit(&user, &deposit, &None::<i128>);
 
             if yield_amount > 0 {
                 mint(&env, &token, &admin, &admin, yield_amount);
@@ -1163,7 +1163,7 @@ mod migration_data_integrity_tests {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Simulate a partially-applied migration that incremented the layout
         // version too early (a common operator mistake).
@@ -1220,7 +1220,7 @@ mod migration_data_integrity_tests {
         );
         vault.set_fees(&admin, &0_u32, &0_u32);
         StellarAssetClient::new(&env, &token).mint(&admin, &1_000_000);
-        vault.deposit(&admin, &1_000_000);
+        vault.deposit(&admin, &1_000_000, &None::<i128>);
 
         // Remove all auth mocks — require_auth is now enforced.
         env.mock_auths(&[]);

@@ -70,7 +70,7 @@ mod lifecycle_tests {
 
         // --- deposit ---
         mint(&env, &token, &admin, &user, deposit_amount);
-        let shares_minted = vault.deposit(&user, &deposit_amount);
+        let shares_minted = vault.deposit(&user, &deposit_amount, &None::<i128>);
 
         // First deposit → 1:1 ratio
         assert_eq!(shares_minted, deposit_amount, "first deposit must be 1:1");
@@ -103,7 +103,7 @@ mod lifecycle_tests {
             let user = Address::generate(&env);
 
             mint(&env, &token, &admin, &user, amount);
-            let shares = vault.deposit(&user, &amount);
+            let shares = vault.deposit(&user, &amount, &None::<i128>);
             assert_invariants(&env, &vault, &[user.clone()]);
 
             let returned = vault.withdraw(&user, &shares);
@@ -136,12 +136,12 @@ mod lifecycle_tests {
         mint(&env, &token, &admin, &bob, bob_deposit);
 
         // Alice deposits first (seed ratio 1:1) → 3_000_000 shares
-        let alice_shares = vault.deposit(&alice, &alice_deposit);
+        let alice_shares = vault.deposit(&alice, &alice_deposit, &None::<i128>);
         assert_eq!(alice_shares, alice_deposit);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone()]);
 
         // Bob deposits into an existing vault at the same price → 1_000_000 shares
-        let bob_shares = vault.deposit(&bob, &bob_deposit);
+        let bob_shares = vault.deposit(&bob, &bob_deposit, &None::<i128>);
         assert_eq!(bob_shares, bob_deposit);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone()]);
 
@@ -186,7 +186,7 @@ mod lifecycle_tests {
         let mut shares_per_user: std::vec::Vec<i128> = std::vec::Vec::new();
         for (i, &amount) in deposits.iter().enumerate() {
             mint(&env, &token, &admin, &users[i], amount);
-            let s = vault.deposit(&users[i], &amount);
+            let s = vault.deposit(&users[i], &amount, &None::<i128>);
             shares_per_user.push(s);
             assert_invariants(&env, &vault, &users);
         }
@@ -228,7 +228,7 @@ mod lifecycle_tests {
 
         // Step 1: Alice seeds the vault
         mint(&env, &token, &admin, &alice, 1_000_000);
-        let alice_shares = vault.deposit(&alice, &1_000_000);
+        let alice_shares = vault.deposit(&alice, &1_000_000, &None::<i128>);
         assert_eq!(alice_shares, 1_000_000);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone()]);
 
@@ -243,7 +243,7 @@ mod lifecycle_tests {
         // Step 3: Bob deposits 600 000 at the elevated price
         // Expected shares = floor(600_000 × 1_000_000 / 1_500_000) = 400_000
         mint(&env, &token, &admin, &bob, 600_000);
-        let bob_shares = vault.deposit(&bob, &600_000);
+        let bob_shares = vault.deposit(&bob, &600_000, &None::<i128>);
         assert_eq!(
             bob_shares, 400_000,
             "post-harvest deposit: expected 400_000 shares, got {bob_shares}"
@@ -284,7 +284,7 @@ mod lifecycle_tests {
 
         // Seed vault: 1_000_000 tokens → 1_000_000 shares
         mint(&env, &token, &admin, &seeder, 1_000_000);
-        vault.deposit(&seeder, &1_000_000);
+        vault.deposit(&seeder, &1_000_000, &None::<i128>);
 
         // Two successive harvests: +200_000 then +300_000
         // After both: total_assets = 1_500_000, total_shares = 1_000_000
@@ -300,7 +300,7 @@ mod lifecycle_tests {
 
         // Late depositor deposits 750_000 → floor(750_000 × 1_000_000 / 1_500_000) = 500_000
         mint(&env, &token, &admin, &late_depositor, 750_000);
-        let late_shares = vault.deposit(&late_depositor, &750_000);
+        let late_shares = vault.deposit(&late_depositor, &750_000, &None::<i128>);
         assert_eq!(late_shares, 500_000);
         assert_invariants(&env, &vault, &[seeder.clone(), late_depositor.clone()]);
 
@@ -331,7 +331,7 @@ mod lifecycle_tests {
 
         // Step 1: normal pre-pause deposit
         mint(&env, &token, &admin, &alice, 1_000_000);
-        let alice_shares = vault.deposit(&alice, &1_000_000);
+        let alice_shares = vault.deposit(&alice, &1_000_000, &None::<i128>);
         assert_eq!(alice_shares, 1_000_000);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone()]);
 
@@ -342,7 +342,7 @@ mod lifecycle_tests {
         // Step 3-5: all mutating operations must be blocked
         mint(&env, &token, &admin, &bob, 500_000);
         assert_eq!(
-            vault.try_deposit(&bob, &500_000),
+            vault.try_deposit(&bob, &500_000, &None::<i128>),
             Err(Ok(VaultError::VaultPaused)),
             "deposit must be blocked while paused"
         );
@@ -369,7 +369,7 @@ mod lifecycle_tests {
         assert!(!vault.is_paused(), "vault must report unpaused after unpause()");
 
         // Step 7: operations resume normally after unpause
-        let bob_shares = vault.deposit(&bob, &500_000);
+        let bob_shares = vault.deposit(&bob, &500_000, &None::<i128>);
         assert_eq!(bob_shares, 500_000);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone()]);
 
@@ -388,7 +388,7 @@ mod lifecycle_tests {
         // All three deposit
         for (i, &amount) in amounts.iter().enumerate() {
             mint(&env, &token, &admin, &users[i], amount);
-            vault.deposit(&users[i], &amount);
+            vault.deposit(&users[i], &amount, &None::<i128>);
         }
         assert_invariants(&env, &vault, &users);
 
@@ -427,7 +427,7 @@ mod lifecycle_tests {
 
         // Round 1: seed deposit by Alice
         mint(&env, &token, &admin, &alice, 1_000_000);
-        vault.deposit(&alice, &1_000_000);
+        vault.deposit(&alice, &1_000_000, &None::<i128>);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone(), charlie.clone()]);
 
         // Harvest 1: +200_000 → price 1.2
@@ -445,7 +445,7 @@ mod lifecycle_tests {
         // Bob deposits at the new elevated price — should not decrease the price
         mint(&env, &token, &admin, &bob, 600_000);
         let p_before_bob = snapshot_share_price(&vault);
-        vault.deposit(&bob, &600_000);
+        vault.deposit(&bob, &600_000, &None::<i128>);
         assert_share_price_not_decreased(p_before_bob, &vault);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone(), charlie.clone()]);
 
@@ -464,7 +464,7 @@ mod lifecycle_tests {
         // Charlie deposits at the doubly-elevated price
         mint(&env, &token, &admin, &charlie, 1_000_000);
         let p_before_charlie = snapshot_share_price(&vault);
-        vault.deposit(&charlie, &1_000_000);
+        vault.deposit(&charlie, &1_000_000, &None::<i128>);
         assert_share_price_not_decreased(p_before_charlie, &vault);
         assert_invariants(&env, &vault, &[alice.clone(), bob.clone(), charlie.clone()]);
 
@@ -504,7 +504,7 @@ mod lifecycle_tests {
         let user = Address::generate(&env);
 
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Price after seed: 1_000_000 / 1_000_000 = 1.0
         {

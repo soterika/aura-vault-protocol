@@ -73,7 +73,7 @@ mod security_attacks {
         // Step 1 — Attacker becomes first depositor at 1:1 ratio.
         let attacker = Address::generate(&env);
         mint(&env, &token, &admin, &attacker, 1);
-        vault.deposit(&attacker, &1);
+        vault.deposit(&attacker, &1, &None::<i128>);
         assert_eq!(vault.total_assets(), 1);
         assert_eq!(vault.balance_of(&attacker), 1);
 
@@ -90,7 +90,7 @@ mod security_attacks {
         // Step 3 — Victim attempts to deposit. Must be rejected (BalanceMismatch).
         let victim = Address::generate(&env);
         mint(&env, &token, &admin, &victim, 500_000);
-        let result = vault.try_deposit(&victim, &500_000);
+        let result = vault.try_deposit(&victim, &500_000, &None::<i128>);
 
         // AC-1 ASSERTION: inflation attack is blocked.
         assert_eq!(
@@ -120,7 +120,7 @@ mod security_attacks {
         // Seed vault: 1 share worth 1 token.
         let seeder = Address::generate(&env);
         mint(&env, &token, &admin, &seeder, 1);
-        vault.deposit(&seeder, &1);
+        vault.deposit(&seeder, &1, &None::<i128>);
 
         // Inflate share price via legitimate harvest (1 share now worth 1e9 + 1 tokens).
         // Issue #357: seeder must hold KEEPER role to harvest
@@ -131,7 +131,7 @@ mod security_attacks {
         // Victim tries a 1-token deposit — share formula: 1 * 1 / 1_000_000_001 = 0.
         let victim = Address::generate(&env);
         mint(&env, &token, &admin, &victim, 1);
-        let result = vault.try_deposit(&victim, &1);
+        let result = vault.try_deposit(&victim, &1, &None::<i128>);
 
         // AC-1b ASSERTION: zero-share mint is rejected.
         assert_eq!(
@@ -161,7 +161,7 @@ mod security_attacks {
 
         let attacker = Address::generate(&env);
         mint(&env, &token, &admin, &attacker, 1_000_000);
-        vault.deposit(&attacker, &1_000_000);
+        vault.deposit(&attacker, &1_000_000, &None::<i128>);
 
         let shares = vault.balance_of(&attacker);
         assert!(shares > 0, "Attacker must hold shares before attacking");
@@ -199,8 +199,8 @@ mod security_attacks {
         mint(&env, &token, &admin, &attacker, 2_000_000);
 
         // Two separate deposits — should each produce exactly the right shares.
-        vault.deposit(&attacker, &1_000_000);
-        vault.deposit(&attacker, &1_000_000);
+        vault.deposit(&attacker, &1_000_000, &None::<i128>);
+        vault.deposit(&attacker, &1_000_000, &None::<i128>);
 
         // AC-2b ASSERTION: no share inflation from repeated deposits.
         assert_eq!(
@@ -228,7 +228,7 @@ mod security_attacks {
         // Legitimate state: one honest depositor.
         let honest = Address::generate(&env);
         mint(&env, &token, &admin, &honest, 1_000_000);
-        vault.deposit(&honest, &1_000_000);
+        vault.deposit(&honest, &1_000_000, &None::<i128>);
 
         // Flash-loan: attacker injects 1 extra token directly into the vault.
         let attacker = Address::generate(&env);
@@ -240,7 +240,7 @@ mod security_attacks {
         // AC-3a ASSERTION: next deposit detects the mismatch.
         let depositor = Address::generate(&env);
         mint(&env, &token, &admin, &depositor, 100);
-        let result = vault.try_deposit(&depositor, &100);
+        let result = vault.try_deposit(&depositor, &100, &None::<i128>);
         assert_eq!(
             result,
             Err(Ok(VaultError::BalanceMismatch)),
@@ -255,7 +255,7 @@ mod security_attacks {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Inject 1 extra token.
         let vault_addr = vault.address.clone();
@@ -281,7 +281,7 @@ mod security_attacks {
 
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         // Inject 1 extra token.
         let vault_addr = vault.address.clone();
@@ -472,7 +472,7 @@ mod security_attacks {
         // Deposit, then fully withdraw.
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
         let shares = vault.balance_of(&user);
         vault.withdraw(&user, &shares);
 

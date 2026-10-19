@@ -41,7 +41,7 @@ mod harvest_cooldown_tests {
     fn seed_vault(env: &Env, vault: &AuraVaultClient, admin: &Address, token: &Address) {
         let seeder = Address::generate(env);
         mint(env, token, admin, &seeder, 1_000_000);
-        vault.deposit(&seeder, &1_000_000);
+        vault.deposit(&seeder, &1_000_000, &None::<i128>);
     }
 
     // -----------------------------------------------------------------------

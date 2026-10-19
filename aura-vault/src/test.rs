@@ -96,7 +96,7 @@ fn test_deposit_before_init_returns_not_initialized() {
     let vault_addr = env.register_contract(None, AuraVault);
     let vault = AuraVaultClient::new(&env, &vault_addr);
     let user = Address::generate(&env);
-    let result = vault.try_deposit(&user, &1_000);
+    let result = vault.try_deposit(&user, &1_000, &None::<i128>);
     assert_eq!(result, Err(Ok(VaultError::NotInitialized)));
 }
 
@@ -104,7 +104,7 @@ fn test_deposit_before_init_returns_not_initialized() {
 fn test_deposit_zero_returns_zero_amount() {
     let (env, vault, _admin, _token) = setup();
     let user = Address::generate(&env);
-    let result = vault.try_deposit(&user, &0);
+    let result = vault.try_deposit(&user, &0, &None::<i128>);
     assert_eq!(result, Err(Ok(VaultError::ZeroAmount)));
 }
 
@@ -113,11 +113,11 @@ fn test_deposit_overflow_returns_math_overflow() {
     let (env, vault, admin, token) = setup();
     let seeder = Address::generate(&env);
     mint(&env, &token, &admin, &seeder, 1);
-    vault.deposit(&seeder, &1);
+    vault.deposit(&seeder, &1, &None::<i128>);
 
     let attacker = Address::generate(&env);
     mint(&env, &token, &admin, &attacker, i128::MAX);
-    let result = vault.try_deposit(&attacker, &i128::MAX);
+    let result = vault.try_deposit(&attacker, &i128::MAX, &None::<i128>);
     assert!(result.is_err(), "expected an error on i128::MAX deposit");
 }
 
@@ -136,7 +136,7 @@ fn test_first_deposit_mints_one_to_one() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    let minted = vault.deposit(&user, &1_000_000);
+    let minted = vault.deposit(&user, &1_000_000, &None::<i128>);
     assert_eq!(minted, 1_000_000);
     assert_eq!(vault.total_assets(), 1_000_000);
     assert_eq!(vault.balance_of(&user), 1_000_000);
@@ -149,14 +149,14 @@ fn test_second_deposit_uses_share_formula() {
 
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 1_000_000);
-    vault.deposit(&alice, &1_000_000);
+    vault.deposit(&alice, &1_000_000, &None::<i128>);
 
     mint(&env, &token, &admin, &admin, 200_000);
     vault.harvest(&admin, &200_000);
 
     let bob = Address::generate(&env);
     mint(&env, &token, &admin, &bob, 600_000);
-    let minted = vault.deposit(&bob, &600_000);
+    let minted = vault.deposit(&bob, &600_000, &None::<i128>);
     assert_eq!(minted, 500_000);
 }
 
@@ -168,8 +168,8 @@ fn test_two_equal_depositors_each_hold_half() {
     mint(&env, &token, &admin, &alice, 1_000_000);
     mint(&env, &token, &admin, &bob, 1_000_000);
 
-    vault.deposit(&alice, &1_000_000);
-    vault.deposit(&bob, &1_000_000);
+    vault.deposit(&alice, &1_000_000, &None::<i128>);
+    vault.deposit(&bob, &1_000_000, &None::<i128>);
 
     let alice_shares = vault.balance_of(&alice);
     let bob_shares = vault.balance_of(&bob);
@@ -182,7 +182,7 @@ fn test_deposit_emits_indexed_event() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
     // If deposit completed without error, the indexed event was emitted.
     // (Soroban testutils don't expose event topic filtering directly; we verify
     // by ensuring the function succeeds with the new event signature.)
@@ -196,9 +196,9 @@ fn test_multiple_deposits_same_user_accumulate() {
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 3_000_000);
 
-    vault.deposit(&user, &1_000_000);
-    vault.deposit(&user, &1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     assert_eq!(vault.balance_of(&user), 3_000_000);
     assert_eq!(vault.total_assets(), 3_000_000);
@@ -219,7 +219,7 @@ fn test_multi_deposit_same_user_with_yield_between_deposits() {
 
     // First deposit: 1:1 seed ratio
     mint(&env, &token, &admin, &user, 1_000_000);
-    let shares_1 = vault.deposit(&user, &1_000_000);
+    let shares_1 = vault.deposit(&user, &1_000_000, &None::<i128>);
     assert_eq!(shares_1, 1_000_000);
 
     // Inject yield: 500_000 tokens → share price rises to 1.5 tokens/share
@@ -230,7 +230,7 @@ fn test_multi_deposit_same_user_with_yield_between_deposits() {
     // Second deposit from same user at the new share price:
     // new_shares = floor(1_500_000 × 1_000_000 / 1_500_000) = 1_000_000
     mint(&env, &token, &admin, &user, 1_500_000);
-    let shares_2 = vault.deposit(&user, &1_500_000);
+    let shares_2 = vault.deposit(&user, &1_500_000, &None::<i128>);
     assert_eq!(shares_2, 1_000_000);
 
     // User now holds 2_000_000 shares; vault has 3_000_000 tokens
@@ -249,12 +249,12 @@ fn test_share_precision_small_deposit_into_large_vault() {
 
     let seeder = Address::generate(&env);
     mint(&env, &token, &admin, &seeder, 1_000_000_000);
-    vault.deposit(&seeder, &1_000_000_000);
+    vault.deposit(&seeder, &1_000_000_000, &None::<i128>);
 
     // Deposit 7 stroops — minimum meaningful unit
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 7);
-    let minted = vault.deposit(&user, &7);
+    let minted = vault.deposit(&user, &7, &None::<i128>);
     // 7 × 1_000_000_000 / 1_000_000_000 = 7 (no rounding at 1:1 ratio)
     assert_eq!(minted, 7);
 
@@ -293,7 +293,7 @@ fn test_withdraw_more_than_balance_returns_insufficient_shares() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000);
-    vault.deposit(&user, &1_000);
+    vault.deposit(&user, &1_000, &None::<i128>);
     let result = vault.try_withdraw(&user, &9_999_999);
     assert_eq!(result, Err(Ok(VaultError::InsufficientShares)));
 }
@@ -307,7 +307,7 @@ fn test_withdraw_all_shares_zeros_vault() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 5_000_000);
-    vault.deposit(&user, &5_000_000);
+    vault.deposit(&user, &5_000_000, &None::<i128>);
 
     let shares = vault.balance_of(&user);
     vault.withdraw(&user, &shares);
@@ -321,7 +321,7 @@ fn test_harvest_then_withdraw_yields_more() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     let shares = vault.balance_of(&user);
     let pre_harvest_assets = vault.total_assets();
@@ -346,8 +346,8 @@ fn test_withdraw_does_not_affect_other_depositor_balance() {
     mint(&env, &token, &admin, &alice, 1_000_000);
     mint(&env, &token, &admin, &bob, 1_000_000);
 
-    vault.deposit(&alice, &1_000_000);
-    vault.deposit(&bob, &1_000_000);
+    vault.deposit(&alice, &1_000_000, &None::<i128>);
+    vault.deposit(&bob, &1_000_000, &None::<i128>);
 
     let bob_shares_before = vault.balance_of(&bob);
     let alice_shares = vault.balance_of(&alice);
@@ -384,7 +384,7 @@ fn test_harvest_on_empty_vault_returns_zero_shares() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
     let shares = vault.balance_of(&user);
     vault.withdraw(&user, &shares);
 
@@ -398,7 +398,7 @@ fn test_harvest_by_non_admin_keeper_succeeds() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     let keeper = Address::generate(&env);
     mint(&env, &token, &admin, &keeper, 1_000);
@@ -420,12 +420,12 @@ fn test_pause_blocks_mutating_operations() {
     mint(&env, &token, &admin, &user, 1_000_000);
 
     vault.pause(&admin);
-    assert_eq!(vault.try_deposit(&user, &1_000_000), Err(Ok(VaultError::VaultPaused)));
+    assert_eq!(vault.try_deposit(&user, &1_000_000, &None::<i128>), Err(Ok(VaultError::VaultPaused)));
     assert_eq!(vault.try_withdraw(&user, &1), Err(Ok(VaultError::VaultPaused)));
     assert_eq!(vault.try_harvest(&admin, &1_000), Err(Ok(VaultError::VaultPaused)));
 
     vault.unpause(&admin);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
     assert_eq!(vault.balance_of(&user), 1_000_000);
 }
 
@@ -438,7 +438,7 @@ fn test_harvest_collects_performance_fee_and_records_total_fees() {
     let (env, vault, admin, token) = setup();
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     // Enable 10% performance fee
     vault.set_fees(&admin, &1000_u32, &0_u32);
@@ -459,7 +459,7 @@ fn test_withdraw_fees_transfers_to_treasury_and_resets_total_fees() {
     let treasury = Address::generate(&env);
 
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     vault.set_fees(&admin, &1000_u32, &0_u32);
     vault.set_treasury(&admin, &treasury);
@@ -483,13 +483,13 @@ fn test_deposit_withdraw_round_trip_rounding() {
 
     let seeder = Address::generate(&env);
     mint(&env, &token, &admin, &seeder, 1_000_000);
-    vault.deposit(&seeder, &1_000_000);
+    vault.deposit(&seeder, &1_000_000, &None::<i128>);
 
     let amounts: &[i128] = &[1, 7, 100, 999, 1_000_000, 9_999_999, 100_000_000];
     for &amount in amounts {
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, amount);
-        let minted = vault.deposit(&user, &amount);
+        let minted = vault.deposit(&user, &amount, &None::<i128>);
         if minted > 0 {
             let received = vault.withdraw(&user, &minted);
             assert!(
@@ -513,7 +513,7 @@ fn test_share_sum_invariant() {
 
     for (user, &amount) in users.iter().zip(deposit_amounts.iter()) {
         mint(&env, &token, &admin, user, amount);
-        vault.deposit(user, &amount);
+        vault.deposit(user, &amount, &None::<i128>);
     }
 
     for user in &users[..2] {
@@ -536,7 +536,7 @@ fn test_harvest_non_dilution() {
 
     let alice = Address::generate(&env);
     mint(&env, &token, &admin, &alice, 1_000_000);
-    vault.deposit(&alice, &1_000_000);
+    vault.deposit(&alice, &1_000_000, &None::<i128>);
 
     let alice_shares_before = vault.balance_of(&alice);
     let assets_before = vault.total_assets();
@@ -562,8 +562,8 @@ fn test_balance_of_distinct_addresses_no_collision() {
     mint(&env, &token, &admin, &addr_a, 1_000_000);
     mint(&env, &token, &admin, &addr_b, 2_000_000);
 
-    vault.deposit(&addr_a, &1_000_000);
-    vault.deposit(&addr_b, &2_000_000);
+    vault.deposit(&addr_a, &1_000_000, &None::<i128>);
+    vault.deposit(&addr_b, &2_000_000, &None::<i128>);
 
     assert_ne!(vault.balance_of(&addr_a), vault.balance_of(&addr_b));
     assert_eq!(vault.balance_of(&addr_a), 1_000_000);
@@ -825,7 +825,7 @@ fn test_execute_operation_after_threshold_succeeds_and_applies_fee() {
     // (harvest with the new 5% fee, then check collected fees)
     let user = Address::generate(&_env);
     mint(&_env, &_token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
 
     mint(&_env, &_token, &admin, &admin, 1_000_000);
     vault.harvest(&admin, &1_000_000);
@@ -938,10 +938,10 @@ fn test_tvl_cap_enforced_on_deposit() {
     // Deposit 400_000 should succeed (< cap)
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 600_000);
-    vault.deposit(&user, &400_000);
+    vault.deposit(&user, &400_000, &None::<i128>);
 
     // Deposit 200_000 more would push total to 600_000 > 500_000 → fail
-    let result = vault.try_deposit(&user, &200_000);
+    let result = vault.try_deposit(&user, &200_000, &None::<i128>);
     assert!(result.is_err());
 }
 
@@ -959,7 +959,7 @@ fn test_tvl_cap_zero_means_uncapped() {
 
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 10_000_000);
-    let shares = vault.deposit(&user, &10_000_000);
+    let shares = vault.deposit(&user, &10_000_000, &None::<i128>);
     assert!(shares > 0);
 }
 
@@ -1063,7 +1063,7 @@ fn test_multisig_set_mgmt_fee_applies_change() {
     // Just check the vault is still operational
     let user = Address::generate(&_env);
     mint(&_env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
     assert_eq!(vault.total_assets(), 1_000_000);
 }
 
@@ -1096,7 +1096,7 @@ fn test_full_multisig_flow_set_perf_fee() {
     // Step 4: verify applied — 10% fee on a 1M harvest = 100K fee
     let user = Address::generate(&env);
     mint(&env, &token, &admin, &user, 1_000_000);
-    vault.deposit(&user, &1_000_000);
+    vault.deposit(&user, &1_000_000, &None::<i128>);
     vault.set_treasury(&admin, &admin);
 
     mint(&env, &token, &admin, &admin, 1_000_000);
@@ -1124,4 +1124,71 @@ fn test_events_emitted_on_full_flow() {
     // If all three calls succeeded, all three events were emitted
     let status = vault.operation_status(&op_id);
     assert_eq!(status, Some(soroban_sdk::String::from_str(&_env, "Executed")));
+}
+
+// ---------------------------------------------------------------------------
+// 23. Slippage protection — min_shares_out (Issue: SlippageExceeded)
+// ---------------------------------------------------------------------------
+
+/// min_shares_out = Some(exact match): deposit mints exactly the minimum → passes.
+#[test]
+fn test_deposit_min_shares_out_exact_match_passes() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+
+    // First deposit: empty vault → shares == amount (1:1)
+    // Requesting exactly that amount as minimum must succeed.
+    let minted = vault.deposit(&user, &1_000_000, &Some(1_000_000_i128));
+    assert_eq!(minted, 1_000_000);
+    assert_eq!(vault.balance_of(&user), 1_000_000);
+}
+
+/// min_shares_out = Some(below computed): computed > min → passes.
+#[test]
+fn test_deposit_min_shares_out_above_min_passes() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+
+    // Computed shares will be 1_000_000; ask for at most 999_999 → succeeds.
+    let minted = vault.deposit(&user, &1_000_000, &Some(999_999_i128));
+    assert_eq!(minted, 1_000_000);
+}
+
+/// min_shares_out = Some(above computed): computed < min → SlippageExceeded.
+#[test]
+fn test_deposit_min_shares_out_below_min_fails() {
+    let (env, vault, admin, token) = setup();
+
+    // Seed the vault: 1_000_000 tokens, 1_000_000 shares
+    let seeder = Address::generate(&env);
+    mint(&env, &token, &admin, &seeder, 1_000_000);
+    vault.deposit(&seeder, &1_000_000, &None::<i128>);
+
+    // Inject yield to raise the share price: 500_000 tokens → 1.5 tokens/share
+    mint(&env, &token, &admin, &admin, 500_000);
+    vault.harvest(&admin, &500_000);
+    // total_assets = 1_500_000, total_shares = 1_000_000
+
+    // A fresh depositor putting in 600_000 tokens gets:
+    //   floor(600_000 × 1_000_000 / 1_500_000) = 400_000 shares
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 600_000);
+
+    // Demand at least 500_000 shares — will be denied.
+    let result = vault.try_deposit(&user, &600_000, &Some(500_000_i128));
+    assert_eq!(result, Err(Ok(VaultError::SlippageExceeded)));
+}
+
+/// min_shares_out = None: backward-compatible, no slippage check performed.
+#[test]
+fn test_deposit_min_shares_out_none_is_backward_compatible() {
+    let (env, vault, admin, token) = setup();
+    let user = Address::generate(&env);
+    mint(&env, &token, &admin, &user, 1_000_000);
+
+    // None means no check — identical to the old two-argument form.
+    let minted = vault.deposit(&user, &1_000_000, &None::<i128>);
+    assert_eq!(minted, 1_000_000);
 }

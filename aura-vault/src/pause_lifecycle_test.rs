@@ -104,7 +104,7 @@ mod pause_lifecycle_tests {
 
         vault.pause(&admin);
 
-        let result = vault.try_deposit(&user, &500_000);
+        let result = vault.try_deposit(&user, &500_000, &None::<i128>);
         assert_eq!(
             result,
             Err(Ok(VaultError::VaultPaused)),
@@ -121,7 +121,7 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
 
@@ -142,7 +142,7 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
 
@@ -164,12 +164,12 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 2_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
 
         assert_eq!(
-            vault.try_deposit(&user, &500_000),
+            vault.try_deposit(&user, &500_000, &None::<i128>),
             Err(Ok(VaultError::VaultPaused)),
             "deposit blocked"
         );
@@ -199,7 +199,7 @@ mod pause_lifecycle_tests {
         vault.unpause(&admin);
 
         // Must succeed without panic.
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
         assert_eq!(vault.balance_of(&user), 1_000_000);
     }
 
@@ -208,7 +208,7 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
         vault.unpause(&admin);
@@ -222,7 +222,7 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
         vault.unpause(&admin);
@@ -383,8 +383,8 @@ mod pause_lifecycle_tests {
         mint(&env, &token, &admin, &alice, 1_000_000);
         mint(&env, &token, &admin, &bob, 2_000_000);
 
-        vault.deposit(&alice, &1_000_000);
-        vault.deposit(&bob, &2_000_000);
+        vault.deposit(&alice, &1_000_000, &None::<i128>);
+        vault.deposit(&bob, &2_000_000, &None::<i128>);
 
         let alice_shares_before = vault.balance_of(&alice);
         let bob_shares_before = vault.balance_of(&bob);
@@ -417,7 +417,7 @@ mod pause_lifecycle_tests {
 
         for cycle in 0..3_u32 {
             // Deposit is allowed when unpaused.
-            vault.deposit(&user, &100_000);
+            vault.deposit(&user, &100_000, &None::<i128>);
             let balance_before = vault.balance_of(&user);
 
             vault.pause(&admin);
@@ -425,7 +425,7 @@ mod pause_lifecycle_tests {
 
             // Deposit blocked.
             assert_eq!(
-                vault.try_deposit(&user, &100_000),
+                vault.try_deposit(&user, &100_000, &None::<i128>),
                 Err(Ok(VaultError::VaultPaused)),
                 "cycle {cycle}: deposit blocked"
             );
@@ -452,7 +452,7 @@ mod pause_lifecycle_tests {
         let (env, vault, admin, token) = setup();
         let user = Address::generate(&env);
         mint(&env, &token, &admin, &user, 1_000_000);
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
 
         vault.pause(&admin);
 
@@ -478,7 +478,7 @@ mod pause_lifecycle_tests {
         mint(&env, &token, &admin, &user, 1_000_000);
 
         // 1. Deposit succeeds before pause.
-        vault.deposit(&user, &1_000_000);
+        vault.deposit(&user, &1_000_000, &None::<i128>);
         assert_eq!(vault.balance_of(&user), 1_000_000);
 
         // 2. Pause.
@@ -487,7 +487,7 @@ mod pause_lifecycle_tests {
 
         // 3. All mutating ops blocked.
         assert_eq!(
-            vault.try_deposit(&user, &1_000),
+            vault.try_deposit(&user, &1_000, &None::<i128>),
             Err(Ok(VaultError::VaultPaused))
         );
         assert_eq!(

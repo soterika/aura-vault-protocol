@@ -359,11 +359,12 @@ impl AuraVault {
     /// # Errors
     ///
     /// - [`VaultError::ZeroAmount`] — `amount <= 0`, or share formula rounds to 0.
+    /// - [`VaultError::SlippageExceeded`] — computed shares < `min_shares_out`.
     /// - [`VaultError::NotInitialized`] — vault not yet initialised.
     /// - [`VaultError::VaultPaused`] — vault is paused.
     /// - [`VaultError::BalanceMismatch`] — flash-loan guard tripped.
     /// - [`VaultError::MathOverflow`] — arithmetic overflow in share formula.
-    pub fn deposit(env: Env, caller: Address, amount: i128) -> Result<i128, VaultError> {
+    pub fn deposit(env: Env, caller: Address, amount: i128, min_shares_out: Option<i128>) -> Result<i128, VaultError> {
         with_reentrancy_guard(&env, || {
             caller.require_auth();
 
@@ -430,6 +431,13 @@ impl AuraVault {
 
             if new_shares <= 0 {
                 return Err(VaultError::ZeroAmount);
+            }
+
+            // Slippage guard: revert if minted shares fall below caller's minimum.
+            if let Some(min) = min_shares_out {
+                if new_shares < min {
+                    return Err(VaultError::SlippageExceeded);
+                }
             }
 
             // CEI — Interaction: pull tokens from caller into vault
