@@ -2149,18 +2149,29 @@ impl AuraVault {
         with_reentrancy_guard(&env, || {
             let admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
             admin.require_auth();
-
-            let current_version = get_layout_version(&env);
-            if current_version != CURRENT_LAYOUT_VERSION {
+            
+            let current_layout = get_layout_version(&env);
+            if current_layout != CURRENT_LAYOUT_VERSION {
                 return Err(VaultError::StorageLayoutMismatch);
             }
 
-            let old_version = get_version(&env);
-            let new_version = old_version + 1;
+            // Read current vault version and automatically increment it (Issue #912)
+            let old_version = get_vault_version(&env);
+            let new_version = old_version.checked_add(1).ok_or(VaultError::MathOverflow)?;
+            set_vault_version(&env, new_version);
+
+            // Also update legacy/contract version counter if needed
             set_version(&env, new_version);
 
             env.deployer().update_current_contract_wasm(new_wasm_hash);
+            
+            // Emit vault_upgraded event containing the version (Issue #912 requirement)
+            env.events().publish(
+                (Symbol::new(&env, "vault_upgraded"), admin.clone()),
+                (old_version, new_version),
+            );
 
+            // Keep legacy upgrade event for backwards compatibility
             env.events().publish(
                 (Symbol::new(&env, "upgrade"), admin),
                 (old_version, new_version),
@@ -2471,6 +2482,11 @@ impl AuraVault {
 
     /// Returns the contract version integer. Read-only, no auth required.
     pub fn version(env: Env) -> u32 {
+        get_vault_version(&env)
+    }
+
+    /// Returns the current on-chain vault version for upgrade tracking (Issue #912).
+    pub fn get_version(env: Env) -> u32 {
         get_vault_version(&env)
     }
 
