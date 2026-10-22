@@ -199,7 +199,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPORT=$(cat terraform/drift_report.txt | head -c 5000)
+          REPORT=$(head -c 3000 terraform/drift_report.txt)
           gh issue create \
             --title "[Drift] Infrastructure drift detected $(date +%Y-%m-%d)" \
             --body "## Infrastructure Drift Detected
@@ -219,6 +219,20 @@ jobs:
           /cc @${{ github.repository_owner }}" \
             --label "infrastructure" \
             --repo "${{ github.repository }}" || echo "Issue creation failed (non-fatal)"
+
+      - name: Notify operations channel
+        if: steps.plan.outputs.exit_code == '2'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [[ -z "$SLACK_WEBHOOK_URL" ]]; then
+            echo "SLACK_WEBHOOK_URL is not configured; drift details remain in the workflow summary and GitHub issue."
+            exit 0
+          fi
+          REPORT=$(head -c 3000 terraform/drift_report.txt)
+          PAYLOAD=$(jq -n --arg text "Terraform drift detected in $GITHUB_REPOSITORY. Review $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID.\n\n$REPORT" '{text: $text}')
+          curl --fail --silent --show-error -X POST -H 'Content-Type: application/json' \
+            --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
 
       - name: Fail on Terraform plan error
         if: steps.plan.outputs.exit_code == '1'

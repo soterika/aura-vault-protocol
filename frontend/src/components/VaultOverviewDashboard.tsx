@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useLocale, useTranslations } from "next-intl";
 import VaultHealthScore from './VaultHealthScore';
 import { EmptyState } from './EmptyState';
 import PortfolioPanel from '@/components/PortfolioPanel';
@@ -34,7 +34,8 @@ interface WalletInfo {
 }
 
 const VaultOverviewDashboard: React.FC = () => {
-  const { t } = useTranslation();
+  const t = useTranslations("dashboard");
+  const locale = useLocale();
   const [vaultBalance, setVaultBalance] = useState<VaultBalance>({
     usd: 0,
     xlm: 0,
@@ -216,7 +217,7 @@ const VaultOverviewDashboard: React.FC = () => {
   }, [fetchVaultBalance, fetchVaultMetrics, fetchTransactions, fetchWalletInfo]);
 
   const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
@@ -225,7 +226,7 @@ const VaultOverviewDashboard: React.FC = () => {
   };
 
   const formatDate = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
+    return new Date(timestamp).toLocaleDateString(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -251,10 +252,10 @@ const VaultOverviewDashboard: React.FC = () => {
         {/* Header */}
         <div className="flex flex-col gap-2 mb-12">
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white">
-            {t('dashboard.title', 'Vault Dashboard')}
+            {t("title")}
           </h1>
           <p className="text-lg text-slate-600 dark:text-slate-400">
-            {walletInfo.connected ? `Connected: ${walletInfo.address?.slice(0, 10)}...` : 'Wallet not connected'}
+            {walletInfo.connected ? t("connected", {address: `${walletInfo.address.slice(0, 10)}...`}) : t("wallet_not_connected")}
           </p>
         </div>
 
@@ -268,7 +269,7 @@ const VaultOverviewDashboard: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
             <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">
-              {t('dashboard.vault_balance', 'Vault Balance')}
+              {t("vault_balance")}
             </h2>
             <p className="text-3xl font-bold text-slate-900 dark:text-white mb-1">
               {formatCurrency(vaultBalance.usd)}
@@ -277,25 +278,25 @@ const VaultOverviewDashboard: React.FC = () => {
               {vaultBalance.xlm.toFixed(2)} XLM
             </p>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-              Updated: {new Date(vaultBalance.lastUpdated).toLocaleTimeString()}
+              {t("updated", {time: new Date(vaultBalance.lastUpdated).toLocaleTimeString(locale)})}
             </p>
           </div>
 
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
             <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">
-              {t('dashboard.apy', 'Annual Percentage Yield')}
+              {t("apy")}
             </h2>
             <p className="text-3xl font-bold text-green-600 dark:text-green-400">
               {vaultMetrics.apy.toFixed(2)}%
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-500 mt-3">
-              Current yield
+              {t("current_yield")}
             </p>
           </div>
 
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
             <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">
-              {t('dashboard.tvl', 'Total Value Locked')}
+              {t("tvl")}
             </h2>
             <p className="text-3xl font-bold text-slate-900 dark:text-white mb-1">
               {formatCurrency(vaultMetrics.tvl)}
@@ -307,13 +308,13 @@ const VaultOverviewDashboard: React.FC = () => {
 
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
             <h2 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">
-              {t('dashboard.total_users', 'Total Users')}
+              {t("total_users")}
             </h2>
             <p className="text-3xl font-bold text-slate-900 dark:text-white">
               {vaultMetrics.totalUsers.toLocaleString()}
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-500 mt-3">
-              Active participants
+              {t("active_participants")}
             </p>
           </div>
         </div>
@@ -327,7 +328,7 @@ const VaultOverviewDashboard: React.FC = () => {
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-              {t('dashboard.recent_transactions', 'Recent Transactions')}
+              {t("recent_transactions")}
             </h2>
           </div>
           <div className="overflow-x-auto">
@@ -335,16 +336,16 @@ const VaultOverviewDashboard: React.FC = () => {
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600 dark:text-slate-400">
-                    Type
+                    {t("type")}
                   </th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600 dark:text-slate-400">
-                    Amount
+                    {t("amount")}
                   </th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600 dark:text-slate-400">
-                    Date
+                    {t("date")}
                   </th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-600 dark:text-slate-400">
-                    Status
+                    {t("status")}
                   </th>
                 </tr>
               </thead>
@@ -367,7 +368,7 @@ const VaultOverviewDashboard: React.FC = () => {
                           tx.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
                           'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
                         }`}>
-                          {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
+                          {t(`transaction_status.${tx.status}`)}
                         </span>
                       </td>
                     </tr>

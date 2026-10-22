@@ -7,12 +7,9 @@ type Props = { params: Promise<{ locale: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "faq" });
-  return {
-    title: `${t("heading")} — Aura Vault Protocol`,
-    description: t("subheading"),
-  };
+  return { title: `${t("title")} — Aura Vault Protocol`, description: t("subtitle") };
 }
 
-export default function FAQ() {
+export default function LocalizedFAQPage() {
   return <FAQPage />;
 }

@@ -1,5 +1,31 @@
 # Operations & Monitoring Guide
 
+## Loki log-based alerts
+
+`monitoring/loki/rules/fake/aura-alerts.yaml` defines Loki Ruler alerts for
+route-level backend error spikes, invalid-token bursts, PostgreSQL connection
+refusals, Horizon timeouts, and BullMQ job failures. The Loki configuration
+loads local rules and sends firing alerts to Alertmanager. In Kubernetes,
+Alertmanager sends warning and critical alerts to the configured Slack
+channels. Configure the `SLACK_WEBHOOK_URL` secret before enabling production
+notifications. The Docker Compose stack routes alerts to Alertmanager; connect
+its receiver to an operations webhook for local installations.
+
+Before deploying Loki to Kubernetes, publish the rule file as the ConfigMap
+mounted by `k8s/loki-deployment.yaml`:
+
+```bash
+kubectl create configmap loki-alert-rules -n monitoring \
+  --from-file=aura-alerts.yaml=monitoring/loki/rules/fake/aura-alerts.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The rule thresholds are intentionally independent of Prometheus metrics so
+log-only failures can page the operations channel before metric collection
+catches up. To validate them, inject representative structured log records in
+a staging environment and confirm the corresponding alert appears in
+Alertmanager. Do not perform this injection against production.
+
 Comprehensive monitoring and alerting setup for Aura Vault Protocol production deployment.
 
 ## Overview

@@ -47,6 +47,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - ./monitoring/loki/rules:/loki/rules:ro
       - loki_data:/loki
     ports:
       - "3100:3100"

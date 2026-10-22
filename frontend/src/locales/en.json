@@ -3,31 +3,30 @@
     "title": "Aura Vault Protocol",
     "description": "A share-based yield vault on Soroban for the Stellar ecosystem."
   },
-  "home": {
-    "heading": "To get started, edit the page.tsx file.",
-    "body": "Looking for a starting point or more instructions? Head over to {templatesLink} or the {learningLink}.",
-    "templates": "Templates",
-    "learning": "Learning",
-    "faqLink": "FAQ",
-    "deployNow": "Deploy Now"
   "nav": {
     "faq": "FAQ",
-    "settings": "Settings"
+    "settings": "Settings",
+    "dashboard": "Dashboard"
   },
-    "get_started": "To get started, edit the page.tsx file.",
-    "instructions": "Looking for a starting point or more instructions? Head over to",
-    "or_the": "or the",
-    "learning_center": "Learning Center",
-    "deploy_now": "Deploy Now",
+  "home": {
+    "get_started": "Manage your Aura Vault position",
+    "instructions": "Deposit, track your shares, and follow vault yield from one dashboard.",
+    "templates": "Vault dashboard",
+    "or_the": "View",
+    "learning_center": "frequently asked questions",
+    "deploy_now": "Open dashboard",
     "documentation": "Documentation"
+  },
   "faq": {
     "title": "Frequently Asked Questions",
     "subtitle": "Everything you need to know about Aura Vault Protocol.",
     "search_placeholder": "Search questions…",
     "all_categories": "All",
     "no_results": "No results found.",
-    "cant_find": "Can't find your answer?",
-    "open_issue": "Open a GitHub issue"
+    "cant_find": "Can’t find your answer?",
+    "open_issue": "Open a GitHub issue",
+    "categories_label": "FAQ categories"
+  },
   "settings": {
     "title": "Settings",
     "saved": "Settings saved",
@@ -39,17 +38,21 @@
     "language": {
       "title": "Language",
       "description": "Choose your preferred display language. Changes take effect immediately."
+    },
     "currency": {
-      "title": "Currency Display",
-      "description": "Choose how vault balances and yield are displayed.",
-      "note": "Prices are fetched from market data feeds and are for display purposes only."
+      "title": "Currency display",
+      "description": "Choose how balances and yield are displayed.",
+      "note": "Market prices are for display purposes only."
+    },
     "wallet": {
-      "title": "Connected Wallet",
+      "title": "Connected wallet",
       "no_wallet": "No wallet connected",
-      "connect": "Connect Wallet"
+      "connect": "Connect wallet"
+    },
     "slippage": {
-      "title": "Slippage Tolerance",
-      "high_warning": "High slippage may result in unfavorable trades"
+      "title": "Slippage tolerance",
+      "high_warning": "High slippage may result in unfavorable trades."
+    },
     "notifications": {
       "title": "Notifications",
       "deposits": "Deposit confirmations",
@@ -59,88 +62,157 @@
       "email_address": "Email address",
       "email_placeholder": "you@example.com",
       "push_title": "Browser push notifications",
-      "push_description": "Receive a browser notification when a vault harvest event occurs.",
-      "push_blocked": "Push notifications are blocked by your browser. Update site permissions to enable.",
-      "push_unsupported": "Push notifications are not supported in this browser."
+      "push_description": "Receive a notification when a vault harvest occurs.",
+      "push_blocked": "Push notifications are blocked. Update this site’s browser permissions to enable them.",
+      "push_unsupported": "Push notifications are not supported by this browser."
+    },
     "security": {
       "title": "Security",
-      "two_factor": "Two-Factor Authentication",
-      "two_factor_desc": "Add an extra layer of security"
+      "two_factor": "Two-factor authentication",
+      "two_factor_desc": "Add an extra layer of security."
+    },
     "danger": {
-      "title": "Danger Zone",
-      "description": "Deactivating your account will remove all data and cannot be undone.",
-      "deactivate": "Deactivate Account",
+      "title": "Danger zone",
+      "description": "Deactivating your account removes its data and cannot be undone.",
+      "deactivate": "Deactivate account",
       "confirm_message": "Are you sure? This action is irreversible.",
-  "notifications": {
-    "heading": "Notifications",
-    "markAllRead": "Mark all read",
-    "clear": "Clear",
-    "empty": "No notifications",
-    "unreadAriaLabel": "Notifications, {count} unread",
-    "readAriaLabel": "Notifications",
-    "dismissAriaLabel": "Dismiss notification",
-    "timestamp": "{date}"
-    "heading": "Settings",
-      "heading": "Connected Wallet",
-      "noWallet": "No wallet connected",
-      "heading": "Slippage Tolerance",
-      "highWarning": "High slippage may result in unfavorable trades"
-      "heading": "Notifications",
-      "vaultEvents": "Vault performance alerts",
-      "emailAddress": "Email address",
-      "emailPlaceholder": "you@example.com"
-      "heading": "Security",
-      "twoFactor": "Two-Factor Authentication",
-      "twoFactorDescription": "Add an extra layer of security"
-      "heading": "Danger Zone",
-      "confirmPrompt": "Are you sure? This action is irreversible.",
       "cancel": "Cancel",
-      "confirm": "Confirm Deactivation"
+      "confirm": "Confirm deactivation"
     }
   },
+  "notifications": {
     "title": "Notifications",
     "mark_all_read": "Mark all read",
-    "unread_aria": "Notifications, {{count}} unread",
+    "clear": "Clear",
+    "empty": "No notifications",
+    "unread_aria": "Notifications, {count} unread",
+    "read_aria": "Notifications",
     "dismiss": "Dismiss notification"
+  },
   "theme": {
     "light": "Light",
     "dark": "Dark",
-    "auto": "Auto"
+    "auto": "System",
+    "switchTo": "Switch to {theme} theme"
+  },
   "vault_errors": {
-    "1":  { "title": "Vault Not Initialized",     "message": "The vault has not been initialized yet. Contact the admin or verify the contract address." },
-    "2":  { "title": "Already Initialized",       "message": "The vault has already been initialized and cannot be set up again." },
-    "3":  { "title": "Insufficient Shares",       "message": "You do not have enough vault shares to complete this withdrawal. Check your share balance." },
-    "4":  { "title": "Insufficient Underlying",   "message": "The vault does not have enough underlying tokens to cover this redemption. Contact the admin." },
-    "5":  { "title": "Zero Amount",               "message": "Amount must be greater than zero. Increase the input amount and try again." },
-    "6":  { "title": "Arithmetic Overflow",       "message": "Arithmetic overflow: the transaction amount is too large. Try a smaller amount." },
-    "7":  { "title": "Invalid Address",           "message": "The address or token is not recognized. Ensure it has been whitelisted by the admin." },
-    "8":  { "title": "No Shareholders",           "message": "The vault has no shareholders yet. Yield cannot be distributed until someone deposits." },
-    "9":  { "title": "Unauthorized",              "message": "Only the vault admin can perform this action. Connect with the admin account and try again." },
-    "10": { "title": "Storage Layout Mismatch",   "message": "Contract upgrade failed: storage layout version mismatch. A migration is required first." },
-    "11": { "title": "Vault Paused",              "message": "The vault is currently paused. Please wait for the admin to resume operations." },
-    "12": { "title": "Balance Mismatch",          "message": "Security alert: the vault's token balance does not match its records. Contact the admin immediately." },
-    "13": { "title": "Timelock Not Expired",      "message": "This governance proposal cannot be executed yet. The timelock period has not elapsed." },
-    "14": { "title": "Proposal Not Approved",     "message": "This governance proposal has not received enough approvals to execute." },
-    "15": { "title": "Already Voted",             "message": "You have already voted on this proposal. Each signer may only vote once." },
-    "16": { "title": "TVL Cap Exceeded",          "message": "This deposit would exceed the vault's total-value-locked cap. Try a smaller amount or wait for capacity." },
-    "17": { "title": "Yield Too Small",           "message": "The yield amount is too small to distribute — it rounds to zero per share. Accumulate more yield first." },
-    "18": { "title": "Distribution Accuracy Error","message": "Yield distribution precision check failed. Adjust the yield amount slightly and retry." },
-    "19": { "title": "Harvest Cooldown",          "message": "A harvest was performed too recently. Wait for the cooldown period to expire before harvesting again." },
-    "20": { "title": "Withdrawal Queued",         "message": "Your withdrawal has been queued. Claim it after the unbonding period expires using your queue entry ID." },
-    "21": { "title": "Queue Entry Not Found",     "message": "Withdrawal queue entry not found. It may not exist or may have already been claimed." },
-    "22": { "title": "Unbonding Pending",         "message": "Your withdrawal is still in the unbonding period. Please wait and retry after the unlock time." },
-    "23": { "title": "Invalid Withdrawal Fee",    "message": "Withdrawal fee exceeds the maximum allowed rate of 5%. Use a value between 0 and 500 basis points." },
-    "24": { "title": "Circuit Breaker Tripped",   "message": "Harvest rejected: the share price movement exceeded the safety limit. The vault has been auto-paused pending admin review." }
-    "heading": "Frequently Asked Questions",
-    "subheading": "Everything you need to know about Aura Vault Protocol.",
-    "searchPlaceholder": "Search questions\u2026",
-    "allCategory": "All",
-    "noResults": "No results found.",
-    "cantFind": "Can't find your answer?",
-    "openIssue": "Open a GitHub issue"
-  "languageSwitcher": {
-    "label": "Language",
-    "en": "English",
-    "es": "Español"
+    "1": {
+      "title": "Vault error 1",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "2": {
+      "title": "Vault error 2",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "3": {
+      "title": "Vault error 3",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "4": {
+      "title": "Vault error 4",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "5": {
+      "title": "Vault error 5",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "6": {
+      "title": "Vault error 6",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "7": {
+      "title": "Vault error 7",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "8": {
+      "title": "Vault error 8",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "9": {
+      "title": "Vault error 9",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "10": {
+      "title": "Vault error 10",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "11": {
+      "title": "Vault error 11",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "12": {
+      "title": "Vault error 12",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "13": {
+      "title": "Vault error 13",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "14": {
+      "title": "Vault error 14",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "15": {
+      "title": "Vault error 15",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "16": {
+      "title": "Vault error 16",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "17": {
+      "title": "Vault error 17",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "18": {
+      "title": "Vault error 18",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "19": {
+      "title": "Vault error 19",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "20": {
+      "title": "Vault error 20",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "21": {
+      "title": "Vault error 21",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "22": {
+      "title": "Vault error 22",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "23": {
+      "title": "Vault error 23",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "24": {
+      "title": "Vault error 24",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    }
+  },
+  "dashboard": {
+    "title": "Vault Dashboard",
+    "connected": "Connected: {address}",
+    "wallet_not_connected": "Wallet not connected",
+    "vault_balance": "Vault Balance",
+    "updated": "Updated: {time}",
+    "apy": "Annual Percentage Yield",
+    "current_yield": "Current yield",
+    "tvl": "Total Value Locked",
+    "total_users": "Total Users",
+    "active_participants": "Active participants",
+    "recent_transactions": "Recent Transactions",
+    "type": "Type",
+    "amount": "Amount",
+    "date": "Date",
+    "status": "Status",
+    "transaction_status": {
+      "completed": "Completed",
+      "pending": "Pending",
+      "failed": "Failed"
+    }
   }
 }

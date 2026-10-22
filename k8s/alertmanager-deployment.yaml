@@ -97,6 +97,7 @@ spec:
               protocol: TCP
           args:
             - '--config.file=/etc/alertmanager/alertmanager.yml'
+            - '--config.expand-env=true'
             - '--storage.path=/alertmanager'
           env:
             - name: SLACK_WEBHOOK_URL
@@ -104,7 +105,7 @@ spec:
                 secretKeyRef:
                   name: alertmanager-secrets
                   key: slack_webhook_url
-                  optional: true
+                  optional: false
           volumeMounts:
             - name: alertmanager-config
               mountPath: /etc/alertmanager
