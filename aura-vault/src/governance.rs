@@ -231,6 +231,9 @@ pub fn propose_operation(
         set_ready_at(env, new_id, now.saturating_add(GOVERNANCE_TIMELOCK_SECS));
     }
     set_multisig_op_count(env, new_id);
+    if matches!(&op.op_type, OpType::SetStrategy(_)) && matches!(op.status, OpStatus::Ready) {
+        set_strategy_timelock(env, new_id, now.saturating_add(STRATEGY_TIMELOCK_SECS));
+    }
 
     // Record the proposer's vote to prevent double-signing
     record_multisig_vote(env, new_id, &proposer);
@@ -330,6 +333,11 @@ pub fn execute_multisig_op(
     let now = env.ledger().timestamp();
     if now > op.expires_at && op.status == OpStatus::Pending {
         return Err(VaultError::OperationExpired);
+    }
+    if matches!(&op.op_type, OpType::SetStrategy(_))
+        && now < get_strategy_timelock(env, op_id)
+    {
+        return Err(VaultError::TimelockNotExpired);
     }
 
     match op.status {

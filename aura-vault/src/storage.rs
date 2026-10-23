@@ -204,6 +204,74 @@ pub fn get_token(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::UnderlyingToken)
 }
 
+pub fn get_active_strategy(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::ActiveStrategy)
+}
+
+pub fn set_active_strategy(env: &Env, strategy: &Address) {
+    env.storage().instance().set(&DataKey::ActiveStrategy, strategy);
+}
+
+pub fn clear_active_strategy(env: &Env) {
+    env.storage().instance().remove(&DataKey::ActiveStrategy);
+}
+
+pub fn get_oracle_address(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::OracleAddress)
+}
+
+pub fn set_oracle_address(env: &Env, address: &Address) {
+    env.storage().instance().set(&DataKey::OracleAddress, address);
+}
+
+pub fn get_oracle_max_age(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::OracleMaxAgeSecs).unwrap_or(3_600)
+}
+
+pub fn set_oracle_max_age(env: &Env, seconds: u64) {
+    env.storage().instance().set(&DataKey::OracleMaxAgeSecs, &seconds);
+}
+
+pub fn get_swap_router(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::SwapRouterAddress)
+}
+
+pub fn set_swap_router(env: &Env, address: &Address) {
+    env.storage().instance().set(&DataKey::SwapRouterAddress, address);
+}
+
+pub fn get_max_swap_slippage_bps(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::MaxSwapSlippageBps).unwrap_or(300)
+}
+
+pub fn set_max_swap_slippage_bps(env: &Env, bps: u32) {
+    env.storage().instance().set(&DataKey::MaxSwapSlippageBps, &bps);
+}
+
+pub fn get_twap_window_secs(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::TwapWindowSecs).unwrap_or(1_800)
+}
+
+pub fn set_twap_window_secs(env: &Env, seconds: u64) {
+    env.storage().instance().set(&DataKey::TwapWindowSecs, &seconds);
+}
+
+pub fn get_max_oracle_deviation_bps(env: &Env) -> u32 {
+    env.storage().instance().get(&DataKey::MaxOracleDeviationBps).unwrap_or(500)
+}
+
+pub fn set_max_oracle_deviation_bps(env: &Env, bps: u32) {
+    env.storage().instance().set(&DataKey::MaxOracleDeviationBps, &bps);
+}
+
+pub fn get_strategy_timelock(env: &Env, operation_id: u64) -> u64 {
+    env.storage().instance().get(&DataKey::StrategyTimelock(operation_id)).unwrap_or(0)
+}
+
+pub fn set_strategy_timelock(env: &Env, operation_id: u64, ready_at: u64) {
+    env.storage().instance().set(&DataKey::StrategyTimelock(operation_id), &ready_at);
+}
+
 pub fn set_token(env: &Env, token: &Address) {
     env.storage()
         .instance()

@@ -68,3 +68,14 @@ Emitted when an individual withdrawal fails.
 | 50 | 5,000,000 | 1,300,000 | 74% |
 
 ### Gas Savings Formula
+# Soroban AuraVault Batch API
+
+`batch_deposit(caller, amounts)` and `batch_withdraw(caller, shares)` accept
+1–20 operations for one authorized wallet and return one result per item. The
+vault validates each amount and the aggregate share/asset changes before it
+performs a single token transfer and commits the resulting balances. A failed
+item fails the complete invocation. `MAX_BATCH_SIZE` is 20.
+
+Batch withdrawal returns `WithdrawalQueued` without applying partial state when
+the aggregate payout reaches the configured withdrawal queue threshold; callers
+should use the existing single-withdraw queue flow for large exits.
