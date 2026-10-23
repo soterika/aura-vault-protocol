@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import VaultHealthScore from './VaultHealthScore';
 import { EmptyState } from './EmptyState';
 import PortfolioPanel from '@/components/PortfolioPanel';
+import { WalletAliasDisplay } from '@/components/WalletAliasDisplay';
+import CollapsibleSection from '@/components/CollapsibleSection';
 
 interface VaultBalance {
   usd: number;
@@ -254,7 +256,7 @@ const VaultOverviewDashboard: React.FC = () => {
             {t('dashboard.title', 'Vault Dashboard')}
           </h1>
           <p className="text-lg text-slate-600 dark:text-slate-400">
-            {walletInfo.connected ? `Connected: ${walletInfo.address?.slice(0, 10)}...` : 'Wallet not connected'}
+            {walletInfo.connected && walletInfo.address ? <>Connected: <WalletAliasDisplay address={walletInfo.address} className="text-slate-600 dark:text-slate-400" /></> : 'Wallet not connected'}
           </p>
         </div>
 
@@ -324,6 +326,7 @@ const VaultOverviewDashboard: React.FC = () => {
         </div>
 
         {/* Recent Transactions */}
+        <CollapsibleSection id="transaction-history" title={t('dashboard.recent_transactions', 'Transaction History')}>
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -383,12 +386,13 @@ const VaultOverviewDashboard: React.FC = () => {
             </table>
           </div>
         </div>
+        </CollapsibleSection>
       </div>
 
       {/* Portfolio export */}
-      <div className="mt-8">
+      <CollapsibleSection id="my-portfolio" title="My Portfolio" className="mt-8">
         <PortfolioPanel />
-      </div>
+      </CollapsibleSection>
     </div>
   );
 };

@@ -80,6 +80,7 @@ import { governanceRouter } from "./routes/governanceRoutes.js";
 import { vaultEventsRouter } from "./routes/vaultEventsRoutes.js";
 // Issue #263: Admin panel — router + middleware
 import { adminRouter } from "./routes/adminRoutes.js";
+import { federationRouter } from "./routes/federationRoutes.js";
 import { authenticateAdmin } from "./middleware/adminMiddleware.js";
 import {
   applySecurityHeaders,
@@ -253,6 +254,7 @@ app.use("/api/v1/vault", vaultEventsRouter);
 
 // ── Issue #285: Contract event stream (SSE) ───────────────────────────────────
 app.use("/api/v1/events", eventsRouter);
+app.use("/api/federation", federationRouter);
 
 // ── Issue #286: Stellar wallet challenge/verify JWT authentication ────────────
 app.use("/api/auth", stellarAuthRouter);

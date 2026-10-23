@@ -11,9 +11,11 @@ const widgetSchema = z.object({
   visible: z.boolean(),
 }).strict();
 
+const stellarAddress = /^G[A-Z2-7]{55}$/;
 const dashboardSchema = z.object({
-  dashboardWidgets: z.array(widgetSchema).max(12),
-}).strict();
+  dashboardWidgets: z.array(widgetSchema).max(12).optional(),
+  addressAliases: z.record(z.string().regex(stellarAddress), z.string().trim().min(1).max(64).nullable()).optional(),
+}).strict().refine((value) => value.dashboardWidgets !== undefined || value.addressAliases !== undefined);
 
 function userId(req: Request): string | null {
   const id = (req as Request & { user?: { sub?: unknown } }).user?.sub;
@@ -40,18 +42,22 @@ userPreferencesRouter.put("/", async (req: Request, res: Response): Promise<void
   if (!id) { res.status(401).json({ error: "Missing authenticated user" }); return; }
   const parsed = dashboardSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid dashboard widget preferences", details: parsed.error.issues });
+    res.status(400).json({ error: "Invalid user preferences", details: parsed.error.issues });
     return;
   }
   try {
+    const updates = {
+      ...(parsed.data.dashboardWidgets ? { dashboardWidgets: parsed.data.dashboardWidgets } : {}),
+      ...(parsed.data.addressAliases ? { addressAliases: parsed.data.addressAliases } : {}),
+    };
     const result = await getWritePool().query<{ preferences: Record<string, unknown> }>(
       `INSERT INTO user_preferences (user_id, preferences)
-       VALUES ($1, jsonb_build_object('dashboardWidgets', $2::jsonb))
+       VALUES ($1, $2::jsonb)
        ON CONFLICT (user_id) DO UPDATE
        SET preferences = user_preferences.preferences || EXCLUDED.preferences,
            updated_at = NOW()
        RETURNING preferences`,
-      [id, JSON.stringify(parsed.data.dashboardWidgets)],
+      [id, JSON.stringify(updates)],
     );
     res.json({ preferences: result.rows[0]?.preferences ?? {} });
   } catch (error) {

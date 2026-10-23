@@ -5,6 +5,7 @@ import { DashboardCard } from "./DashboardCard";
 import { ShareBalanceDisplay } from "@/components/ShareBalanceDisplay";
 import { ExplorerMenu } from "@/components/ExplorerMenu";
 import HelpTooltip from "@/components/HelpTooltip";
+import { WalletAliasDisplay } from "@/components/WalletAliasDisplay";
 
 export interface UserPosition {
   /** Underlying token balance redeemable by this user */
@@ -65,11 +66,10 @@ export function UserPositionCard({ position, isLoading }: UserPositionCardProps)
       title="Your Position"
       subtitle={
         position?.address ? (
-          <ExplorerMenu
-            value={position.address}
-            type="account"
-            className="text-[length:var(--text-sm)] text-[var(--color-text-muted)]"
-          />
+          <span className="inline-flex items-center gap-2">
+            <WalletAliasDisplay address={position.address} />
+            <ExplorerMenu value={position.address} type="account" className="text-[length:var(--text-sm)] text-[var(--color-text-muted)]" />
+          </span>
         ) : undefined
       }
       data-testid="user-position-card"

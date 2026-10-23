@@ -4,10 +4,34 @@ import { getLastRunStats, getRunHistory, isYieldWorkerRunning } from '../service
 import { parsePagination, paginateArray } from '../middleware/paginationMiddleware.js';
 import { INVALID_INPUT, INTERNAL_ERROR } from '../middleware/errorCodes.js';
 import { logger } from "../logger.js";
+import { getReadPool } from '../db.js';
 
 const yieldService = createYieldService();
 
 export const yieldRouter = Router();
+
+yieldRouter.get('/history', async (req: Request, res: Response): Promise<void> => {
+  const days = req.query.days === undefined ? 30 : Number(req.query.days);
+  if (!Number.isInteger(days) || days < 1 || days > 3650) {
+    res.failure(INVALID_INPUT, 'days must be an integer from 1 to 3650', 400);
+    return;
+  }
+  try {
+    const { rows } = await getReadPool().query(
+      `SELECT date_trunc('day', calc_date) AS date,
+              AVG(effective_apy)::float8 AS apy,
+              SUM(daily_yield)::float8 AS daily_yield
+       FROM yield_calculations
+       WHERE calc_date >= NOW() - ($1::int * INTERVAL '1 day')
+       GROUP BY 1 ORDER BY 1 ASC`,
+      [days],
+    );
+    res.success({ history: rows });
+  } catch (error) {
+    logger.error('[yield/history]', error);
+    res.failure(INTERNAL_ERROR, 'Yield history is temporarily unavailable', 503);
+  }
+});
 
 yieldRouter.post('/calculate', async (req: Request, res: Response): Promise<void> => {
   const { positions, sources, calcDate } = req.body as {
