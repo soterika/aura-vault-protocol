@@ -25,6 +25,7 @@ import {
   FormField,
 } from "./AccessibleFormComponents";
 import { UsdAmountConverter } from "./UsdAmountConverter";
+import TransactionProgress from "./TransactionProgress";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,6 +209,16 @@ export function WithdrawModal({
   const [gasLoading, setGasLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [txHash, setTxHash] = useState("");
+  const [progressStep, setProgressStep] = useState(2);
+  const [closeWarning, setCloseWarning] = useState(false);
+
+  const requestClose = useCallback(() => {
+    if (txStatus === "pending") {
+      setCloseWarning(true);
+      return;
+    }
+    onClose();
+  }, [onClose, txStatus]);
   const [txError, setTxError] = useState("");
   const [slippagePreset, setSlippagePreset] = useState<SlippagePreset>("0.5");
   const [customSlippage, setCustomSlippage] = useState("0.5");
@@ -334,6 +345,8 @@ export function WithdrawModal({
       }
       setQuoteError("");
       setTxStatus("pending");
+      setProgressStep(2);
+      setCloseWarning(false);
       setTxError("");
       setStep(3);
       const res = await fetch("/api/vault/withdraw", {
@@ -343,7 +356,9 @@ export function WithdrawModal({
       });
       const data = await res.json() as { hash?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Withdrawal failed");
+      setProgressStep(3);
       setTxHash(data.hash ?? `tx-${Date.now()}`);
+      setProgressStep(4);
       setTxStatus("success");
       onSuccess?.();
     } catch (err: unknown) {
@@ -372,7 +387,7 @@ export function WithdrawModal({
   return (
     <AccessibleModal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={requestClose}
       title={titleMap[step]}
       description={
         step === 1
@@ -547,6 +562,10 @@ export function WithdrawModal({
       {/* ── Step 3: Result ───────────────────────────────────────────────── */}
       {step === 3 && (
         <div className="flex flex-col items-center gap-5 py-4 text-center" data-cy="withdraw-result">
+          <div className="w-full text-left">
+            <TransactionProgress status={txStatus === "idle" ? "pending" : txStatus} currentStep={progressStep} onRetry={() => void handleSubmit()} />
+            {closeWarning && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">Your transaction is still processing. Keep this window open until it finishes.</p>}
+          </div>
           {txStatus === "pending" && (
             <>
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-50 dark:bg-orange-950">

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { DashboardCard } from "./DashboardCard";
+import VaultStatSparkline from "./VaultStatSparkline";
 
 export interface HeroCardProps {
   /** Total value locked in the vault, formatted string e.g. "$1,234,567.89" */
@@ -57,6 +58,7 @@ export function HeroCard({ tvl, sharePrice, tvlChange24h, isLoading }: HeroCardP
             {tvl}
           </p>
         )}
+        <VaultStatSparkline metric="tvl" label="Total value locked" />
         {!isLoading && tvlChange24h !== undefined && (
           <p className={`text-[length:var(--text-sm)] mt-1 ${changeColor}`} aria-label={`TVL change in last 24 hours: ${changePrefix}${tvlChange24h.toFixed(2)}%`}>
             {changePrefix}{tvlChange24h.toFixed(2)}% (24 h)
@@ -82,6 +84,7 @@ export function HeroCard({ tvl, sharePrice, tvlChange24h, isLoading }: HeroCardP
             {sharePrice}
           </p>
         )}
+        <VaultStatSparkline metric="share-price" label="Share price" />
         <p className="text-[length:var(--text-xs)] text-[var(--color-text-disabled)] mt-0.5">
           per vault share
         </p>

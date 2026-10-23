@@ -3,6 +3,7 @@
 import React from "react";
 import { DashboardCard } from "./DashboardCard";
 import HelpTooltip from "@/components/HelpTooltip";
+import VaultStatSparkline from "./VaultStatSparkline";
 
 /* ─────────────────────────────────────────────
    Shared skeleton / loading placeholder
@@ -46,6 +47,7 @@ export function ApyCard({ apy7d, isLoading }: ApyCardProps) {
           {display}
         </p>
       )}
+      <VaultStatSparkline metric="apy" label="7-day APY" />
     </DashboardCard>
   );
 }

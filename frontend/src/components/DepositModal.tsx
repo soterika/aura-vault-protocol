@@ -23,6 +23,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AccessibleModal, AmountInput, FormField, FormErrorMessage } from "./AccessibleFormComponents";
 import { UsdAmountConverter } from "./UsdAmountConverter";
+import TransactionProgress from "./TransactionProgress";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,6 +177,16 @@ export function DepositModal({
   const [txHash, setTxHash] = useState("");
   const [txError, setTxError] = useState("");
   const [newShareBalance, setNewShareBalance] = useState("");
+  const [progressStep, setProgressStep] = useState(2);
+  const [closeWarning, setCloseWarning] = useState(false);
+
+  const requestClose = useCallback(() => {
+    if (txStatus === "pending") {
+      setCloseWarning(true);
+      return;
+    }
+    onClose();
+  }, [onClose, txStatus]);
 
   // Reset when closed
   useEffect(() => {
@@ -189,6 +200,8 @@ export function DepositModal({
         setTxHash("");
         setTxError("");
         setNewShareBalance("");
+        setProgressStep(2);
+        setCloseWarning(false);
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -248,6 +261,8 @@ export function DepositModal({
   async function handleSubmit() {
     setTxStatus("pending");
     setTxError("");
+    setProgressStep(2);
+    setCloseWarning(false);
     setStep(3);
     try {
       const res = await fetch("/api/vault/deposit", {
@@ -257,9 +272,11 @@ export function DepositModal({
       });
       const data = await res.json() as { hash?: string; error?: string; newShareBalance?: string };
       if (!res.ok) throw new Error(data.error ?? "Deposit failed");
+      setProgressStep(3);
       setTxHash(data.hash ?? `tx-${Date.now()}`);
       const newBalance = data.newShareBalance ?? estimatedShares;
       setNewShareBalance(newBalance);
+      setProgressStep(4);
       setTxStatus("success");
       // Invalidate portfolio SWR cache so the panel refreshes automatically (#886)
       if (address) invalidatePortfolioCache(address);
@@ -279,7 +296,7 @@ export function DepositModal({
   return (
     <AccessibleModal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={requestClose}
       title={titleMap[step]}
       description={
         step === 1
@@ -396,6 +413,10 @@ export function DepositModal({
       {/* ── Step 3: Result ───────────────────────────────────────────────── */}
       {step === 3 && (
         <div className="flex flex-col items-center gap-5 py-4 text-center" data-cy="deposit-result">
+          <div className="w-full text-left">
+            <TransactionProgress status={txStatus === "idle" ? "pending" : txStatus} currentStep={progressStep} onRetry={() => void handleSubmit()} />
+            {closeWarning && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">Your transaction is still processing. Keep this window open until it finishes.</p>}
+          </div>
           {txStatus === "pending" && (
             <>
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950">
