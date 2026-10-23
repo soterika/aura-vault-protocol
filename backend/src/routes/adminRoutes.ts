@@ -22,6 +22,7 @@ import { queueMetrics } from '../queue.js';
 import { getVaultStats } from '../services/vaultStatsService.js';
 import { auditRepository } from '../modules/audit/audit.repository.js';
 import { logger } from '../logger.js';
+import { paginatedResponse } from '../dto/ApiResponseDto.js';
 
 export const adminRouter = Router();
 
@@ -172,18 +173,35 @@ adminRouter.get('/queue', async (_req: Request, res: Response): Promise<void> =>
 
 // ---------------------------------------------------------------------------
 // GET /api/admin/audit-logs   — Issue #263
-// Query params: actor, entityType, entityId, from, to, limit, offset
+// Query params: action, userId, from, to, page, pageSize
 // ---------------------------------------------------------------------------
 
 const auditLogsQuerySchema = z.object({
-  actor:      z.string().optional(),
-  entityType: z.string().optional(),
-  entityId:   z.string().optional(),
-  from:       z.string().datetime({ offset: true }).optional(),
-  to:         z.string().datetime({ offset: true }).optional(),
-  limit:      z.coerce.number().int().min(1).max(1000).default(50),
-  offset:     z.coerce.number().int().min(0).default(0),
+  action: z.string().trim().min(1).max(100).optional(),
+  userId: z.string().trim().min(1).max(255).optional(),
+  actor: z.string().trim().min(1).max(255).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  // Backward-compatible pagination parameters.
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
 });
+
+function redactAuditIp(value: unknown, key = ''): unknown {
+  if (typeof value === 'string' && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(value) && /ip/i.test(key)) {
+    return `${value.split('.').slice(0, 3).join('.')}.0`;
+  }
+  if (typeof value === 'string' && value.includes(':') && /ip/i.test(key)) {
+    return `${value.split(':').slice(0, 2).join(':')}::`;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactAuditIp(item, key));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, redactAuditIp(child, childKey)]));
+  }
+  return value;
+}
 
 adminRouter.get('/audit-logs', async (req: Request, res: Response): Promise<void> => {
   const parsed = auditLogsQuerySchema.safeParse(req.query);
@@ -192,30 +210,36 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response): Promise<void
     return;
   }
 
-  const { actor, entityType, entityId, from, to, limit, offset } = parsed.data;
+  const { action, userId, actor, from, to, page, pageSize } = parsed.data;
+  const effectivePageSize = parsed.data.limit ?? pageSize;
+  const effectiveOffset = parsed.data.offset ?? (page - 1) * effectivePageSize;
+  const effectivePage = Math.floor(effectiveOffset / effectivePageSize) + 1;
 
   try {
     const result = await auditRepository.query({
-      actor,
-      entityType,
-      entityId,
+      actor: userId ?? actor,
+      action,
       from:   from  ? new Date(from)  : undefined,
       to:     to    ? new Date(to)    : undefined,
-      limit,
-      offset,
+      limit: effectivePageSize,
+      offset: effectiveOffset,
     });
 
-    res.json({
-      logs: result.logs.map((log) => ({
+    const user = (req as any).user as { sub?: string } | undefined;
+    await auditRepository.create({
+      actor: user?.sub ?? 'unknown',
+      entityType: 'audit_logs',
+      entityId: '*',
+      action: 'AUDIT_LOG_ACCESS',
+      metadata: { filters: { action, userId: userId ?? actor, from, to }, page: effectivePage, pageSize: effectivePageSize },
+    }).catch((error) => logger.error('[admin/audit-logs] failed to record access audit', { error: String(error) }));
+
+    res.json(paginatedResponse(result.logs.map((log) => ({
         ...log,
-        // bigint → string for JSON serialisation
         id: String(log.id),
-      })),
-      total:  result.total,
-      limit,
-      offset,
-      timestamp: new Date().toISOString(),
-    });
+        entityId: redactAuditIp(log.entityId, 'ipAddress') as string,
+        metadata: redactAuditIp(log.metadata) as Record<string, unknown>,
+      })), effectivePage, effectivePageSize, result.total));
   } catch (err) {
     logger.error('[admin/audit-logs] error', { err: String(err) });
     res.status(500).json({ error: 'Failed to fetch audit logs' });

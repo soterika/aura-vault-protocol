@@ -43,6 +43,7 @@ export interface AuditQueryFilter {
   actor?: string;
   entityType?: string;
   entityId?: string;
+  action?: string;
   /** Inclusive lower bound on `created_at`. */
   from?: Date;
   /** Inclusive upper bound on `created_at`. */
@@ -190,6 +191,10 @@ export class AuditRepository {
     if (filter.entityId !== undefined) {
       conditions.push(`entity_id = $${paramIdx++}`);
       params.push(filter.entityId);
+    }
+    if (filter.action !== undefined) {
+      conditions.push(`action = $${paramIdx++}`);
+      params.push(filter.action);
     }
     if (filter.from !== undefined) {
       conditions.push(`created_at >= $${paramIdx++}`);

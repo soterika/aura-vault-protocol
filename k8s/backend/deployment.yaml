@@ -184,7 +184,7 @@ spec:
           # (6 failures × 10s period = 60s maximum startup window)
           startupProbe:
             httpGet:
-              path: /api/health
+              path: /api/health/live
               port: http
               scheme: HTTP
             initialDelaySeconds: 10
@@ -195,7 +195,7 @@ spec:
           # Liveness probe: checked every 30s; 3 consecutive failures restart the pod
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /api/health/live
               port: http
               scheme: HTTP
             initialDelaySeconds: 0
@@ -203,10 +203,10 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
             successThreshold: 1
-          # Readiness probe: /api/ready performs Redis + DB connectivity checks
+          # Readiness probe checks PostgreSQL, Redis, Horizon, BullMQ, and cache warmup.
           readinessProbe:
             httpGet:
-              path: /api/ready
+              path: /api/health/ready
               port: http
               scheme: HTTP
             initialDelaySeconds: 0
