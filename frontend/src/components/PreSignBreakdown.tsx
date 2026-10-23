@@ -75,18 +75,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const FEE_STATS_URL = `${API_BASE}/api/v1/stellar/fee-stats`;
 const GAS_ESTIMATE_URL = `${API_BASE}/api/v1/gas/estimate`;
 
-/** XLM spot price used to convert fees to USD (stub — replace with live feed). */
-const XLM_USD_PRICE = 0.12;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function xlmToUsd(xlm: string): string {
-  const n = parseFloat(xlm);
-  if (!Number.isFinite(n)) return "$0.000000";
-  return `$${(n * XLM_USD_PRICE).toFixed(6)}`;
-}
 
 function formatAmount(raw: string, decimals = 4): string {
   const n = parseFloat(raw);
@@ -213,6 +204,7 @@ export default function PreSignBreakdown({
   const [feeStats, setFeeStats] = useState<StellarFeeStats | null>(null);
   const [feeLoading, setFeeLoading] = useState(true);
   const [feeError, setFeeError] = useState(false);
+  const [xlmUsdPrice, setXlmUsdPrice] = useState<number | null>(null);
 
   // Fetch fee stats from backend — try /api/v1/gas/estimate first (#885), then
   // fall back to /api/v1/stellar/fee-stats for the full Stellar fee stats shape.
@@ -274,6 +266,25 @@ export default function PreSignBreakdown({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const refreshPrice = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/v1/gas/usd-price?asset=XLM`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Price unavailable");
+        const body = await response.json();
+        const price = Number(body.data?.priceUSD);
+        if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid price");
+        if (!cancelled) setXlmUsdPrice(price);
+      } catch {
+        if (!cancelled) setXlmUsdPrice(null);
+      }
+    };
+    void refreshPrice();
+    const timer = window.setInterval(() => void refreshPrice(), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
   const label = type === "deposit" ? "Deposit" : "Withdrawal";
   const outputLabel = type === "deposit" ? "Shares received" : "XLM redeemed";
   const outputUnit = type === "deposit" ? "AVS" : "XLM";
@@ -282,7 +293,7 @@ export default function PreSignBreakdown({
   const expectedOutput = computeExpectedOutput(type, amount, sharePrice, protocolFeeRate);
 
   const stdFeeXlm = feeStats?.fee.standard.xlm ?? null;
-  const stdFeeUsd = stdFeeXlm ? xlmToUsd(stdFeeXlm) : null;
+  const stdFeeUsd = stdFeeXlm && xlmUsdPrice !== null ? `~$${(Number(stdFeeXlm) * xlmUsdPrice).toFixed(6)}` : null;
 
   return (
     <div data-cy="pre-sign-breakdown" className="flex flex-col gap-4">
@@ -324,7 +335,7 @@ export default function PreSignBreakdown({
         <Row
           label="Stellar network fee"
           value={stdFeeXlm ? `${stdFeeXlm} XLM` : feeError ? "~0.0000100 XLM" : undefined}
-          sub={stdFeeUsd ? `≈ ${stdFeeUsd}` : feeError ? "≈ $0.0000012" : undefined}
+          sub={stdFeeUsd ?? "USD price unavailable"}
           loading={feeLoading && !feeError}
           bold
           testId="breakdown-network-fee"

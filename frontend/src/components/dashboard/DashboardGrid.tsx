@@ -4,7 +4,12 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { HeroCard } from "./HeroCard";
 import { ApyCard, DepositorCountCard, LastHarvestCard } from "./MetricCards";
 import { UserPositionCard, type UserPosition } from "./UserPositionCard";
-import SharePriceChart from "@/components/SharePriceChart";
+import dynamic from "next/dynamic";
+
+const SharePriceChart = dynamic(() => import("@/components/SharePriceChart"), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" aria-label="Loading share price chart" />,
+});
 
 /* ─────────────────────────────────────────────
    Data shapes

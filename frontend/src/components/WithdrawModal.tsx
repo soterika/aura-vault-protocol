@@ -25,6 +25,7 @@ import {
   FormField,
 } from "./AccessibleFormComponents";
 import { UsdAmountConverter } from "./UsdAmountConverter";
+import StellarBaseFee from "./StellarBaseFee";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -504,6 +505,7 @@ export function WithdrawModal({
 
           {/* Gas estimate */}
           <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 px-4 py-3 space-y-2">
+            <StellarBaseFee />
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
               Estimated Gas Fee
             </p>
