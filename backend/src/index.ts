@@ -33,6 +33,7 @@ import { analyticsRouter } from "./routes/analyticsRoutes.js";
 import { apyRouter } from "./routes/apyRoutes.js";
 // Issue #285: Contract event stream (SSE)
 import { eventsRouter } from "./routes/eventsRoutes.js";
+import { apiKeyRouter } from "./routes/apiKeyRoutes.js";
 // Issue #286: Stellar wallet JWT authentication
 import { stellarAuthRouter } from "./routes/stellarAuthRoutes.js";
 // Issue #288: BullMQ vault transaction queue
@@ -223,6 +224,7 @@ app.use("/api/docs", swaggerRouter);
 
 // ── Issue #285: Contract event stream (SSE) ───────────────────────────────────
 app.use("/api/v1/events", eventsRouter);
+app.use("/api/v1/api-keys", apiKeyRouter);
 
 // ── Issue #286: Stellar wallet challenge/verify JWT authentication ────────────
 app.use("/api/auth", stellarAuthRouter);

@@ -366,6 +366,10 @@ pub trait AuraVaultTrait {
     /// - `address` — The Stellar account address to query.
     fn balance_of(env: Env, address: Address) -> i128;
 
+    /// Transfer vault shares and settle both holders' yield checkpoints first.
+    /// The sender must authorize the transfer; underlying assets remain in the vault.
+    fn transfer_shares(env: Env, from: Address, to: Address, amount: i128) -> Result<(), VaultError>;
+
     /// Upgrade the contract's Wasm binary.
     ///
     /// Admin-only. Increments the contract version, replaces the on-chain Wasm

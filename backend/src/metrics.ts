@@ -43,6 +43,8 @@ let queueDepth = 0;
 let cacheHits = 0;
 let cacheMisses = 0;
 let contractCallErrors = 0;
+let horizonRateLimitTotal = 0;
+let horizonRateLimitTimestamps: number[] = [];
 
 // Lifecycle timestamps
 const processStartTime = Date.now();
@@ -110,6 +112,12 @@ export function incrementContractCallErrors(): void {
   contractCallErrors++;
 }
 
+/** Record Horizon throttling for the event listener and five-minute alert. */
+export function recordHorizonRateLimit(at = Date.now()): void {
+  horizonRateLimitTotal++;
+  horizonRateLimitTimestamps.push(at);
+}
+
 // ─── Prometheus text format renderer ─────────────────────────────────────────
 
 function escapeLabelValue(v: string): string {
@@ -133,6 +141,8 @@ function keyToLabels(key: string): LabelSet {
 
 export function renderPrometheusText(): string {
   const lines: string[] = [];
+  const rateLimitCutoff = Date.now() - 5 * 60_000;
+  horizonRateLimitTimestamps = horizonRateLimitTimestamps.filter((timestamp) => timestamp >= rateLimitCutoff);
 
   // ── http_requests_total ───────────────────────────────────────────────
   lines.push("# HELP http_requests_total Total number of HTTP requests by method, route, and status.");
@@ -183,6 +193,14 @@ export function renderPrometheusText(): string {
   lines.push("# HELP contract_call_errors_total Total number of Soroban contract call errors.");
   lines.push("# TYPE contract_call_errors_total counter");
   lines.push(`contract_call_errors_total ${contractCallErrors}`);
+
+  lines.push("");
+  lines.push("# HELP horizon_rate_limit_total Total Horizon HTTP 429 responses.");
+  lines.push("# TYPE horizon_rate_limit_total counter");
+  lines.push(`horizon_rate_limit_total ${horizonRateLimitTotal}`);
+  lines.push("# HELP horizon_rate_limit_events_5m Horizon HTTP 429 responses in the last five minutes.");
+  lines.push("# TYPE horizon_rate_limit_events_5m gauge");
+  lines.push(`horizon_rate_limit_events_5m ${horizonRateLimitTimestamps.length}`);
 
   // ── process / lifecycle metrics ───────────────────────────────────────
   lines.push("");

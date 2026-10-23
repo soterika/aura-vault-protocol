@@ -83,6 +83,21 @@ fn test_fresh_vault_balance_of_unknown_address_is_zero() {
     assert_eq!(vault.balance_of(&stranger), 0);
 }
 
+#[test]
+fn test_transfer_shares_updates_and_keeps_recipient_balance_live() {
+    let (env, vault, admin, token) = setup();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token, &admin, &sender, 1_000);
+    vault.deposit(&sender, &1_000);
+
+    vault.transfer_shares(&sender, &recipient, &400);
+
+    assert_eq!(vault.balance_of(&sender), 600);
+    assert_eq!(vault.balance_of(&recipient), 400);
+    assert_eq!(vault.total_shares(), 1_000);
+}
+
 // ---------------------------------------------------------------------------
 // 2. Deposit — error paths
 // ---------------------------------------------------------------------------
