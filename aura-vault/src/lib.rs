@@ -34,6 +34,7 @@ mod errors;
 mod fee;
 mod governance;
 mod interface;
+mod share_math;
 mod storage;
 
 pub use errors::VaultError;
