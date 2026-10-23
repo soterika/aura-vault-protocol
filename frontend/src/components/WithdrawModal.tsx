@@ -427,6 +427,10 @@ export function WithdrawModal({
             )}
           </FormField>
 
+          <button type="button" onClick={() => { setShares(shareBalance); setSharesError(""); }} className="-mt-3 self-end rounded-md border border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950" aria-label={`Use maximum available share balance ${shareBalance}`}>
+            Max
+          </button>
+
           <details className="rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-700">
             <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-300">Advanced settings</summary>
             <div className="mt-3 flex flex-wrap items-end gap-3">

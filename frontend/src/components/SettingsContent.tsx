@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useWidgetLayout } from "@/lib/useWidgetLayout";
+import { AppearanceSettings } from "@/components/AppearanceSettings";
 import "@/lib/i18n";
 
 interface Settings {
@@ -81,6 +82,7 @@ export default function SettingsContent() {
               {t("settings.appearance.description")}
             </p>
             <ThemeToggle />
+            <AppearanceSettings />
           </div>
         </section>
 

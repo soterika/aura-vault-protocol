@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { ChevronDown, Wallet, ExternalLink, RefreshCw } from "lucide-react";
 import { useOnboarding } from "@/components/OnboardingChecklist";
+import { WalletDisconnectControl } from "@/components/WalletDisconnectControl";
 import {
   WalletSelectionModal,
   type SupportedWalletId,
@@ -451,13 +452,7 @@ export default function WalletConnect() {
             {wallet.network || "TESTNET"}
           </span>
         </div>
-        <button
-          data-testid="disconnect-wallet-btn"
-          type="button"
-          onClick={disconnectWallet}
-          className="mt-1 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
-        >
-          Disconnect
+        <WalletDisconnectControl address={wallet.address} onConfirm={disconnectWallet} />
   }, [setConnected, setError, setLoading]);
   const disconnect = useCallback(() => {
     setDisconnected();

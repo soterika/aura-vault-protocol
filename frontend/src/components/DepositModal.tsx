@@ -28,6 +28,7 @@ import { UsdAmountConverter } from "./UsdAmountConverter";
 
 type DepositStep = 1 | 2 | 3;
 type TxStatus = "idle" | "pending" | "success" | "error";
+const DEPOSIT_FEE_BUFFER = 0.001;
 
 export interface DepositModalProps {
   isOpen: boolean;
@@ -330,6 +331,14 @@ export function DepositModal({
               />
             )}
           </FormField>
+
+          <button type="button" onClick={() => {
+            const max = Math.max(0, Number.parseFloat(balance) - DEPOSIT_FEE_BUFFER);
+            setAmount(Number.isFinite(max) ? max.toFixed(2) : "0.00");
+            setAmountError("");
+          }} className="-mt-3 self-end rounded-md border border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950" aria-label="Use maximum deposit amount after reserving the 0.001 fee buffer">
+            Max
+          </button>
 
           {/* Quick-select percentage buttons */}
           <div className="flex gap-2">
