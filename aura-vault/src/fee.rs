@@ -1,8 +1,8 @@
 use crate::VaultError;
 
 /// Performance fee in basis points (0-20%, i.e., 0-2000 bps)
-pub const MIN_PERF_FEE_BPS: u32 = 0;     // 0%
-pub const MAX_PERF_FEE_BPS: u32 = 2000;  // 20%
+pub const MIN_PERF_FEE_BPS: u32 = 0; // 0%
+pub const MAX_PERF_FEE_BPS: u32 = 2000; // 20%
 
 /// Management fee in basis points annually (0-1%, i.e., 0-100 bps)
 pub const MIN_MGMT_FEE_BPS: u32 = 0; // 0%
@@ -12,7 +12,13 @@ const BASIS_POINTS: i128 = 10_000;
 
 /// Calculate performance fee on yield
 pub fn calc_perf_fee(yield_amount: i128, perf_fee_bps: u32) -> Result<i128, VaultError> {
-    let fee_i128 = (perf_fee_bps as i128) * yield_amount / BASIS_POINTS;
+    if yield_amount < 0 || !(MIN_PERF_FEE_BPS..=MAX_PERF_FEE_BPS).contains(&perf_fee_bps) {
+        return Err(VaultError::InvalidAddress);
+    }
+    let fee_i128 = (perf_fee_bps as i128)
+        .checked_mul(yield_amount)
+        .ok_or(VaultError::MathOverflow)?
+        / BASIS_POINTS;
     Ok(fee_i128)
 }
 

@@ -165,7 +165,13 @@ vaultRouter.get("/stats", async (req: Request, res: Response): Promise<void> => 
   }
 
   try {
-    const { stats, cached, cacheAgeSecs } = await getVaultStats(vaultContractId);
+    const { stats, cached, cacheAgeSecs, stale } = await getVaultStats(vaultContractId);
+
+    if (stale) {
+      res.set("X-Cache", "STALE");
+    } else {
+      res.set("X-Cache", cached ? "HIT" : "MISS");
+    }
 
     // Set Cache-Control so CDN and browsers can cache for up to 30 seconds
     res.set(
@@ -178,6 +184,7 @@ vaultRouter.get("/stats", async (req: Request, res: Response): Promise<void> => 
       successResponse({
         ...stats,
         cached,
+        ...(stale && { stale: true }),
         cache_age_secs: cacheAgeSecs,
         fetched_at: fetchedAt,
         ...(vaultId && { vault_id: vaultId }),

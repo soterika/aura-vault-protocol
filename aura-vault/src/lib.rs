@@ -1871,6 +1871,16 @@ impl AuraVault {
                 (Symbol::new(&env, "harvest"), caller.clone(), yield_amount),
                 (yield_after_fee, fee_amount, new_total),
             );
+            if fee_amount > 0 {
+                let recipient = storage::get_treasury(&env)
+                    .or_else(|| get_admin(&env));
+                if let Some(recipient) = recipient {
+                    env.events().publish(
+                        (Symbol::new(&env, "fee_collected"),),
+                        (recipient, fee_amount, perf_fee_bps),
+                    );
+                }
+            }
 
             bump_instance(&env);
 
@@ -2773,6 +2783,7 @@ impl AuraVault {
                 return Err(VaultError::UpgradeUnauthorized);
             }
             admin.require_auth();
+            fee::validate_fees(perf_fee_bps, mgmt_fee_bps)?;
             storage::set_perf_fee_bps(&env, perf_fee_bps);
             storage::set_mgmt_fee_bps(&env, mgmt_fee_bps);
             bump_instance(&env);
@@ -2879,6 +2890,9 @@ impl AuraVault {
     /// Set or update the TVL cap. `cap = 0` disables the cap (unlimited deposits).
     pub fn set_tvl_cap(env: Env, admin: Address, cap: i128) -> Result<(), VaultError> {
         with_reentrancy_guard(&env, || {
+            if cap < 0 {
+                return Err(VaultError::InvalidAddress);
+            }
             let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
             if stored_admin != admin {
                 return Err(VaultError::UpgradeUnauthorized);

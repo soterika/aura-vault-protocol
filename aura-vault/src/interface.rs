@@ -642,6 +642,9 @@ pub trait AuraVaultTrait {
     /// - `proposal_id` — ID of the proposal to query.
     fn proposal_status(env: Env, proposal_id: u64) -> Option<String>;
 
+    /// Permissionlessly persist proposal expiry after its deadline and emit its lifecycle event.
+    fn expire_proposal(env: Env, proposal_id: u64) -> Result<bool, VaultError>;
+
     /// Return the human-readable English message for a given [`VaultError`]
     /// code, or `None` if the code does not correspond to a known variant.
     ///
