@@ -430,6 +430,23 @@ pub(crate) fn validate_oracle_price(
     Ok(())
 }
 
+/// Verify liquid plus strategy-managed assets against vault liabilities and
+/// accrued fees, allowing configured strategies without weakening the balance guard.
+fn assert_managed_balance(env: &Env, token: &token::Client) -> Result<(), VaultError> {
+    let actual = strategy::managed_balance(env, token)?;
+    let expected = get_total_deposited(env)
+        .checked_add(storage::get_total_fee_collected(env))
+        .ok_or(VaultError::MathOverflow)?;
+    if actual != expected {
+        env.events().publish(
+            (Symbol::new(env, "suspicious"),),
+            (Symbol::new(env, "balance_mismatch"), actual, expected),
+        );
+        return Err(VaultError::BalanceMismatch);
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Post-transfer balance assertions
 // ---------------------------------------------------------------------------
@@ -702,6 +719,7 @@ impl AuraVault {
             let pre_deposit_balance = token.balance(&vault_addr);
             token.transfer(&caller, &vault_addr, &amount);
             assert_incoming_transfer(&token, &vault_addr, pre_deposit_balance, amount)?;
+            strategy::deposit(&env, &token, amount)?;
 
             // Effects: write state after successful transfer
             let old_balance = get_balance(&env, &caller);
@@ -1315,6 +1333,11 @@ impl AuraVault {
         })
     }
 
+    /// Atomically redeem up to `MAX_BATCH_SIZE` share amounts for one caller.
+    pub fn batch_withdraw(env: Env, caller: Address, shares: Vec<i128>) -> Result<Vec<i128>, VaultError> {
+        with_reentrancy_guard(&env, || batch::withdraw(&env, &caller, shares))
+    }
+
     // -----------------------------------------------------------------------
     // emergency_withdraw — exit path available only while vault is paused
     // -----------------------------------------------------------------------
@@ -1843,6 +1866,7 @@ impl AuraVault {
             let pre_harvest_balance = token.balance(&vault_addr);
             token.transfer(&caller, &vault_addr, &yield_amount);
             assert_incoming_transfer(&token, &vault_addr, pre_harvest_balance, yield_amount)?;
+            keeper::record_harvest(&env, &caller, yield_amount)?;
 
             // Effects: increase total deposited with net yield; accumulate fees
             set_total_deposited(&env, new_total);
@@ -1876,6 +1900,62 @@ impl AuraVault {
             bump_instance(&env);
 
             Ok(())
+        })
+    }
+
+    /// Harvest yield directly from the configured strategy contract.
+    pub fn harvest_strategy(env: Env, caller: Address) -> Result<i128, VaultError> {
+        with_reentrancy_guard(&env, || {
+            caller.require_auth();
+            if get_admin(&env).is_none() { return Err(VaultError::NotInitialized); }
+            if storage_is_paused(&env) { return Err(VaultError::VaultPaused); }
+            if !has_role(&env, &caller, ROLE_KEEPER) && !has_role(&env, &caller, ROLE_ADMIN) {
+                return Err(VaultError::Unauthorized);
+            }
+            let cooldown = get_harvest_cooldown_secs(&env);
+            let last = get_last_harvest_time(&env);
+            if cooldown > 0 && last > 0
+                && env.ledger().timestamp().saturating_sub(last) < cooldown
+            {
+                return Err(VaultError::HarvestCooldown);
+            }
+            let token_address = get_token(&env).ok_or(VaultError::NotInitialized)?;
+            let token = token::Client::new(&env, &token_address);
+            let vault = env.current_contract_address();
+            let before = token.balance(&vault);
+            let gross = strategy::harvest(&env)?;
+            if gross <= 0 { return Err(VaultError::ZeroAmount); }
+            let received = token.balance(&vault).checked_sub(before).ok_or(VaultError::TransferFailed)?;
+            if received != gross { return Err(VaultError::TransferFailed); }
+
+            let fee_bps = storage::get_perf_fee_bps(&env);
+            let fee_amount = fee::calc_perf_fee(gross, fee_bps)?;
+            let net = gross.checked_sub(fee_amount).ok_or(VaultError::MathOverflow)?;
+            let old_assets = get_total_deposited(&env);
+            let new_assets = old_assets.checked_add(net).ok_or(VaultError::MathOverflow)?;
+            let old_fees = storage::get_total_fee_collected(&env);
+            let new_fees = old_fees.checked_add(fee_amount).ok_or(VaultError::MathOverflow)?;
+            let expected = new_assets.checked_add(new_fees).ok_or(VaultError::MathOverflow)?;
+            if strategy::managed_balance(&env, &token)? != expected {
+                return Err(VaultError::BalanceMismatch);
+            }
+
+            let limit = storage::get_price_movement_limit(&env);
+            if limit > 0 && old_assets > 0 {
+                let delta = net.checked_mul(10_000).ok_or(VaultError::MathOverflow)?;
+                let maximum = old_assets.checked_mul(limit as i128).ok_or(VaultError::MathOverflow)?;
+                if delta > maximum { return Err(VaultError::CircuitBreakerTripped); }
+            }
+            set_total_deposited(&env, new_assets);
+            storage::set_total_fee_collected(&env, new_fees);
+            set_last_harvest_time(&env, env.ledger().timestamp());
+            keeper::record_harvest(&env, &caller, gross)?;
+            env.events().publish(
+                (Symbol::new(&env, "strategy_harvest"), caller),
+                (gross, net, fee_amount, new_assets),
+            );
+            bump_instance(&env);
+            Ok(gross)
         })
     }
 
@@ -2084,7 +2164,7 @@ impl AuraVault {
             // --- Flash-loan guard on underlying token ---
             let token_addr = get_token(&env).ok_or(VaultError::NotInitialized)?;
             let token = token::Client::new(&env, &token_addr);
-            let balance_before = token.balance(&env.current_contract_address());
+            assert_managed_balance(&env, &token)?;
             let total_deposited = get_total_deposited(&env);
             if balance_before != total_deposited {
                 env.events().publish(
@@ -2217,7 +2297,7 @@ impl AuraVault {
             // Flash-loan guard on underlying token
             let underlying_addr = get_token(&env).ok_or(VaultError::NotInitialized)?;
             let underlying = token::Client::new(&env, &underlying_addr);
-            let balance_before = underlying.balance(&env.current_contract_address());
+            assert_managed_balance(&env, &underlying)?;
             let total_deposited = get_total_deposited(&env);
             if balance_before != total_deposited {
                 env.events().publish(
@@ -2873,6 +2953,70 @@ impl AuraVault {
         storage::get_total_fee_collected(&env)
     }
 
+    /// Configure the trusted price oracle used by guarded swap deposits.
+    pub fn set_oracle_address(env: Env, admin: Address, oracle: Address) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            if get_admin(&env).ok_or(VaultError::NotInitialized)? != admin {
+                return Err(VaultError::UpgradeUnauthorized);
+            }
+            admin.require_auth();
+            storage::set_oracle_address(&env, &oracle);
+            bump_instance(&env);
+            Ok(())
+        })
+    }
+
+    /// Set the maximum accepted age of oracle prices, between one second and one day.
+    pub fn set_oracle_max_age(env: Env, admin: Address, max_age_secs: u64) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            if get_admin(&env).ok_or(VaultError::NotInitialized)? != admin {
+                return Err(VaultError::UpgradeUnauthorized);
+            }
+            if max_age_secs == 0 || max_age_secs > 86_400 {
+                return Err(VaultError::InvalidAddress);
+            }
+            admin.require_auth();
+            storage::set_oracle_max_age(&env, max_age_secs);
+            bump_instance(&env);
+            Ok(())
+        })
+    }
+
+    /// Return the configured price oracle address, if one has been set.
+    pub fn get_oracle_address(env: Env) -> Option<Address> {
+        storage::get_oracle_address(&env)
+    }
+
+    /// Configure the swap router, maximum slippage, TWAP lookback, and spot deviation.
+    pub fn set_swap_config(
+        env: Env,
+        admin: Address,
+        router: Address,
+        max_slippage_bps: u32,
+        twap_window_secs: u64,
+        max_deviation_bps: u32,
+    ) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            if get_admin(&env).ok_or(VaultError::NotInitialized)? != admin {
+                return Err(VaultError::UpgradeUnauthorized);
+            }
+            if max_slippage_bps > 2_000
+                || !(60..=86_400).contains(&twap_window_secs)
+                || max_deviation_bps == 0
+                || max_deviation_bps > 500
+            {
+                return Err(VaultError::InvalidAddress);
+            }
+            admin.require_auth();
+            storage::set_swap_router(&env, &router);
+            storage::set_max_swap_slippage_bps(&env, max_slippage_bps);
+            storage::set_twap_window_secs(&env, twap_window_secs);
+            storage::set_max_oracle_deviation_bps(&env, max_deviation_bps);
+            bump_instance(&env);
+            Ok(())
+        })
+    }
+
     // -----------------------------------------------------------------------
     // TVL cap — admin-only (Issue #467)
     // -----------------------------------------------------------------------
@@ -3475,6 +3619,17 @@ impl AuraVault {
     ) -> Result<u64, VaultError> {
         with_reentrancy_guard(&env, || {
             create_proposal(&env, proposer, ProposalType::UpdateParameter(name, value))
+        })
+    }
+
+    /// Propose an active strategy change through the multi-signer governance flow.
+    pub fn propose_strategy_update(
+        env: Env,
+        proposer: Address,
+        strategy_address: Address,
+    ) -> Result<u64, VaultError> {
+        with_reentrancy_guard(&env, || {
+            propose_operation(&env, proposer, OpType::SetStrategy(strategy_address))
         })
     }
 

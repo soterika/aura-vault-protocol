@@ -151,6 +151,12 @@ pub trait AuraVaultTrait {
         shares: i128,
     ) -> Result<(), VaultError>;
 
+    /// Swap a non-underlying input token through the configured router, validate it against fresh spot/TWAP oracle prices, then mint shares.
+    fn deposit_with_swap(env: Env, caller: Address, token_in: Address, amount_in: i128, min_shares: i128) -> Result<i128, VaultError>;
+
+    /// Batch deposit up to 20 individual amounts with one token transfer.
+    fn batch_deposit(env: Env, caller: Address, amounts: Vec<i128>) -> Result<Vec<i128>, VaultError>;
+
     /// Burn vault shares and redeem the proportional underlying tokens.
     ///
     /// Calculates the redemption amount using:
@@ -860,6 +866,9 @@ pub trait AuraVaultTrait {
     /// - [`VaultError::NotInitialized`] — vault not yet initialised.
     /// - [`VaultError::UpgradeUnauthorized`] — caller is not the admin.
     fn set_oracle_max_age(env: Env, admin: Address, max_age_secs: u64) -> Result<(), VaultError>;
+
+    /// Configure the trusted router and oracle protection thresholds.
+    fn set_swap_config(env: Env, admin: Address, router: Address, max_slippage_bps: u32, twap_window_secs: u64, max_deviation_bps: u32) -> Result<(), VaultError>;
 
     /// Returns the configured oracle contract address, or `None` if not set.
     ///
