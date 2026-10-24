@@ -12,6 +12,7 @@ export interface Transaction {
   date: string;
   type: Exclude<TxType, "all">;
   amount: string;
+  shares?: string;
   status: Exclude<TxStatus, "all">;
 }
 
@@ -25,6 +26,23 @@ export interface TransactionHistoryProps {
 
 const PAGE_SIZE = 25;
 
+function exportTransactions(transactions: Transaction[], address: string, format: "csv" | "json", from: string, to: string) {
+  const rangeStart = from || "all";
+  const rangeEnd = to || "all";
+  const safeAddress = address.slice(0, 8);
+  const rows = transactions.map((tx) => ({ date: tx.date, type: tx.type, amount: tx.amount, shares: tx.shares ?? "", txHash: tx.hash }));
+  const content = format === "json"
+    ? JSON.stringify(rows, null, 2)
+    : ["date,type,amount,shares,txHash", ...rows.map((row) => [row.date, row.type, row.amount, row.shares, row.txHash].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))].join("\r\n");
+  const blob = new Blob([content], { type: format === "json" ? "application/json" : "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeAddress}_${rangeStart}_${rangeEnd}.${format}`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function TransactionHistory({
   transactions,
   walletAddress = "",
@@ -34,8 +52,10 @@ export default function TransactionHistory({
   const resolvedNetwork = network ?? (explorerBase?.includes("mainnet") ? "mainnet" : resolveNetwork());
   const [type, setType] = useState<TxType>("all");
   const [status, setStatus] = useState<TxStatus>("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const defaultTo = new Date().toISOString().slice(0, 10);
+  const defaultFrom = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(defaultTo);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -59,14 +79,11 @@ export default function TransactionHistory({
     <section className="space-y-4" aria-labelledby="transaction-history-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="transaction-history-title" className="text-xl font-semibold">Transaction history</h2>
-        <button
-          type="button"
-          onClick={() => downloadTransactionPdf({ transactions: filtered, address: walletAddress, dateRange })}
-          disabled={filtered.length === 0}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-900"
-        >
-          Export PDF ({filtered.length})
-        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => exportTransactions(filtered, walletAddress, "csv", from, to)} disabled={!filtered.length} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900">Export CSV</button>
+          <button type="button" onClick={() => exportTransactions(filtered, walletAddress, "json", from, to)} disabled={!filtered.length} className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50">Export JSON</button>
+          <button type="button" onClick={() => downloadTransactionPdf({ transactions: filtered, address: walletAddress, dateRange })} disabled={!filtered.length} className="rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50">Export PDF</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -84,10 +101,10 @@ export default function TransactionHistory({
           </select>
         </label>
         <label className="text-sm">From
-          <input type="date" className="mt-1 block w-full rounded border p-2 dark:bg-zinc-900" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
+          <input type="date" min={to ? new Date(new Date(`${to}T00:00:00Z`).getTime() - 366 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : undefined} max={to || undefined} className="mt-1 block w-full rounded border p-2 dark:bg-zinc-900" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
         </label>
         <label className="text-sm">To
-          <input type="date" className="mt-1 block w-full rounded border p-2 dark:bg-zinc-900" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
+          <input type="date" min={from || undefined} max={new Date().toISOString().slice(0, 10)} className="mt-1 block w-full rounded border p-2 dark:bg-zinc-900" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
         </label>
       </div>
 

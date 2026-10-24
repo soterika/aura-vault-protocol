@@ -41,6 +41,23 @@ export interface PortfolioHistoryResult {
   pageSize: number;
 }
 
+/** Lifetime deposits and withdrawals for a wallet, in the ledger's base units. */
+export async function getPortfolioTotals(address: string): Promise<{ totalDeposited: string; totalWithdrawn: string }> {
+  const pool = getReadPool();
+  const result = await pool.query<{ total_deposited: string; total_withdrawn: string }>(
+    `SELECT
+       COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0)::TEXT AS total_deposited,
+       COALESCE(SUM(amount) FILTER (WHERE type = 'withdraw'), 0)::TEXT AS total_withdrawn
+     FROM vault_events_history
+     WHERE address = $1`,
+    [address],
+  );
+  return {
+    totalDeposited: result.rows[0]?.total_deposited ?? "0",
+    totalWithdrawn: result.rows[0]?.total_withdrawn ?? "0",
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Write — called by the Horizon event stream listener
 // ─────────────────────────────────────────────────────────────────────────────

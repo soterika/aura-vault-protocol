@@ -21,6 +21,7 @@ import { z } from "zod";
 import { paginatedResponse, errorResponse } from "../dto/index.js";
 import {
   getPortfolioHistory,
+  getPortfolioTotals,
   type VaultEventType,
 } from "../services/portfolioHistoryService.js";
 import { logger } from "../logger.js";
@@ -57,7 +58,12 @@ const historyQuerySchema = z.object({
     .refine((v) => !v || !isNaN(Date.parse(v)), {
       message: "dateTo must be a valid ISO-8601 date",
     }),
-});
+}).refine((query) => {
+  if (!query.dateFrom || !query.dateTo) return true;
+  const start = Date.parse(query.dateFrom);
+  const end = Date.parse(query.dateTo);
+  return end >= start && end - start <= 366 * 24 * 60 * 60 * 1000;
+}, { message: "Date range must be ordered and no longer than one year", path: ["dateTo"] });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stellar address format validation (basic — 56-character G… address)
@@ -90,7 +96,11 @@ portfolioHistoryRouter.get(
     }
 
     // Validate and parse query parameters via Zod
-    const queryResult = historyQuerySchema.safeParse(req.query);
+    const queryResult = historyQuerySchema.safeParse({
+      ...req.query,
+      dateFrom: req.query.from ?? req.query.dateFrom,
+      dateTo: req.query.to ?? req.query.dateTo,
+    });
     if (!queryResult.success) {
       const firstIssue = queryResult.error.issues[0];
       res.status(400).json(
@@ -128,3 +138,43 @@ portfolioHistoryRouter.get(
     }
   },
 );
+
+// Public, address-scoped export endpoint. Wallet activity is public on Stellar;
+// requiring authentication would prevent a connected wallet from exporting it.
+portfolioHistoryRouter.get("/", async (req: Request, res: Response): Promise<void> => {
+  const address = typeof req.query.address === "string" ? req.query.address : "";
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json(errorResponse("INVALID_ADDRESS", "address must be a valid Stellar public key"));
+    return;
+  }
+  const queryResult = historyQuerySchema.safeParse({
+    ...req.query,
+    dateFrom: req.query.from ?? req.query.dateFrom,
+    dateTo: req.query.to ?? req.query.dateTo,
+  });
+  if (!queryResult.success) {
+    res.status(400).json(errorResponse("VALIDATION_ERROR", "Invalid transaction export filters", queryResult.error.issues.map((issue) => ({ field: issue.path.join("."), message: issue.message }))));
+    return;
+  }
+  try {
+    const result = await getPortfolioHistory(address, queryResult.data);
+    res.json(paginatedResponse(result.items, result.page, result.pageSize, result.total));
+  } catch (err) {
+    logger.error({ err, address }, "[users/transactions] Failed to fetch history");
+    res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve transactions"));
+  }
+});
+
+portfolioHistoryRouter.get("/:address/totals", async (req: Request, res: Response): Promise<void> => {
+  const { address } = req.params as { address: string };
+  if (!isValidStellarAddress(address)) {
+    res.status(400).json(errorResponse("INVALID_ADDRESS", "address must be a valid Stellar public key"));
+    return;
+  }
+  try {
+    res.json(await getPortfolioTotals(address));
+  } catch (err) {
+    logger.error({ err, address }, "[portfolio/totals] Failed to fetch totals");
+    res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve portfolio totals"));
+  }
+});

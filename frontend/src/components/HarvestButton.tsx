@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatedButton } from "./AnimatedButton";
 import { useNotifications } from "./notifications";
+import StellarBaseFee from "./StellarBaseFee";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,7 @@ function ConfirmDialog({
           )}
         </div>
 
+        <StellarBaseFee />
         {/* Action buttons */}
         <div className="flex gap-3">
           <button

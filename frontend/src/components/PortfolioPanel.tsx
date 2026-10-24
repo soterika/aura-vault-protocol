@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { Download, ChevronLeft, ChevronRight, RefreshCw, Wallet } from "lucide-react";
 import { useWalletStore } from "@/lib/walletStore";
@@ -11,6 +11,7 @@ interface PortfolioData {
   shareBalance: string;
   totalAssets: string;
   totalShares: string;
+  totalDeposited: string;
 }
 
 interface TxEntry {
@@ -37,18 +38,21 @@ export function invalidatePortfolioCache(address: string): void {
 
 // ── Fetchers ───────────────────────────────────────────────────────────────
 async function fetchPortfolio(address: string): Promise<PortfolioData> {
-  const [balanceRes, assetsRes] = await Promise.all([
+  const [balanceRes, assetsRes, totalsRes] = await Promise.all([
     fetch(`/api/vault/balance_of?address=${encodeURIComponent(address)}`),
     fetch("/api/vault/total_assets"),
+    fetch(`/api/portfolio/${encodeURIComponent(address)}/totals`),
   ]);
   const balance = balanceRes.ok ? await balanceRes.json() : {};
   const assets = assetsRes.ok ? await assetsRes.json() : {};
+  const totals = totalsRes.ok ? await totalsRes.json() : {};
   const totalShares =
     balance.totalShares ?? assets.totalShares ?? balance.balance ?? "1";
   return {
     shareBalance: balance.balance ?? "0",
     totalAssets: assets.total ?? assets.totalAssets ?? "0",
     totalShares,
+    totalDeposited: String(totals.totalDeposited ?? "0"),
   };
 }
 
@@ -85,6 +89,24 @@ function calcRedemptionValue(
     if (supply === 0n || shares === 0n) return "0.00";
     const value = (shares * assets) / supply;
     return formatAmount(value.toString());
+  } catch {
+    return "0.00";
+  }
+}
+
+function calcNetYield(shareBalance: string, totalAssets: string, totalShares: string, totalDeposited: string): string {
+  try {
+    const shares = BigInt(shareBalance || "0");
+    const assets = BigInt(totalAssets || "0");
+    const supply = BigInt(totalShares || "0");
+    const deposited = BigInt(totalDeposited || "0");
+    const redemption = supply === 0n ? 0n : (shares * assets) / supply;
+    const delta = redemption - deposited;
+    const sign = delta < 0n ? "−" : "";
+    const magnitude = delta < 0n ? -delta : delta;
+    const whole = magnitude / 10_000_000n;
+    const cents = ((magnitude % 10_000_000n) / 100_000n).toString().padStart(2, "0");
+    return `${sign}${whole}.${cents}`;
   } catch {
     return "0.00";
   }
@@ -213,6 +235,29 @@ function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
   const hasPosition = portfolio
     ? BigInt(portfolio.shareBalance || "0") > 0n
     : false;
+  const totalYieldEarned = portfolio
+    ? calcNetYield(portfolio.shareBalance, portfolio.totalAssets, portfolio.totalShares, portfolio.totalDeposited)
+    : "0.00";
+  const [underlyingUsdPrice, setUnderlyingUsdPrice] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const updatePrice = async () => {
+      try {
+        const response = await fetch("/api/v1/gas/usd-price?asset=USDC", { cache: "no-store" });
+        if (!response.ok) throw new Error("Price unavailable");
+        const body = await response.json();
+        const price = Number(body.data?.priceUSD);
+        if (!Number.isFinite(price) || price <= 0) throw new Error("Invalid price");
+        if (!cancelled) setUnderlyingUsdPrice(price);
+      } catch {
+        if (!cancelled) setUnderlyingUsdPrice(null);
+      }
+    };
+    void updatePrice();
+    const timer = window.setInterval(() => void updatePrice(), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
 
   // ── Portfolio error ──────────────────────────────────────────────────────
   if (portfolioError) {
@@ -307,7 +352,7 @@ function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
         </div>
       ) : (
         /* ── Position cards ─────────────────────────────────────────────── */
-        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 p-4">
             <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
               Share Balance
@@ -330,6 +375,12 @@ function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
               {redemptionValue}
             </dd>
             <p className="text-xs text-zinc-400 mt-0.5">shares × (assets/supply)</p>
+          </div>
+          <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 p-4">
+            <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">Total Yield Earned</dt>
+            <dd data-cy="total-yield-earned" className="font-mono text-xl font-bold text-zinc-900 dark:text-zinc-50">{totalYieldEarned} USDC</dd>
+            <p className="text-xs text-zinc-400 mt-0.5">{underlyingUsdPrice === null ? "USD value unavailable" : `≈ $${(Number(totalYieldEarned) * underlyingUsdPrice).toFixed(2)} USD`}</p>
+            <p className="text-xs text-zinc-400 mt-1" title="This is the yield your shares have accrued since your first deposit">Yield since your first deposit ⓘ</p>
           </div>
           <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800 p-4">
             <dt className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">

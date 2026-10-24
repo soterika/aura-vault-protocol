@@ -6,7 +6,7 @@ import { useWalletStore } from "@/lib/walletStore";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-type HistoryItem = { type: "deposit" | "withdraw" | "harvest"; amount: string; tx_hash: string; timestamp: string };
+type HistoryItem = { type: "deposit" | "withdraw" | "harvest"; amount: string; shares?: string; tx_hash: string; timestamp: string };
 type HistoryPage = { data?: HistoryItem[]; pagination?: { total?: number; totalPages?: number } };
 
 async function loadHistory(address: string): Promise<Transaction[]> {
@@ -23,6 +23,7 @@ async function loadHistory(address: string): Promise<Transaction[]> {
     date: tx.timestamp,
     type: tx.type,
     amount: tx.amount,
+    shares: tx.shares,
     status: "confirmed" as const,
   }));
 }

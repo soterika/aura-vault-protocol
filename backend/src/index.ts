@@ -219,6 +219,7 @@ app.use("/api/notifications/email", notificationRouter);
 app.use("/api/v1/user/portfolio", authenticate, portfolioRouter);
 // Issue #290: Portfolio history — public read; address is in the path param
 app.use("/api/portfolio", portfolioHistoryRouter);
+app.use("/api/users/transactions", portfolioHistoryRouter);
 app.use("/api/v1/gas", gasRouter);
 app.use("/api/v1/yield", yieldRouter);
 app.use("/api/v1/queue", queueRouter);

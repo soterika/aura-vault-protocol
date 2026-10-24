@@ -1,7 +1,5 @@
 "use client";
 
-import { SortableDashboardGrid } from "@/components/dashboard/SortableDashboardGrid";
-import PerformanceCharts from "@/components/PerformanceCharts";
 import ApyCalculator from "@/components/ApyCalculator";
 import dynamic from "next/dynamic";
 import CollapsibleSection from "@/components/CollapsibleSection";
