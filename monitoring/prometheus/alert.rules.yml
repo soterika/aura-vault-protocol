@@ -1,4 +1,15 @@
 groups:
+  - name: horizon-rate-limit
+    rules:
+      - alert: HorizonRateLimitHigh
+        expr: horizon_rate_limit_events_5m > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Horizon returned more than five rate limits in five minutes"
+          description: "The Horizon listener received {{ $value }} HTTP 429 responses in the last five minutes and has switched to reduced polling."
+
   - name: aura-vault-critical
     rules:
       - alert: ServiceDown

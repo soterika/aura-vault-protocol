@@ -3518,6 +3518,55 @@ impl AuraVault {
         storage::get_nonce(&env, &address)
     }
 
+    /// Transfer shares to another address while preserving accrued yield and
+    /// extending both persistent balance entries before they can expire.
+    pub fn transfer_shares(env: Env, from: Address, to: Address, amount: i128) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            from.require_auth();
+            if get_admin(&env).is_none() {
+                return Err(VaultError::NotInitialized);
+            }
+            if amount <= 0 || from == to {
+                return Err(VaultError::ZeroAmount);
+            }
+            let from_balance = get_balance(&env, &from);
+            if amount > from_balance {
+                return Err(VaultError::InsufficientShares);
+            }
+
+            let global_yps = storage::get_cumulative_yps(&env);
+            for holder in [&from, &to] {
+                let prior_shares = get_balance(&env, holder);
+                let delta = global_yps
+                    .checked_sub(storage::get_user_checkpoint(&env, holder))
+                    .ok_or(VaultError::MathOverflow)?;
+                let accrued = prior_shares
+                    .checked_mul(delta)
+                    .and_then(|value| value.checked_div(YIELD_PRECISION))
+                    .ok_or(VaultError::MathOverflow)?;
+                let pending = storage::get_user_pending_yield(&env, holder)
+                    .checked_add(accrued)
+                    .ok_or(VaultError::MathOverflow)?;
+                storage::set_user_pending_yield(&env, holder, pending);
+                storage::set_user_checkpoint(&env, holder, global_yps);
+                bump_user_yield(&env, holder);
+            }
+
+            let to_balance = get_balance(&env, &to);
+            let new_from = from_balance.checked_sub(amount).ok_or(VaultError::MathOverflow)?;
+            let new_to = to_balance.checked_add(amount).ok_or(VaultError::MathOverflow)?;
+            set_balance(&env, &from, new_from);
+            set_balance(&env, &to, new_to);
+            bump_persistent(&env, &from);
+            bump_persistent(&env, &to);
+            bump_instance(&env);
+            env.events().publish(
+                (Symbol::new(&env, "share_transfer"), from.clone(), to.clone()),
+                (amount, new_from, new_to),
+            );
+            Ok(())
+        })
+    }
     // -----------------------------------------------------------------------
     // Upgrade
     // -----------------------------------------------------------------------

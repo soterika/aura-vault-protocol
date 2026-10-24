@@ -3,6 +3,7 @@ import { logger } from "../logger.js";
 import { authenticate } from "../middleware/authMiddleware.js";
 import { requireOperations } from "../middleware/operationsMiddleware.js";
 import { searchEvents } from "../services/eventSearchService.js";
+import { recordHorizonRateLimit } from "../metrics.js";
 
 export const eventsRouter = Router();
 
@@ -176,6 +177,11 @@ setInterval(() => {
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+const RATE_LIMIT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
+const RATE_LIMIT_WINDOW_MS = 5 * 60_000;
+const rateLimitEvents: number[] = [];
+let consecutiveRateLimits = 0;
+let rateLimitTotal = 0;
 
 let horizonStreamReady = false;
 let reconnectDelay = RECONNECT_BASE_MS;
@@ -216,12 +222,36 @@ async function connectHorizonStream(): Promise<void> {
       signal: AbortSignal.timeout(10_000),
     });
 
+    if (response.status === 429) {
+      rateLimitTotal += 1;
+      consecutiveRateLimits += 1;
+      const now = Date.now();
+      recordHorizonRateLimit(now);
+      rateLimitEvents.push(now);
+      while (rateLimitEvents[0] !== undefined && rateLimitEvents[0] < now - RATE_LIMIT_WINDOW_MS) {
+        rateLimitEvents.shift();
+      }
+      const degraded = consecutiveRateLimits >= RATE_LIMIT_BACKOFF_MS.length;
+      const retryIndex = Math.min(consecutiveRateLimits - 1, RATE_LIMIT_BACKOFF_MS.length - 1);
+      const baseDelay = RATE_LIMIT_BACKOFF_MS[retryIndex];
+      const delay = Math.round(baseDelay * (0.8 + Math.random() * 0.4));
+      horizonStreamReady = false;
+      logger.warn({ attempt: consecutiveRateLimits, delay, rateLimitTotal }, "[eventsStream] Horizon rate limited");
+      if (rateLimitEvents.length === 6) {
+        logger.error({ horizonRateLimitEvents5m: rateLimitEvents.length }, "[eventsStream] alert: Horizon exceeded five rate limits in five minutes");
+      }
+      broadcast("rate-limited", { attempt: consecutiveRateLimits, retryInMs: delay, degraded });
+      if (degraded) broadcast("polling-fallback", { message: "Horizon is rate limiting requests — use reduced polling", pollIntervalMs: 60_000 });
+      setTimeout(() => void connectHorizonStream(), delay);
+      return;
+    }
     if (!response.ok || !response.body) {
       throw new Error(`Horizon stream returned ${response.status}`);
     }
 
     horizonStreamReady = true;
     reconnectDelay = RECONNECT_BASE_MS; // reset back-off on success
+    consecutiveRateLimits = 0;
     broadcastComment("connected");
 
     const reader = response.body.getReader();
@@ -337,7 +367,6 @@ eventsRouter.get("/stream", (req: Request, res: Response): void => {
     logger.info({ clientId, total: clients.size }, "[eventsStream] client disconnected");
   });
 });
-
 /**
  * GET /api/v1/events/status
  *

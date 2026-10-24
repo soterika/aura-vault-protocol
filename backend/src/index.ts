@@ -34,6 +34,7 @@ import { analyticsRouter } from "./routes/analyticsRoutes.js";
 import { apyRouter } from "./routes/apyRoutes.js";
 // Issue #285: Contract event stream (SSE)
 import { eventsRouter } from "./routes/eventsRoutes.js";
+import { apiKeyRouter } from "./routes/apiKeyRoutes.js";
 // Issue #286: Stellar wallet JWT authentication
 import { stellarAuthRouter } from "./routes/stellarAuthRoutes.js";
 // Issue #288: BullMQ vault transaction queue
@@ -259,6 +260,7 @@ app.use("/api/v1/vault", vaultEventsRouter);
 // ── Issue #285: Contract event stream (SSE) ───────────────────────────────────
 app.use("/api/v1/events", eventsRouter);
 app.use("/api/federation", federationRouter);
+app.use("/api/v1/api-keys", apiKeyRouter);
 
 // Admin APIs require both an admin JWT and (when configured) an allowed source IP.
 app.use("/api/admin", authenticateAdmin, adminIpAllowlist, adminRouter);

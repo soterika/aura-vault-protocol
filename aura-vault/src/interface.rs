@@ -524,6 +524,10 @@ pub trait AuraVaultTrait {
     /// Return error 10 when the instance layout does not match this Wasm.
     fn validate_storage_layout_version(env: Env) -> Result<(), VaultError>;
 
+    /// Transfer vault shares and settle both holders' yield checkpoints first.
+    /// The sender must authorize the transfer; underlying assets remain in the vault.
+    fn transfer_shares(env: Env, from: Address, to: Address, amount: i128) -> Result<(), VaultError>;
+
     /// Upgrade the contract's Wasm binary.
     ///
     /// Admin-only. Increments the contract version, replaces the on-chain Wasm
