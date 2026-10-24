@@ -1218,6 +1218,34 @@ impl AuraVault {
             if redeem_amount <= 0 {
                 return Err(VaultError::ZeroAmount);
             }
+
+            // Withdrawal rate limit check (Issue #913)
+            let max_withdrawal_bps = storage::get_max_withdrawal_bps(&env);
+            if max_withdrawal_bps > 0 {
+                let current_ledger = env.ledger().sequence();
+                let last_ledger = storage::get_last_withdrawal_ledger(&env);
+                let current_withdrawals = if current_ledger > last_ledger {
+                    0
+                } else {
+                    storage::get_current_ledger_withdrawals(&env)
+                };
+                let max_allowed = total_deposited
+                    .checked_mul(max_withdrawal_bps as i128)
+                    .ok_or(VaultError::MathOverflow)?
+                    / 10_000;
+                let new_total_withdrawals = current_withdrawals
+                    .checked_add(redeem_amount)
+                    .ok_or(VaultError::MathOverflow)?;
+                if new_total_withdrawals > max_allowed {
+                    env.events().publish(
+                        (Symbol::new(&env, "withdrawal_limit_hit"), caller.clone()),
+                        (redeem_amount, max_allowed),
+                    );
+                    return Err(VaultError::WithdrawalLimitExceeded);
+                }
+                storage::set_last_withdrawal_ledger(&env, current_ledger);
+                storage::set_current_ledger_withdrawals(&env, new_total_withdrawals);
+            }
             // CEI — Effects: burn shares before any token transfer
             let new_balance = user_balance - shares;
             reduce_user_closed_epoch_weights(
@@ -1419,6 +1447,34 @@ impl AuraVault {
 
             if redeem_amount <= 0 {
                 return Err(VaultError::ZeroAmount);
+            }
+
+            // Withdrawal rate limit check (Issue #913)
+            let max_withdrawal_bps = storage::get_max_withdrawal_bps(&env);
+            if max_withdrawal_bps > 0 {
+                let current_ledger = env.ledger().sequence();
+                let last_ledger = storage::get_last_withdrawal_ledger(&env);
+                let current_withdrawals = if current_ledger > last_ledger {
+                    0
+                } else {
+                    storage::get_current_ledger_withdrawals(&env)
+                };
+                let max_allowed = total_deposited
+                    .checked_mul(max_withdrawal_bps as i128)
+                    .ok_or(VaultError::MathOverflow)?
+                    / 10_000;
+                let new_total_withdrawals = current_withdrawals
+                    .checked_add(redeem_amount)
+                    .ok_or(VaultError::MathOverflow)?;
+                if new_total_withdrawals > max_allowed {
+                    env.events().publish(
+                        (Symbol::new(&env, "withdrawal_limit_hit"), caller.clone()),
+                        (redeem_amount, max_allowed),
+                    );
+                    return Err(VaultError::WithdrawalLimitExceeded);
+                }
+                storage::set_last_withdrawal_ledger(&env, current_ledger);
+                storage::set_current_ledger_withdrawals(&env, new_total_withdrawals);
             }
             if total_deposited < redeem_amount {
                 return Err(VaultError::InsufficientUnderlying);
@@ -1743,6 +1799,9 @@ impl AuraVault {
             caller.require_auth();
 
             if yield_amount <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+            if yield_amount < storage::get_min_harvest_amount(&env) {
                 return Err(VaultError::ZeroAmount);
             }
             if get_admin(&env).is_none() {
@@ -2157,6 +2216,9 @@ impl AuraVault {
             caller.require_auth();
 
             if yield_amount <= 0 {
+                return Err(VaultError::ZeroAmount);
+            }
+            if yield_amount < storage::get_min_harvest_amount(&env) {
                 return Err(VaultError::ZeroAmount);
             }
             if get_admin(&env).is_none() {
@@ -4015,6 +4077,63 @@ impl AuraVault {
     /// Query the minimum deposit amount. Read-only, no auth required.
     pub fn min_deposit(env: Env) -> i128 {
         get_min_deposit(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Withdrawal rate limit configuration — admin-only (Issue #913)
+    // -----------------------------------------------------------------------
+
+    /// Set the maximum percentage of vault assets that may be withdrawn in a
+    /// single ledger, in basis points (e.g. 1000 = 10%).
+    /// `bps = 0` disables the rate limit.
+    pub fn set_max_withdrawal_bps(env: Env, admin: Address, bps: u32) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+            if stored_admin != admin {
+                return Err(VaultError::UpgradeUnauthorized);
+            }
+            if bps > 10_000 {
+                return Err(VaultError::InvalidAddress);
+            }
+            admin.require_auth();
+            storage::set_max_withdrawal_bps(&env, bps);
+            bump_instance(&env);
+            env.events().publish(
+                (Symbol::new(&env, "max_withdrawal_bps_set"), admin),
+                (bps,),
+            );
+            Ok(())
+        })
+    }
+
+    /// Read the current maximum withdrawal limit in basis points (0 = disabled).
+    pub fn get_max_withdrawal_bps(env: Env) -> u32 {
+        storage::get_max_withdrawal_bps(&env)
+    }
+
+    // -----------------------------------------------------------------------
+    // Minimum harvest amount configuration (Issue #914)
+    // -----------------------------------------------------------------------
+
+    pub fn set_min_harvest_amount(env: Env, admin: Address, amount: i128) -> Result<(), VaultError> {
+        with_reentrancy_guard(&env, || {
+            let stored_admin = get_admin(&env).ok_or(VaultError::NotInitialized)?;
+            if stored_admin != admin {
+                return Err(VaultError::UpgradeUnauthorized);
+            }
+            admin.require_auth();
+            storage::set_min_harvest_amount(&env, amount);
+            bump_instance(&env);
+            env.events().publish(
+                (Symbol::new(&env, "min_harvest_amount_set"), admin),
+                (amount,),
+            );
+            Ok(())
+        })
+    }
+
+    pub fn get_min_harvest_amount(env: Env) -> i128 {
+        storage::get_min_harvest_amount(&env)
     }
 
     // -----------------------------------------------------------------------

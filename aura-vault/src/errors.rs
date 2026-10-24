@@ -302,6 +302,8 @@ pub enum VaultError {
     DexSlippageExceeded    = 42,
     /// No DEX router has been configured by the vault administrator.
     DexNotConfigured       = 43,
+    /// Withdrawal exceeds the maximum per-ledger rate limit (Issue #913)
+    WithdrawalLimitExceeded = 44,
 }
 
 impl VaultError {
@@ -351,6 +353,7 @@ impl VaultError {
             VaultError::InvalidThreshold => "Invalid multi-sig threshold",
             VaultError::DexSlippageExceeded => "DEX swap output is below the required minimum",
             VaultError::DexNotConfigured => "DEX router has not been configured",
+            VaultError::WithdrawalLimitExceeded => "Withdrawal exceeds per-ledger rate limit",
         }
     }
 }

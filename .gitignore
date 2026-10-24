@@ -21,3 +21,4 @@ backend/node_modules/
 gas-measurements.json
 gas-report.md
 gas-measurement-log.txt
+node_modules

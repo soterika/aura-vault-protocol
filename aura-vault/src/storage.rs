@@ -79,6 +79,16 @@ pub enum DataKey {
     /// Individual withdrawal queue entry keyed by queue ID.
     WithdrawalEntry(u64),
     // -----------------------------------------------------------------------
+    // Withdrawal rate limit (Issue #913)
+    // -----------------------------------------------------------------------
+    MaxWithdrawalBps,
+    LastWithdrawalLedger,
+    CurrentLedgerWithdrawals,
+    // -----------------------------------------------------------------------
+    // Minimum harvest amount (Issue #914)
+    // -----------------------------------------------------------------------
+    MinHarvestAmount,
+    // -----------------------------------------------------------------------
     // Circuit breaker — share-price movement limit (Issue #371)
     // -----------------------------------------------------------------------
     /// Maximum allowed share-price movement per harvest, in basis points.
@@ -1023,6 +1033,66 @@ pub fn get_min_deposit(env: &Env) -> i128 {
 
 pub fn set_min_deposit(env: &Env, amount: i128) {
     env.storage().instance().set(&DataKey::MinDeposit, &amount);
+}
+
+// ---------------------------------------------------------------------------
+// Withdrawal rate limit helpers (Issue #913)
+// ---------------------------------------------------------------------------
+
+pub fn get_max_withdrawal_bps(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MaxWithdrawalBps)
+        .unwrap_or(0)
+}
+
+pub fn set_max_withdrawal_bps(env: &Env, bps: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MaxWithdrawalBps, &bps);
+}
+
+pub fn get_last_withdrawal_ledger(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::LastWithdrawalLedger)
+        .unwrap_or(0)
+}
+
+pub fn set_last_withdrawal_ledger(env: &Env, ledger: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::LastWithdrawalLedger, &ledger);
+}
+
+pub fn get_current_ledger_withdrawals(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::CurrentLedgerWithdrawals)
+        .unwrap_or(0)
+}
+
+pub fn set_current_ledger_withdrawals(env: &Env, amount: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::CurrentLedgerWithdrawals, &amount);
+}
+
+// ---------------------------------------------------------------------------
+// Minimum harvest amount helpers (Issue #914)
+// ---------------------------------------------------------------------------
+
+pub fn get_min_harvest_amount(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MinHarvestAmount)
+        .unwrap_or(1_000_000)
+}
+
+pub fn set_min_harvest_amount(env: &Env, amount: i128) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MinHarvestAmount, &amount);
 }
 
 // ---------------------------------------------------------------------------
