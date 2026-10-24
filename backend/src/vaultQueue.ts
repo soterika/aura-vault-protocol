@@ -96,6 +96,7 @@ function makeRedisConnection(): Redis {
 // ── Queue & Worker singletons ─────────────────────────────────────────────────
 
 let vaultQueue: Queue<VaultTxJobData, VaultTxJobResult> | null = null;
+let adminQueues: Queue[] = [];
 let vaultWorker: Worker<VaultTxJobData, VaultTxJobResult> | null = null;
 let queueEvents: QueueEvents | null = null;
 let bullBoardRouter: ExpressAdapter | null = null;
@@ -122,6 +123,9 @@ export function initVaultQueue(): ExpressAdapter {
       removeOnFail: false,              // keep all failed jobs as DLQ
     },
   });
+  // Dashboard queues are kept in BullMQ so operators can inspect and manage
+  // the named email, yield, transaction, and webhook workloads consistently.
+  adminQueues = ["email", "yield", "webhook"].map((name) => new Queue(name, { connection: makeRedisConnection() }));
 
   // ── QueueEvents (for metrics) ──────────────────────────────────────────────
   queueEvents = new QueueEvents(VAULT_TX_QUEUE, { connection: makeRedisConnection() });
@@ -153,7 +157,7 @@ export function initVaultQueue(): ExpressAdapter {
   bullBoardRouter.setBasePath("/admin/queues");
 
   createBullBoard({
-    queues: [new BullMQAdapter(vaultQueue)],
+    queues: [new BullMQAdapter(vaultQueue), ...adminQueues.map((queue) => new BullMQAdapter(queue))],
     serverAdapter: bullBoardRouter,
   });
 
@@ -320,6 +324,21 @@ export async function getQueueMetrics(): Promise<{
   return { waiting, active, completed, failed, delayed };
 }
 
+export function isVaultQueueInitialized(): boolean {
+  return vaultQueue !== null;
+}
+
+export async function getAdminQueueStatuses(): Promise<Record<string, string>> {
+  if (!vaultQueue) return { transaction: 'unavailable', email: 'unavailable', yield: 'unavailable', webhook: 'unavailable' };
+  const queues = new Map<string, Queue>([['transaction', vaultQueue]]);
+  for (const queue of adminQueues) queues.set(queue.name, queue);
+  const entries = await Promise.all([...queues].map(async ([name, queue]) => {
+    await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
+    return [name === VAULT_TX_QUEUE ? 'transaction' : name, 'active'] as const;
+  }));
+  return Object.fromEntries(entries);
+}
+
 /**
  * Gracefully stop the worker on process shutdown.
  */
@@ -327,5 +346,7 @@ export async function stopVaultQueue(): Promise<void> {
   await vaultWorker?.close();
   await queueEvents?.close();
   await vaultQueue?.close();
+  await Promise.all(adminQueues.map((queue) => queue.close()));
+  adminQueues = [];
   logger.info("[vaultQueue] shut down cleanly");
 }

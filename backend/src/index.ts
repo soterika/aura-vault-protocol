@@ -21,7 +21,8 @@ import {
   revokeAllSessions,
   type Tier,
 } from "./auth.js";
-import { pingRedis, disconnectRedis } from "./redis.js";
+import { pingRedis, disconnectRedis, getRedis } from "./redis.js";
+import { getReadPool } from "./db.js";
 import { webhookRouter } from "./webhook.js";
 import { emailRouter } from "./routes/emailRoutes.js";
 import { notificationRouter } from "./routes/notificationRoutes.js";
@@ -37,7 +38,7 @@ import { eventsRouter } from "./routes/eventsRoutes.js";
 import { stellarAuthRouter } from "./routes/stellarAuthRoutes.js";
 // Issue #288: BullMQ vault transaction queue
 import { vaultQueueRouter } from "./routes/vaultQueueRoutes.js";
-import { initVaultQueue, stopVaultQueue } from "./vaultQueue.js";
+import { initVaultQueue, stopVaultQueue, getQueueMetrics, isVaultQueueInitialized, getAdminQueueStatuses } from "./vaultQueue.js";
 import { warmCache } from "./services/defi.js";
 import {
   startAnalyticsCacheWarmer,
@@ -112,9 +113,11 @@ import { metricsRouter, metricsMiddleware } from "./metrics.js";
 // Issue #1272: response compression
 import { compressionMiddleware } from "./middleware/compressionMiddleware.js";
 // Issue #1269: safe startup log — import only non-sensitive config sections
-import { serverConfig, redisConfig, databaseConfig } from "./config/index.js";
+import { config, serverConfig, redisConfig, databaseConfig } from "./config/index.js";
+import { adminIpAllowlist } from "./middleware/adminIpAllowlist.js";
 
 const app = express();
+app.set("trust proxy", process.env.TRUST_PROXY === "true");
 
 // ── OpenTelemetry tracing middleware ─────────────────────────────────────────
 // Attaches trace spans to every HTTP request and propagates
@@ -254,53 +257,75 @@ app.use("/api/v1/vault", vaultEventsRouter);
 // ── Issue #285: Contract event stream (SSE) ───────────────────────────────────
 app.use("/api/v1/events", eventsRouter);
 
+// Admin APIs require both an admin JWT and (when configured) an allowed source IP.
+app.use("/api/admin", authenticateAdmin, adminIpAllowlist, adminRouter);
+
 // ── Issue #286: Stellar wallet challenge/verify JWT authentication ────────────
 app.use("/api/auth", stellarAuthRouter);
 
 // ── Issue #288: BullMQ vault transaction queue endpoints ──────────────────────
 app.use("/api/vault", authenticate, vaultQueueRouter);
 
-app.get("/api/health", async (_req, res) => {
-  const redisHealthy = await pingRedis();
-  const warmup = getWarmupStatus();
-  const degradationStatus = getDegradationStatus();
-  const horizonStats = getCircuitBreakerStats();
-  const databaseStats = getDatabaseCircuitBreakerStats();
-  const redisStats = getRedisCircuitBreakerStats();
+app.get("/api/health/live", (_req, res) => {
+  res.status(200).json({ status: "alive", uptime: Math.floor(process.uptime()) });
+});
 
-  // Return 'starting' until cache warm-up completes (issue #325)
-  let status: string;
-  if (warmup === "pending" || warmup === "warming") {
-    status = "starting";
-  } else if (degradationStatus.isDegraded) {
-    status = "degraded";
-  } else {
-    status = "ok";
-  }
-
-  res.json({
-    status,
-    timestamp: new Date().toISOString(),
-    // Legacy fields for backwards compatibility
-    redis: redisHealthy,
-    warmup,
-    // Issue #869: Circuit breaker states and stats
-    circuits: {
-      horizon: {
-        state: getCircuitBreakerState(),
-        stats: horizonStats,
-      },
-      database: {
-        state: getDatabaseCircuitBreakerState(),
-        stats: databaseStats,
-      },
-      redis: {
-        state: getRedisCircuitBreakerState(),
-        stats: redisStats,
-      },
-    },
-    degradation: degradationStatus,
+app.get(["/api/health/ready", "/api/ready", "/api/health"], async (_req, res) => {
+  const timed = <T>(check: () => Promise<T>, fallback: T): Promise<T> => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback), 400);
+    check().then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+  const dependency = async <T>(check: () => Promise<T>): Promise<{ status: "up" | "down"; latency_ms: number }> => {
+    const started = Date.now();
+    try {
+      const ok = await timed(check, false as T);
+      return { status: ok ? "up" : "down", latency_ms: Date.now() - started };
+    } catch {
+      return { status: "down", latency_ms: Date.now() - started };
+    }
+  };
+  let bullmqQueues: Record<string, string> = { transaction: "unavailable", email: "unavailable", yield: "unavailable", webhook: "unavailable" };
+  const [postgres, redis, horizon, queueMetrics] = await Promise.all([
+    dependency(async () => { await getReadPool().query("SELECT 1"); return true; }),
+    dependency(async () => await getRedis().ping() === "PONG"),
+    dependency(async () => {
+      const horizonUrl = config.stellar.horizonUrl;
+      if (!horizonUrl) return false;
+      const response = await fetch(horizonUrl, { signal: AbortSignal.timeout(350) });
+      return response.ok;
+    }),
+    dependency(async () => {
+      if (!isVaultQueueInitialized()) return false;
+      await getQueueMetrics();
+      bullmqQueues = await getAdminQueueStatuses();
+      return true;
+    }),
+  ]);
+  const cacheWarmed = getWarmupStatus() === "ready";
+  const dependencies = {
+    postgres,
+    redis: { ...redis, cacheWarmed },
+    horizon,
+    bullmq: { status: queueMetrics.status, queues: bullmqQueues },
+  };
+  const healthy = Object.values(dependencies).every((value) => value.status === "up");
+  const body = {
+    status: healthy ? "healthy" : "unhealthy",
+    version: process.env.APP_VERSION ?? "unknown",
+    uptime: Math.floor(process.uptime()),
+    dependencies,
+    timestamp: new Date().toISOString(),
+    // Legacy health fields retained for existing clients.
+    redis: redis.status === "up",
+    warmup: getWarmupStatus(),
+    circuits: {
+      horizon: { state: getCircuitBreakerState(), stats: getCircuitBreakerStats() },
+      database: { state: getDatabaseCircuitBreakerState(), stats: getDatabaseCircuitBreakerStats() },
+      redis: { state: getRedisCircuitBreakerState(), stats: getRedisCircuitBreakerStats() },
+    },
+    degradation: getDegradationStatus(),
+  };
+  res.status(healthy ? 200 : 503).json(body);
 });
 
 app.get("/metrics/cache", async (_req, res) => {
@@ -336,7 +361,7 @@ const server = app.listen(PORT, () => {
   try {
     const bullBoardAdapter = initVaultQueue();
     // Mount admin UI — protected by authenticate middleware
-    app.use("/admin/queues", authenticate, bullBoardAdapter.getRouter());
+    app.use("/admin/queues", authenticateAdmin, adminIpAllowlist, bullBoardAdapter.getRouter());
     logger.info("[startup] Bull Board mounted at /admin/queues");
   } catch (err) {
     logger.warn({ err }, "[startup] BullMQ init failed — vault queue unavailable");

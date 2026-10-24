@@ -11,3 +11,4 @@ data:
   DB_HOST: "postgres-service"
   DB_PORT: "5432"
   DB_NAME: "aura_vault"
+  TRUST_PROXY: "true"
