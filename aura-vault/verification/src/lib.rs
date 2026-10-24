@@ -27,6 +27,27 @@ mod proofs {
         }
     }
 
+    /// Invariant 1 (caller view): after a positive deposit, caller's ending shares >= 1.
+    #[kani::proof]
+    fn deposit_caller_shares_at_least_one_for_i128_inputs() {
+        let assets: i128 = kani::any();
+        let total_shares: i128 = kani::any();
+        let total_assets: i128 = kani::any();
+        let caller_shares_before: i128 = kani::any();
+
+        kani::assume(assets > 0);
+        kani::assume(total_shares >= 0);
+        kani::assume(total_assets >= 0);
+        kani::assume(caller_shares_before >= 0);
+        kani::assume(caller_shares_before <= total_shares);
+
+        if let Ok(minted) = share_math::deposit_shares(assets, total_shares, total_assets) {
+            if let Some(caller_shares_after) = caller_shares_before.checked_add(minted) {
+                assert!(caller_shares_after >= 1);
+            }
+        }
+    }
+
     /// Invariant 2: adding non-negative net yield without minting shares cannot
     /// reduce the exact assets-per-share ratio. With the same positive
     /// denominator, this also proves the rounded fixed-point price is monotone.
