@@ -1,5 +1,44 @@
 # Operations & Monitoring Guide
 
+## Loki log-based alerts
+
+`monitoring/loki/rules.yaml` defines Loki Ruler alerts for route-level backend
+error spikes, invalid-token bursts, PostgreSQL connection refusals, Horizon
+timeouts, and BullMQ job failures. Promtail normalizes Pino's numeric log
+levels before Loki evaluates the rules. Loki sends warning alerts to Slack and
+critical alerts to both Slack and PagerDuty through Alertmanager. Configure
+`SLACK_WEBHOOK_URL` and `PAGERDUTY_ROUTING_KEY` as deployment secrets before
+enabling production notifications. The Compose configuration reads the same
+variables from the environment.
+
+Before deploying Loki to Kubernetes, publish the rule file as the ConfigMap
+mounted by `k8s/loki-deployment.yaml`:
+
+```bash
+kubectl create configmap loki-alert-rules -n monitoring \
+  --from-file=aura-alerts.yaml=monitoring/loki/rules.yaml \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The rule thresholds are intentionally independent of Prometheus metrics so
+log-only failures can page the operations channel before metric collection
+catches up. To validate them, inject representative structured log records in
+a staging environment and confirm the corresponding alert appears in
+Alertmanager and reaches the configured receivers. Do not perform this
+injection against production. GitHub issues cannot be assigned directly to a
+team; Terraform drift issues receive the `devops` and `infrastructure` labels
+so the DevOps team can subscribe to that queue.
+
+## Terraform drift checks
+
+`.github/workflows/terraform-drift-check.yml` runs daily at 06:00 UTC and can
+also be started manually. It runs refresh-only plans against staging and
+production, uploads the plan output, and creates or comments on one open issue
+per environment when it detects drift. Drift issues include a plan excerpt
+capped at 4,000 characters and carry `devops` and `infrastructure` labels. The
+workflow is report-only; it never applies a plan. It assumes the
+`TF_CI_ROLE_ARN` GitHub Actions secret trusts the repository's OIDC provider.
+
 Comprehensive monitoring and alerting setup for Aura Vault Protocol production deployment.
 
 ## Overview

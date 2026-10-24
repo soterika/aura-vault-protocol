@@ -1,7 +1,8 @@
 {
   "nav": {
     "faq": "FAQ",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "dashboard": "Tableau de bord"
   },
   "home": {
     "get_started": "Pour commencer, modifiez le fichier page.tsx.",
@@ -19,7 +20,8 @@
     "all_categories": "Toutes",
     "no_results": "Aucun résultat trouvé.",
     "cant_find": "Vous ne trouvez pas votre réponse ?",
-    "open_issue": "Ouvrez un ticket GitHub"
+    "open_issue": "Ouvrez un ticket GitHub",
+    "categories_label": "Catégories de FAQ"
   },
   "settings": {
     "title": "Paramètres",
@@ -79,38 +81,138 @@
     "mark_all_read": "Tout marquer comme lu",
     "clear": "Effacer",
     "empty": "Aucune notification",
-    "unread_aria": "Notifications, {{count}} non lues",
-    "dismiss": "Ignorer la notification"
+    "unread_aria": "Notifications, {count} non lues",
+    "dismiss": "Ignorer la notification",
+    "read_aria": "Notifications"
   },
   "theme": {
     "light": "Clair",
     "dark": "Sombre",
-    "auto": "Auto"
+    "auto": "Auto",
+    "switchTo": "Passer au thème {theme}"
   },
   "vault_errors": {
-    "1":  { "title": "Vault Non Initialisé",              "message": "Le vault n'a pas encore été initialisé. Contactez l'administrateur ou vérifiez l'adresse du contrat." },
-    "2":  { "title": "Déjà Initialisé",                   "message": "Le vault a déjà été initialisé et ne peut pas être reconfiguré." },
-    "3":  { "title": "Parts Insuffisantes",               "message": "Vous ne disposez pas de suffisamment de parts pour effectuer ce retrait. Vérifiez votre solde." },
-    "4":  { "title": "Sous-jacent Insuffisant",           "message": "Le vault ne dispose pas de suffisamment de tokens pour couvrir ce rachat. Contactez l'administrateur." },
-    "5":  { "title": "Montant Nul",                       "message": "Le montant doit être supérieur à zéro. Augmentez le montant et réessayez." },
-    "6":  { "title": "Dépassement Arithmétique",          "message": "Dépassement arithmétique : le montant de la transaction est trop élevé. Essayez un montant plus faible." },
-    "7":  { "title": "Adresse Invalide",                  "message": "L'adresse ou le token n'est pas reconnu. Assurez-vous qu'il a été ajouté à la liste blanche par l'administrateur." },
-    "8":  { "title": "Aucun Actionnaire",                 "message": "Le vault n'a pas encore d'actionnaires. Le rendement ne peut être distribué avant qu'un dépôt soit effectué." },
-    "9":  { "title": "Non Autorisé",                      "message": "Seul l'administrateur du vault peut effectuer cette action. Connectez-vous avec le compte administrateur." },
-    "10": { "title": "Incompatibilité de Schéma",         "message": "Échec de la mise à jour : incompatibilité de version du schéma de stockage. Une migration est requise." },
-    "11": { "title": "Vault en Pause",                    "message": "Le vault est actuellement en pause. Veuillez attendre que l'administrateur reprenne les opérations." },
-    "12": { "title": "Incohérence de Solde",              "message": "Alerte de sécurité : le solde du vault ne correspond pas à ses enregistrements. Contactez l'administrateur immédiatement." },
-    "13": { "title": "Verrouillage Non Expiré",           "message": "Cette proposition de gouvernance ne peut pas encore être exécutée. La période de verrouillage n'a pas expiré." },
-    "14": { "title": "Proposition Non Approuvée",         "message": "Cette proposition n'a pas reçu suffisamment d'approbations pour être exécutée." },
-    "15": { "title": "Vote Déjà Soumis",                  "message": "Vous avez déjà voté sur cette proposition. Chaque signataire ne peut voter qu'une seule fois." },
-    "16": { "title": "Plafond TVL Dépassé",               "message": "Ce dépôt dépasserait le plafond de valeur totale verrouillée du vault. Essayez un montant inférieur ou attendez." },
-    "17": { "title": "Rendement Trop Faible",             "message": "Le montant de rendement est trop faible pour être distribué — il s'arrondit à zéro par part. Accumulez davantage." },
-    "18": { "title": "Erreur de Précision de Distribution","message": "La vérification de précision de la distribution a échoué. Ajustez légèrement le montant et réessayez." },
-    "19": { "title": "Délai de Récolte",                  "message": "Une récolte a été effectuée trop récemment. Attendez que le délai expire avant de récolter à nouveau." },
-    "20": { "title": "Retrait en File d'Attente",         "message": "Votre retrait est en file d'attente. Réclamez-le après la période de déblocage avec votre ID d'entrée." },
-    "21": { "title": "Entrée Introuvable",                "message": "Entrée de la file de retrait introuvable. Elle n'existe peut-être pas ou a déjà été réclamée." },
-    "22": { "title": "Déblocage en Cours",                "message": "Votre retrait est encore en période de déblocage. Veuillez attendre et réessayer après l'expiration." },
-    "23": { "title": "Frais de Retrait Invalides",        "message": "Les frais de retrait dépassent le taux maximum autorisé de 5 %. Utilisez une valeur entre 0 et 500 points de base." },
-    "24": { "title": "Disjoncteur Déclenché",             "message": "Récolte rejetée : le mouvement du prix de la part a dépassé la limite de sécurité. Le vault a été mis en pause automatiquement." }
+    "1": {
+      "title": "Vault Non Initialisé",
+      "message": "Le vault n'a pas encore été initialisé. Contactez l'administrateur ou vérifiez l'adresse du contrat."
+    },
+    "2": {
+      "title": "Déjà Initialisé",
+      "message": "Le vault a déjà été initialisé et ne peut pas être reconfiguré."
+    },
+    "3": {
+      "title": "Parts Insuffisantes",
+      "message": "Vous ne disposez pas de suffisamment de parts pour effectuer ce retrait. Vérifiez votre solde."
+    },
+    "4": {
+      "title": "Sous-jacent Insuffisant",
+      "message": "Le vault ne dispose pas de suffisamment de tokens pour couvrir ce rachat. Contactez l'administrateur."
+    },
+    "5": {
+      "title": "Montant Nul",
+      "message": "Le montant doit être supérieur à zéro. Augmentez le montant et réessayez."
+    },
+    "6": {
+      "title": "Dépassement Arithmétique",
+      "message": "Dépassement arithmétique : le montant de la transaction est trop élevé. Essayez un montant plus faible."
+    },
+    "7": {
+      "title": "Adresse Invalide",
+      "message": "L'adresse ou le token n'est pas reconnu. Assurez-vous qu'il a été ajouté à la liste blanche par l'administrateur."
+    },
+    "8": {
+      "title": "Aucun Actionnaire",
+      "message": "Le vault n'a pas encore d'actionnaires. Le rendement ne peut être distribué avant qu'un dépôt soit effectué."
+    },
+    "9": {
+      "title": "Non Autorisé",
+      "message": "Seul l'administrateur du vault peut effectuer cette action. Connectez-vous avec le compte administrateur."
+    },
+    "10": {
+      "title": "Incompatibilité de Schéma",
+      "message": "Échec de la mise à jour : incompatibilité de version du schéma de stockage. Une migration est requise."
+    },
+    "11": {
+      "title": "Vault en Pause",
+      "message": "Le vault est actuellement en pause. Veuillez attendre que l'administrateur reprenne les opérations."
+    },
+    "12": {
+      "title": "Incohérence de Solde",
+      "message": "Alerte de sécurité : le solde du vault ne correspond pas à ses enregistrements. Contactez l'administrateur immédiatement."
+    },
+    "13": {
+      "title": "Verrouillage Non Expiré",
+      "message": "Cette proposition de gouvernance ne peut pas encore être exécutée. La période de verrouillage n'a pas expiré."
+    },
+    "14": {
+      "title": "Proposition Non Approuvée",
+      "message": "Cette proposition n'a pas reçu suffisamment d'approbations pour être exécutée."
+    },
+    "15": {
+      "title": "Vote Déjà Soumis",
+      "message": "Vous avez déjà voté sur cette proposition. Chaque signataire ne peut voter qu'une seule fois."
+    },
+    "16": {
+      "title": "Plafond TVL Dépassé",
+      "message": "Ce dépôt dépasserait le plafond de valeur totale verrouillée du vault. Essayez un montant inférieur ou attendez."
+    },
+    "17": {
+      "title": "Rendement Trop Faible",
+      "message": "Le montant de rendement est trop faible pour être distribué — il s'arrondit à zéro par part. Accumulez davantage."
+    },
+    "18": {
+      "title": "Erreur de Précision de Distribution",
+      "message": "La vérification de précision de la distribution a échoué. Ajustez légèrement le montant et réessayez."
+    },
+    "19": {
+      "title": "Délai de Récolte",
+      "message": "Une récolte a été effectuée trop récemment. Attendez que le délai expire avant de récolter à nouveau."
+    },
+    "20": {
+      "title": "Retrait en File d'Attente",
+      "message": "Votre retrait est en file d'attente. Réclamez-le après la période de déblocage avec votre ID d'entrée."
+    },
+    "21": {
+      "title": "Entrée Introuvable",
+      "message": "Entrée de la file de retrait introuvable. Elle n'existe peut-être pas ou a déjà été réclamée."
+    },
+    "22": {
+      "title": "Déblocage en Cours",
+      "message": "Votre retrait est encore en période de déblocage. Veuillez attendre et réessayer après l'expiration."
+    },
+    "23": {
+      "title": "Frais de Retrait Invalides",
+      "message": "Les frais de retrait dépassent le taux maximum autorisé de 5 %. Utilisez une valeur entre 0 et 500 points de base."
+    },
+    "24": {
+      "title": "Disjoncteur Déclenché",
+      "message": "Récolte rejetée : le mouvement du prix de la part a dépassé la limite de sécurité. Le vault a été mis en pause automatiquement."
+    }
+  },
+  "meta": {
+    "title": "Aura Vault Protocol",
+    "description": "Share-based yield vault on Soroban for the Stellar ecosystem."
+  },
+  "dashboard": {
+    "title": "Tableau de bord du coffre",
+    "connected": "Connecté : {address}",
+    "wallet_not_connected": "Portefeuille non connecté",
+    "vault_balance": "Solde du coffre",
+    "updated": "Mis à jour : {time}",
+    "apy": "Rendement annuel en pourcentage",
+    "current_yield": "Rendement actuel",
+    "tvl": "Valeur totale verrouillée",
+    "total_users": "Nombre total d’utilisateurs",
+    "active_participants": "Participants actifs",
+    "recent_transactions": "Transactions récentes",
+    "type": "Type",
+    "amount": "Montant",
+    "date": "Date",
+    "status": "Statut",
+    "transaction_status": {
+      "completed": "Terminée",
+      "pending": "En attente",
+      "failed": "Échouée"
+    }
   }
 }

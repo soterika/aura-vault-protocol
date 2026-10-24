@@ -192,15 +192,29 @@ async function processVaultJob(
     const horizonUrl = config.stellar.horizonUrl;
     const submitUrl = `${horizonUrl}/transactions`;
 
-    const response = await fetch(submitUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ tx: signedXdr }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(submitUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ tx: signedXdr }),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === "TimeoutError";
+      logger.error(
+        { eventCode: timedOut ? "HORIZON_TIMEOUT" : "HORIZON_REQUEST_FAILED" },
+        timedOut ? "[Horizon] transaction submission timed out" : "[Horizon] transaction submission failed"
+      );
+      throw err;
+    }
 
     if (!response.ok) {
       const body = await response.text();
+      logger.error(
+        { eventCode: "HORIZON_HTTP_ERROR", statusCode: response.status },
+        "[Horizon] transaction submission returned an error"
+      );
       throw new Error(`Horizon submit failed (${response.status}): ${body}`);
     }
 

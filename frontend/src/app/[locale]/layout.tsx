@@ -3,12 +3,17 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 
+export const dynamicParams = false;
+
 type Props = { children: React.ReactNode; params: Promise<{ locale: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "meta" });
-  return { title: t("title"), description: t("description") };
+  const t = await getTranslations({ locale, namespace: "Metadata" });
+  return {
+    title: t("title"),
+    description: t("description"),
+  };
 }
 
 export function generateStaticParams() {

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { validateAccessToken } from '../auth.js';
+import { logger } from '../logger.js';
 
 /**
  * Admin authentication middleware.
@@ -19,6 +20,7 @@ export async function authenticateAdmin(
 
   const payload = await validateAccessToken(header.slice(7));
   if (!payload) {
+    logger.warn({ eventCode: 'INVALID_TOKEN' }, '[auth] admin access token rejected');
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
   }

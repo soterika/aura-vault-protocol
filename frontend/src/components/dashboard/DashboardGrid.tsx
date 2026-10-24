@@ -107,6 +107,8 @@ export function DashboardGrid() {
           shares: parseFloat(assets.userShares).toLocaleString(),
           sharePrice: fmtSharePrice(assets.pricePerShare ?? "1"),
           address: assets.walletAddress ?? "",
+          apy7d: parseFloat(apyData.apy7d ?? apyData.apy ?? "0") || 0,
+          lastHarvestAt: metrics.lastHarvestAt ?? null,
         });
       }
     } catch {

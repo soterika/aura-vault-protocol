@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-  type ReactNode,
-} from "react";
-import { useTranslation } from "react-i18next";
-import "@/lib/i18n";
-import { useTranslations, useFormatter } from "next-intl";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { useFormatter, useTranslations } from "next-intl";
 
 export type NotificationType = "success" | "error" | "info" | "warning";
 
@@ -21,7 +12,6 @@ export interface Notification {
   message?: string;
   timestamp: number;
   read: boolean;
-  dismissable?: boolean;
 }
 
 interface NotificationContextValue {
@@ -35,203 +25,100 @@ interface NotificationContextValue {
 }
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
-
-export function useNotifications() {
-  const ctx = useContext(NotificationContext);
-  if (!ctx)
-    throw new Error("useNotifications must be used within NotificationProvider");
-  return ctx;
-}
-
 const MAX_HISTORY = 50;
 const STORAGE_KEY = "aura_notifications";
 
 function loadHistory(): Notification[] {
-  if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((item): item is Notification =>
+      item && typeof item.id === "string" && typeof item.title === "string" && typeof item.timestamp === "number" && typeof item.read === "boolean",
+    ).slice(-MAX_HISTORY) : [];
   } catch {
     return [];
   }
 }
 
 function saveHistory(notifications: Notification[]) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(notifications.slice(-MAX_HISTORY))
-  );
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(-MAX_HISTORY)));
+  } catch {
+    // Notifications remain available for the current session if storage is blocked.
+  }
+}
+
+export function useNotifications() {
+  const context = useContext(NotificationContext);
+  if (!context) throw new Error("useNotifications must be used within NotificationProvider");
+  return context;
 }
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [toasts, setToasts] = useState<Notification[]>([]);
 
   useEffect(() => {
-    const history = loadHistory();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (history.length > 0) {
-      setNotifications(history);
-    }
+    setNotifications(loadHistory());
   }, []);
 
   const toast = useCallback((type: NotificationType, title: string, message?: string) => {
     const notification: Notification = {
-      id: crypto.randomUUID(),
-      type,
-      title,
-      message,
-      timestamp: Date.now(),
-      read: false,
-      dismissable: true,
+      id: crypto.randomUUID(), type, title, message, timestamp: Date.now(), read: false,
     };
-    setNotifications((prev) => {
-      const next = [...prev, notification].slice(-MAX_HISTORY);
+    setNotifications((current) => {
+      const next = [...current, notification].slice(-MAX_HISTORY);
       saveHistory(next);
       return next;
     });
-    setToasts((prev) => [...prev, notification]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((n) => n.id !== notification.id));
-    }, 5000);
-  const toast = useCallback(
-    (type: NotificationType, title: string, message?: string) => {
-      const notification: Notification = {
-        id: crypto.randomUUID(),
-        type,
-        title,
-        message,
-        timestamp: Date.now(),
-        read: false,
-        dismissable: true,
-      };
-      setNotifications((prev) => {
-        const next = [...prev, notification].slice(-MAX_HISTORY);
-        saveHistory(next);
-        return next;
-      });
-      setToasts((prev) => [...prev, notification]);
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== notification.id));
-      }, 5000);
-    },
-    []
-
-  const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((n) => n.id !== id));
+    setToasts((current) => [...current, notification]);
+    window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== notification.id)), 5000);
   }, []);
 
+  const dismiss = useCallback((id: string) => setToasts((current) => current.filter((item) => item.id !== id)), []);
   const markRead = useCallback((id: string) => {
-    setNotifications((prev) => {
-      const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+    setNotifications((current) => {
+      const next = current.map((item) => item.id === id ? { ...item, read: true } : item);
       saveHistory(next);
       return next;
     });
   }, []);
-
   const markAllRead = useCallback(() => {
-    setNotifications((prev) => {
-      const next = prev.map((n) => ({ ...n, read: true }));
+    setNotifications((current) => {
+      const next = current.map((item) => ({ ...item, read: true }));
       saveHistory(next);
       return next;
     });
   }, []);
-
   const clearAll = useCallback(() => {
     setNotifications([]);
-    localStorage.removeItem(STORAGE_KEY);
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be unavailable. */ }
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
+  const value = { notifications, unreadCount: notifications.filter((item) => !item.read).length, toast, markRead, markAllRead, dismiss, clearAll };
   return (
-    <NotificationContext.Provider
-      value={{
-        notifications,
-        unreadCount,
-        toast,
-        markRead,
-        markAllRead,
-        dismiss,
-        clearAll,
-      }}
-    >
+    <NotificationContext.Provider value={value}>
       {children}
-      {/* Toast container */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm" aria-live="polite">
-        {toasts.map((n) => (
-          <div
-            key={n.id}
-            role="status"
-            className={`flex items-start gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm animate-toast-in ${
-              n.type === "success" ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800" :
-              n.type === "error" ? "bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800" :
-              n.type === "warning" ? "bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800" :
-              "bg-blue-50 dark:bg-blue-950/80 border-blue-200 dark:border-blue-800"
-            }`}
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{n.title}</p>
-              {n.message && <p className="text-xs text-zinc-500 mt-0.5">{n.message}</p>}
-            </div>
-            <button
-              onClick={() => dismiss(n.id)}
-              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none"
-              aria-label={t("notifications.dismiss")}
-            >
-              &times;
-            </button>
-          </div>
-        ))}
-      </div>
       <ToastContainer toasts={toasts} dismiss={dismiss} />
     </NotificationContext.Provider>
   );
 }
 
-function ToastContainer({
-  toasts,
-  dismiss,
-}: {
-  toasts: Notification[];
-  dismiss: (id: string) => void;
-}) {
+function ToastContainer({ toasts, dismiss }: { toasts: Notification[]; dismiss: (id: string) => void }) {
   const t = useTranslations("notifications");
-
   return (
-    <div
-      className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm"
-      aria-live="polite"
-    >
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          role="status"
-          className={`flex items-start gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm animate-in slide-in-from-right duration-300 ${
-            toast.type === "success"
-              ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-200 dark:border-emerald-800"
-              : toast.type === "error"
-              ? "bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800"
-              : toast.type === "warning"
-              ? "bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800"
-              : "bg-blue-50 dark:bg-blue-950/80 border-blue-200 dark:border-blue-800"
-          }`}
-        >
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              {toast.title}
-            </p>
-            {toast.message && (
-              <p className="text-xs text-zinc-500 mt-0.5">{toast.message}</p>
-            )}
+    <div className="fixed right-4 top-4 z-50 flex max-w-sm flex-col gap-2" aria-live="polite">
+      {toasts.map((item) => (
+        <div key={item.id} role="status" className={`flex items-start gap-3 rounded-lg border p-3 shadow-lg backdrop-blur-sm ${
+          item.type === "success" ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/80" :
+          item.type === "error" ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/80" :
+          item.type === "warning" ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/80" :
+          "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/80"
+        }`}>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{item.title}</p>
+            {item.message && <p className="mt-0.5 text-xs text-zinc-500">{item.message}</p>}
           </div>
-          <button
-            onClick={() => dismiss(toast.id)}
-            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 text-lg leading-none"
-            aria-label={t("dismissAriaLabel")}
-          >
-            &times;
-          </button>
+          <button onClick={() => dismiss(item.id)} className="text-lg leading-none text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200" aria-label={t("dismiss")}>×</button>
         </div>
       ))}
     </div>
@@ -240,97 +127,40 @@ function ToastContainer({
 
 export function NotificationCenter() {
   const { notifications, unreadCount, markRead, markAllRead, clearAll } = useNotifications();
-  const { notifications, unreadCount, markRead, markAllRead, clearAll } =
-    useNotifications();
+  const t = useTranslations("notifications");
   const format = useFormatter();
   const [open, setOpen] = useState(false);
-
-  const ariaLabel =
-    unreadCount > 0
-      ? t("unreadAriaLabel", { count: unreadCount })
-      : t("readAriaLabel");
+  const ariaLabel = unreadCount > 0 ? t("unread_aria", { count: unreadCount }) : t("read_aria");
 
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="relative p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-        aria-label={unreadCount > 0 ? t("notifications.unread_aria", { count: unreadCount }) : t("notifications.title")}
-        aria-label={ariaLabel}
-      >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
+      <button onClick={() => setOpen((current) => !current)} className="relative rounded-lg p-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label={ariaLabel} aria-expanded={open}>
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6.002 6.002 0 0 0-4-5.659V5a2 2 0 1 0-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9" />
         </svg>
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center">
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
+        {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{unreadCount > 9 ? "9+" : unreadCount}</span>}
       </button>
-
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl z-50">
-          <div className="flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800">
-            <h3 className="text-sm font-semibold">{t("notifications.title")}</h3>
+        <section aria-label={t("title")} className="absolute right-0 top-full z-50 mt-2 max-h-96 w-80 overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-100 p-3 dark:border-zinc-800">
+            <h2 className="text-sm font-semibold">{t("title")}</h2>
             <div className="flex gap-2">
-              <button onClick={markAllRead} className="text-xs text-indigo-600 hover:underline">{t("notifications.mark_all_read")}</button>
-              <button onClick={clearAll} className="text-xs text-red-500 hover:underline">{t("notifications.clear")}</button>
-          {notifications.length === 0 ? (
-            <p className="p-6 text-center text-sm text-zinc-400">{t("notifications.empty")}</p>
-            <h3 className="text-sm font-semibold">{t("heading")}</h3>
-              <button
-                onClick={markAllRead}
-                className="text-xs text-indigo-600 hover:underline"
-              >
-                {t("markAllRead")}
-              </button>
-                onClick={clearAll}
-                className="text-xs text-red-500 hover:underline"
-                {t("clear")}
-            <p className="p-6 text-center text-sm text-zinc-400">
-              {t("empty")}
-          ) : (
+              <button onClick={markAllRead} className="text-xs text-indigo-600 hover:underline">{t("mark_all_read")}</button>
+              <button onClick={clearAll} className="text-xs text-red-500 hover:underline">{t("clear")}</button>
+            </div>
+          </div>
+          {notifications.length === 0 ? <p className="p-6 text-center text-sm text-zinc-400">{t("empty")}</p> : (
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {[...notifications]
-                .reverse()
-                .slice(0, 20)
-                .map((n) => (
-                  <button
-                    key={n.id}
-                    onClick={() => markRead(n.id)}
-                    className={`w-full text-left p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${
-                      !n.read ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""
-                    }`}
-                  >
-                    <p className={`text-sm ${!n.read ? "font-medium" : ""}`}>
-                      {n.title}
-                    </p>
-                    {n.message && (
-                      <p className="text-xs text-zinc-500 mt-0.5">
-                        {n.message}
-                      </p>
-                    )}
-                    <p className="text-[10px] text-zinc-400 mt-1">
-                      {format.dateTime(new Date(n.timestamp), {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </p>
-                  </button>
-                ))}
+              {[...notifications].reverse().slice(0, 20).map((item) => (
+                <button key={item.id} onClick={() => markRead(item.id)} className={`w-full p-3 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${!item.read ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""}`}>
+                  <span className={`text-sm ${!item.read ? "font-medium" : ""}`}>{item.title}</span>
+                  {item.message && <span className="mt-0.5 block text-xs text-zinc-500">{item.message}</span>}
+                  <time className="mt-1 block text-[10px] text-zinc-400" dateTime={new Date(item.timestamp).toISOString()}>{format.dateTime(new Date(item.timestamp), { dateStyle: "short", timeStyle: "short" })}</time>
+                </button>
+              ))}
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

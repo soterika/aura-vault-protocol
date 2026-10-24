@@ -1,0 +1,132 @@
+name: Terraform drift detection
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: terraform-drift-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  drift-check:
+    name: Check ${{ matrix.environment }} drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+    env:
+      TF_DIR: terraform/envs/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_CI_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: drift-${{ matrix.environment }}-${{ github.run_id }}
+
+      - name: Initialize Terraform
+        run: terraform -chdir="$TF_DIR" init -input=false
+
+      - name: Plan refresh-only drift check
+        id: plan
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          terraform -chdir="$TF_DIR" plan \
+            -refresh-only \
+            -detailed-exitcode \
+            -input=false \
+            -no-color 2>&1 | tee plan-output.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Record drift summary
+        if: always()
+        run: |
+          case "${{ steps.plan.outputs.exit_code }}" in
+            0) echo "No remote state drift detected for ${{ matrix.environment }}." >> "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "Drift detected for ${{ matrix.environment }}. A labeled issue will be created or updated." >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "Terraform plan failed for ${{ matrix.environment }}; inspect the workflow log." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+
+      - name: Upload plan output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: terraform-drift-${{ matrix.environment }}-${{ github.run_id }}
+          path: plan-output.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Create or update drift issue
+        if: steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@v9
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        with:
+          script: |
+            const fs = require('fs');
+            const environment = process.env.ENVIRONMENT;
+            const title = `[Terraform drift] ${environment}`;
+            const fullOutput = fs.readFileSync('plan-output.txt', 'utf8');
+            const excerpt = fullOutput.slice(0, 4000);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `## Terraform drift detected\n\nEnvironment: \`${environment}\`\nRun: ${runUrl}\n\nThe refresh-only plan output is limited to 4,000 characters. See the workflow artifact for the complete output.\n\n\`\`\`text\n${excerpt}\n\`\`\``;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              ...context.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              const { data: issue } = await github.rest.issues.create({ ...context.repo, title, body });
+              core.info(`Created drift issue #${issue.number}`);
+            }
+            for (const name of ['infrastructure', 'devops']) {
+              try {
+                await github.rest.issues.createLabel({ ...context.repo, name, color: name === 'devops' ? '1d76db' : 'd4c5f9' });
+              } catch (error) {
+                if (error.status !== 422) throw error;
+              }
+            }
+            const { data: refreshed } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', per_page: 100 });
+            const issue = refreshed.find((item) => !item.pull_request && item.title === title);
+            if (issue) await github.rest.issues.addLabels({ ...context.repo, issue_number: issue.number, labels: ['infrastructure', 'devops'] });
+
+      - name: Notify operations channel
+        if: steps.plan.outputs.exit_code == '2'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL is not configured; the GitHub issue and workflow artifact contain the drift report."
+            exit 0
+          fi
+          summary="Terraform drift detected in ${{ matrix.environment }}. Review $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          payload=$(jq -n --arg text "$summary" '{text: $text}')
+          curl --fail --silent --show-error -X POST \
+            -H 'Content-Type: application/json' \
+            --data "$payload" "$SLACK_WEBHOOK_URL"
+
+      - name: Fail on Terraform plan errors
+        if: steps.plan.outputs.exit_code == '1' || steps.plan.outputs.exit_code == ''
+        run: exit 1

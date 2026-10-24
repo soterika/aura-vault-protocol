@@ -38,6 +38,19 @@ data:
             prefix: index_
             period: 24h
 
+    ruler:
+      enable_api: true
+      enable_alertmanager_v2: true
+      alertmanager_url: http://alertmanager:9093
+      rule_path: /tmp/loki/rules-temp
+      storage:
+        type: local
+        local:
+          directory: /etc/loki/rules
+      ring:
+        kvstore:
+          store: inmemory
+
     server:
       http_listen_port: 3100
       grpc_listen_port: 9096
@@ -99,6 +112,8 @@ spec:
           volumeMounts:
             - name: loki-config
               mountPath: /etc/loki
+            - name: loki-alert-rules
+              mountPath: /etc/loki/rules/fake
             - name: loki-storage
               mountPath: /loki
           resources:
@@ -128,6 +143,9 @@ spec:
         - name: loki-config
           configMap:
             name: loki-config
+        - name: loki-alert-rules
+          configMap:
+            name: loki-alert-rules
         - name: loki-storage
           emptyDir:
             sizeLimit: 20Gi

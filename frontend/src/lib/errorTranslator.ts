@@ -113,7 +113,7 @@ function toVaultErrorCode(n: number): VaultErrorCode | null {
  * translation key is available.
  *
  * @param code  - The VaultError discriminant (1–24).
- * @param t     - Optional i18next `t()` function. When supplied, titles and
+ * @param t     - Optional translation function. When supplied, titles and
  *                messages are pulled from the `vault_errors.<code>.*` i18n
  *                keys so the UI is automatically localised.
  * @param ctx   - Optional runtime context (entered amount, wallet balance, etc.)
@@ -129,7 +129,7 @@ export function getVaultErrorRecovery(
     if (t) {
       const key = `vault_errors.${code}.${field}`;
       const translated = t(key);
-      // i18next returns the key itself when a translation is missing.
+      // translation functions may return the key itself when a translation is missing.
       if (translated !== key) return translated;
     }
     return VAULT_ERROR_STATIC[code]?.[field] ?? VAULT_ERROR_STATIC[5][field];

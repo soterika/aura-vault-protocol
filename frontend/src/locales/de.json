@@ -1,7 +1,8 @@
 {
   "nav": {
     "faq": "FAQ",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "dashboard": "Dashboard"
   },
   "home": {
     "get_started": "Um zu beginnen, bearbeite die Datei page.tsx.",
@@ -19,7 +20,8 @@
     "all_categories": "Alle",
     "no_results": "Keine Ergebnisse gefunden.",
     "cant_find": "Können Sie Ihre Antwort nicht finden?",
-    "open_issue": "GitHub Issue öffnen"
+    "open_issue": "GitHub Issue öffnen",
+    "categories_label": "FAQ-Kategorien"
   },
   "settings": {
     "title": "Einstellungen",
@@ -79,38 +81,138 @@
     "mark_all_read": "Alle als gelesen markieren",
     "clear": "Löschen",
     "empty": "Keine Benachrichtigungen",
-    "unread_aria": "Benachrichtigungen, {{count}} ungelesen",
-    "dismiss": "Benachrichtigung schließen"
+    "unread_aria": "Benachrichtigungen, {count} ungelesen",
+    "dismiss": "Benachrichtigung schließen",
+    "read_aria": "Benachrichtigungen"
   },
   "theme": {
     "light": "Hell",
     "dark": "Dunkel",
-    "auto": "Auto"
+    "auto": "Auto",
+    "switchTo": "Zum {theme}-Design wechseln"
   },
   "vault_errors": {
-    "1":  { "title": "Vault Nicht Initialisiert",         "message": "Der Vault wurde noch nicht initialisiert. Kontaktieren Sie den Administrator oder überprüfen Sie die Vertragsadresse." },
-    "2":  { "title": "Bereits Initialisiert",             "message": "Der Vault wurde bereits initialisiert und kann nicht erneut eingerichtet werden." },
-    "3":  { "title": "Unzureichende Anteile",             "message": "Sie haben nicht genügend Vault-Anteile für diese Auszahlung. Überprüfen Sie Ihren Anteilsstand." },
-    "4":  { "title": "Unzureichendes Guthaben",           "message": "Der Vault hat nicht genügend zugrunde liegende Token für diese Einlösung. Kontaktieren Sie den Administrator." },
-    "5":  { "title": "Betrag Null",                       "message": "Der Betrag muss größer als null sein. Erhöhen Sie den Eingabebetrag und versuchen Sie es erneut." },
-    "6":  { "title": "Arithmetischer Überlauf",           "message": "Arithmetischer Überlauf: Der Transaktionsbetrag ist zu groß. Versuchen Sie es mit einem kleineren Betrag." },
-    "7":  { "title": "Ungültige Adresse",                 "message": "Die Adresse oder das Token wird nicht erkannt. Stellen Sie sicher, dass es vom Administrator freigegeben wurde." },
-    "8":  { "title": "Keine Anteilsinhaber",              "message": "Der Vault hat noch keine Anteilsinhaber. Rendite kann erst verteilt werden, wenn jemand einzahlt." },
-    "9":  { "title": "Nicht Autorisiert",                 "message": "Nur der Vault-Administrator kann diese Aktion durchführen. Verbinden Sie sich mit dem Administratorkonto." },
-    "10": { "title": "Speicherlayout-Konflikt",           "message": "Vertrags-Upgrade fehlgeschlagen: Speicherlayout-Version stimmt nicht überein. Eine Migration ist erforderlich." },
-    "11": { "title": "Vault Pausiert",                    "message": "Der Vault ist derzeit pausiert. Bitte warten Sie, bis der Administrator den Betrieb wieder aufnimmt." },
-    "12": { "title": "Saldoabweichung",                   "message": "Sicherheitswarnung: Das Token-Guthaben des Vaults stimmt nicht mit den Aufzeichnungen überein. Kontaktieren Sie sofort den Administrator." },
-    "13": { "title": "Zeitsperre Nicht Abgelaufen",       "message": "Dieser Governance-Vorschlag kann noch nicht ausgeführt werden. Die Sperrfrist ist noch nicht abgelaufen." },
-    "14": { "title": "Vorschlag Nicht Genehmigt",         "message": "Dieser Governance-Vorschlag hat nicht genügend Genehmigungen erhalten, um ausgeführt zu werden." },
-    "15": { "title": "Bereits Abgestimmt",                "message": "Sie haben bereits über diesen Vorschlag abgestimmt. Jeder Unterzeichner darf nur einmal abstimmen." },
-    "16": { "title": "TVL-Obergrenze Überschritten",      "message": "Diese Einzahlung würde die TVL-Obergrenze des Vaults überschreiten. Versuchen Sie einen kleineren Betrag oder warten Sie." },
-    "17": { "title": "Rendite Zu Gering",                 "message": "Der Renditebetrag ist zu gering für eine Verteilung – er wird auf null pro Anteil gerundet. Akkumulieren Sie zuerst mehr." },
-    "18": { "title": "Verteilungsgenauigkeitsfehler",     "message": "Die Genauigkeitsprüfung der Renditeverteilung ist fehlgeschlagen. Passen Sie den Betrag leicht an und versuchen Sie es erneut." },
-    "19": { "title": "Ernte-Abkühlzeit",                  "message": "Eine Ernte wurde zu kürzlich durchgeführt. Warten Sie, bis die Abkühlzeit abläuft, bevor Sie erneut ernten." },
-    "20": { "title": "Auszahlung In Warteschlange",       "message": "Ihre Auszahlung wurde in die Warteschlange gestellt. Fordern Sie sie nach Ablauf der Bindungsfrist mit Ihrer Eintrags-ID an." },
-    "21": { "title": "Warteschlangeneintrag Nicht Gefunden","message": "Warteschlangeneintrag für Auszahlung nicht gefunden. Er existiert möglicherweise nicht oder wurde bereits eingelöst." },
-    "22": { "title": "Bindungsfrist Ausstehend",          "message": "Ihre Auszahlung befindet sich noch in der Bindungsfrist. Bitte warten Sie und versuchen Sie es nach der Freischaltzeit erneut." },
-    "23": { "title": "Ungültige Auszahlungsgebühr",       "message": "Die Auszahlungsgebühr überschreitet den zulässigen Höchstsatz von 5 %. Verwenden Sie einen Wert zwischen 0 und 500 Basispunkten." },
-    "24": { "title": "Schutzschalter Ausgelöst",          "message": "Ernte abgelehnt: Die Kursbewegung des Anteils hat das Sicherheitslimit überschritten. Der Vault wurde automatisch pausiert." }
+    "1": {
+      "title": "Vault Nicht Initialisiert",
+      "message": "Der Vault wurde noch nicht initialisiert. Kontaktieren Sie den Administrator oder überprüfen Sie die Vertragsadresse."
+    },
+    "2": {
+      "title": "Bereits Initialisiert",
+      "message": "Der Vault wurde bereits initialisiert und kann nicht erneut eingerichtet werden."
+    },
+    "3": {
+      "title": "Unzureichende Anteile",
+      "message": "Sie haben nicht genügend Vault-Anteile für diese Auszahlung. Überprüfen Sie Ihren Anteilsstand."
+    },
+    "4": {
+      "title": "Unzureichendes Guthaben",
+      "message": "Der Vault hat nicht genügend zugrunde liegende Token für diese Einlösung. Kontaktieren Sie den Administrator."
+    },
+    "5": {
+      "title": "Betrag Null",
+      "message": "Der Betrag muss größer als null sein. Erhöhen Sie den Eingabebetrag und versuchen Sie es erneut."
+    },
+    "6": {
+      "title": "Arithmetischer Überlauf",
+      "message": "Arithmetischer Überlauf: Der Transaktionsbetrag ist zu groß. Versuchen Sie es mit einem kleineren Betrag."
+    },
+    "7": {
+      "title": "Ungültige Adresse",
+      "message": "Die Adresse oder das Token wird nicht erkannt. Stellen Sie sicher, dass es vom Administrator freigegeben wurde."
+    },
+    "8": {
+      "title": "Keine Anteilsinhaber",
+      "message": "Der Vault hat noch keine Anteilsinhaber. Rendite kann erst verteilt werden, wenn jemand einzahlt."
+    },
+    "9": {
+      "title": "Nicht Autorisiert",
+      "message": "Nur der Vault-Administrator kann diese Aktion durchführen. Verbinden Sie sich mit dem Administratorkonto."
+    },
+    "10": {
+      "title": "Speicherlayout-Konflikt",
+      "message": "Vertrags-Upgrade fehlgeschlagen: Speicherlayout-Version stimmt nicht überein. Eine Migration ist erforderlich."
+    },
+    "11": {
+      "title": "Vault Pausiert",
+      "message": "Der Vault ist derzeit pausiert. Bitte warten Sie, bis der Administrator den Betrieb wieder aufnimmt."
+    },
+    "12": {
+      "title": "Saldoabweichung",
+      "message": "Sicherheitswarnung: Das Token-Guthaben des Vaults stimmt nicht mit den Aufzeichnungen überein. Kontaktieren Sie sofort den Administrator."
+    },
+    "13": {
+      "title": "Zeitsperre Nicht Abgelaufen",
+      "message": "Dieser Governance-Vorschlag kann noch nicht ausgeführt werden. Die Sperrfrist ist noch nicht abgelaufen."
+    },
+    "14": {
+      "title": "Vorschlag Nicht Genehmigt",
+      "message": "Dieser Governance-Vorschlag hat nicht genügend Genehmigungen erhalten, um ausgeführt zu werden."
+    },
+    "15": {
+      "title": "Bereits Abgestimmt",
+      "message": "Sie haben bereits über diesen Vorschlag abgestimmt. Jeder Unterzeichner darf nur einmal abstimmen."
+    },
+    "16": {
+      "title": "TVL-Obergrenze Überschritten",
+      "message": "Diese Einzahlung würde die TVL-Obergrenze des Vaults überschreiten. Versuchen Sie einen kleineren Betrag oder warten Sie."
+    },
+    "17": {
+      "title": "Rendite Zu Gering",
+      "message": "Der Renditebetrag ist zu gering für eine Verteilung – er wird auf null pro Anteil gerundet. Akkumulieren Sie zuerst mehr."
+    },
+    "18": {
+      "title": "Verteilungsgenauigkeitsfehler",
+      "message": "Die Genauigkeitsprüfung der Renditeverteilung ist fehlgeschlagen. Passen Sie den Betrag leicht an und versuchen Sie es erneut."
+    },
+    "19": {
+      "title": "Ernte-Abkühlzeit",
+      "message": "Eine Ernte wurde zu kürzlich durchgeführt. Warten Sie, bis die Abkühlzeit abläuft, bevor Sie erneut ernten."
+    },
+    "20": {
+      "title": "Auszahlung In Warteschlange",
+      "message": "Ihre Auszahlung wurde in die Warteschlange gestellt. Fordern Sie sie nach Ablauf der Bindungsfrist mit Ihrer Eintrags-ID an."
+    },
+    "21": {
+      "title": "Warteschlangeneintrag Nicht Gefunden",
+      "message": "Warteschlangeneintrag für Auszahlung nicht gefunden. Er existiert möglicherweise nicht oder wurde bereits eingelöst."
+    },
+    "22": {
+      "title": "Bindungsfrist Ausstehend",
+      "message": "Ihre Auszahlung befindet sich noch in der Bindungsfrist. Bitte warten Sie und versuchen Sie es nach der Freischaltzeit erneut."
+    },
+    "23": {
+      "title": "Ungültige Auszahlungsgebühr",
+      "message": "Die Auszahlungsgebühr überschreitet den zulässigen Höchstsatz von 5 %. Verwenden Sie einen Wert zwischen 0 und 500 Basispunkten."
+    },
+    "24": {
+      "title": "Schutzschalter Ausgelöst",
+      "message": "Ernte abgelehnt: Die Kursbewegung des Anteils hat das Sicherheitslimit überschritten. Der Vault wurde automatisch pausiert."
+    }
+  },
+  "meta": {
+    "title": "Aura Vault Protocol",
+    "description": "Share-based yield vault on Soroban for the Stellar ecosystem."
+  },
+  "dashboard": {
+    "title": "Tresor-Dashboard",
+    "connected": "Verbunden: {address}",
+    "wallet_not_connected": "Wallet nicht verbunden",
+    "vault_balance": "Tresorguthaben",
+    "updated": "Aktualisiert: {time}",
+    "apy": "Jährliche Rendite",
+    "current_yield": "Aktuelle Rendite",
+    "tvl": "Gesamter gesperrter Wert",
+    "total_users": "Nutzer insgesamt",
+    "active_participants": "Aktive Teilnehmer",
+    "recent_transactions": "Letzte Transaktionen",
+    "type": "Typ",
+    "amount": "Betrag",
+    "date": "Datum",
+    "status": "Status",
+    "transaction_status": {
+      "completed": "Abgeschlossen",
+      "pending": "Ausstehend",
+      "failed": "Fehlgeschlagen"
+    }
   }
 }

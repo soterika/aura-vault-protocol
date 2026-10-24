@@ -1,24 +1,32 @@
 {
+  "meta": {
+    "title": "Aura Vault Protocol",
+    "description": "Un vault de rendimiento basado en participaciones en Soroban para el ecosistema Stellar."
+  },
   "nav": {
-    "faq": "Preguntas Frecuentes",
-    "settings": "Configuración"
+    "faq": "Preguntas frecuentes",
+    "settings": "Configuración",
+    "dashboard": "Panel"
   },
   "home": {
-    "get_started": "Para comenzar, edita el archivo page.tsx.",
-    "instructions": "¿Buscas un punto de partida o más instrucciones? Ve a",
-    "templates": "Plantillas",
-    "or_the": "o al",
-    "learning_center": "Centro de aprendizaje",
-    "deploy_now": "Desplegar ahora",
+    "get_started": "Administra tu posición en Aura Vault",
+    "instructions": "Deposita, consulta tus participaciones y sigue el rendimiento del vault desde un solo panel.",
+    "templates": "Panel del vault",
+    "or_the": "Consulta",
+    "learning_center": "las preguntas frecuentes",
+    "deploy_now": "Abrir panel",
     "documentation": "Documentación"
+  },
   "faq": {
-    "title": "Preguntas Frecuentes",
+    "title": "Preguntas frecuentes",
     "subtitle": "Todo lo que necesitas saber sobre Aura Vault Protocol.",
     "search_placeholder": "Buscar preguntas…",
     "all_categories": "Todas",
     "no_results": "No se encontraron resultados.",
     "cant_find": "¿No encuentras tu respuesta?",
-    "open_issue": "Abre un issue en GitHub"
+    "open_issue": "Abre un issue en GitHub",
+    "categories_label": "Categorías de preguntas"
+  },
   "settings": {
     "title": "Configuración",
     "saved": "Configuración guardada",
@@ -29,18 +37,22 @@
     },
     "language": {
       "title": "Idioma",
-      "description": "Elige tu idioma preferido. Los cambios se aplican de inmediato."
+      "description": "Elige tu idioma de visualización. Los cambios se aplican de inmediato."
+    },
     "currency": {
       "title": "Moneda",
       "description": "Elige cómo se muestran los saldos y el rendimiento.",
-      "note": "Los precios se obtienen de feeds de mercado y son solo informativos."
+      "note": "Los precios de mercado son solo informativos."
+    },
     "wallet": {
-      "title": "Billetera Conectada",
-      "no_wallet": "Sin billetera conectada",
-      "connect": "Conectar Billetera"
+      "title": "Billetera conectada",
+      "no_wallet": "No hay una billetera conectada",
+      "connect": "Conectar billetera"
+    },
     "slippage": {
-      "title": "Tolerancia de Deslizamiento",
-      "high_warning": "Un deslizamiento alto puede resultar en operaciones desfavorables"
+      "title": "Tolerancia de deslizamiento",
+      "high_warning": "Un deslizamiento alto puede causar operaciones desfavorables."
+    },
     "notifications": {
       "title": "Notificaciones",
       "deposits": "Confirmaciones de depósito",
@@ -50,100 +62,157 @@
       "email_address": "Dirección de correo",
       "email_placeholder": "tu@ejemplo.com",
       "push_title": "Notificaciones push del navegador",
-      "push_description": "Recibe una notificación cuando ocurra un evento de cosecha en el vault.",
-      "push_blocked": "Las notificaciones push están bloqueadas. Actualiza los permisos del sitio.",
-      "push_unsupported": "Las notificaciones push no son compatibles con este navegador."
+      "push_description": "Recibe una notificación cuando ocurra una cosecha del vault.",
+      "push_blocked": "Las notificaciones push están bloqueadas. Actualiza los permisos del sitio para activarlas.",
+      "push_unsupported": "Este navegador no admite notificaciones push."
+    },
     "security": {
       "title": "Seguridad",
-      "two_factor": "Autenticación de Dos Factores",
-      "two_factor_desc": "Añade una capa adicional de seguridad"
+      "two_factor": "Autenticación de dos factores",
+      "two_factor_desc": "Añade una capa adicional de seguridad."
+    },
     "danger": {
-      "title": "Zona de Peligro",
-      "description": "Desactivar tu cuenta eliminará todos los datos y no se puede deshacer.",
-      "deactivate": "Desactivar Cuenta",
+      "title": "Zona de peligro",
+      "description": "Desactivar tu cuenta eliminará sus datos y no se puede deshacer.",
+      "deactivate": "Desactivar cuenta",
       "confirm_message": "¿Estás seguro? Esta acción es irreversible.",
       "cancel": "Cancelar",
-      "confirm": "Confirmar Desactivación"
+      "confirm": "Confirmar desactivación"
     }
+  },
   "notifications": {
     "title": "Notificaciones",
     "mark_all_read": "Marcar todo como leído",
     "clear": "Borrar",
-    "empty": "Sin notificaciones",
-    "unread_aria": "Notificaciones, {{count}} sin leer",
+    "empty": "No hay notificaciones",
+    "unread_aria": "Notificaciones, {count} sin leer",
+    "read_aria": "Notificaciones",
     "dismiss": "Descartar notificación"
+  },
   "theme": {
     "light": "Claro",
     "dark": "Oscuro",
-    "auto": "Auto"
+    "auto": "Sistema",
+    "switchTo": "Cambiar al tema {theme}"
+  },
   "vault_errors": {
-    "1":  { "title": "Vault No Inicializado",        "message": "El vault aún no ha sido inicializado. Contacta al administrador o verifica la dirección del contrato." },
-    "2":  { "title": "Ya Inicializado",              "message": "El vault ya ha sido inicializado y no puede configurarse nuevamente." },
-    "3":  { "title": "Participaciones Insuficientes","message": "No tienes suficientes participaciones del vault para completar este retiro. Verifica tu saldo." },
-    "4":  { "title": "Subyacente Insuficiente",      "message": "El vault no tiene suficientes tokens subyacentes para cubrir este canje. Contacta al administrador." },
-    "5":  { "title": "Monto Cero",                   "message": "El monto debe ser mayor que cero. Aumenta el monto e inténtalo de nuevo." },
-    "6":  { "title": "Desbordamiento Aritmético",    "message": "Desbordamiento aritmético: el monto de la transacción es demasiado grande. Intenta con un monto menor." },
-    "7":  { "title": "Dirección Inválida",           "message": "La dirección o el token no es reconocido. Asegúrate de que haya sido incluido en la lista blanca por el administrador." },
-    "8":  { "title": "Sin Accionistas",              "message": "El vault aún no tiene accionistas. El rendimiento no puede distribuirse hasta que alguien deposite." },
-    "9":  { "title": "No Autorizado",                "message": "Solo el administrador del vault puede realizar esta acción. Conéctate con la cuenta de administrador e inténtalo de nuevo." },
-    "10": { "title": "Versión de Almacenamiento Incorrecta", "message": "Actualización del contrato fallida: versión del esquema de almacenamiento incompatible. Se requiere una migración primero." },
-    "11": { "title": "Vault en Pausa",               "message": "El vault está actualmente en pausa. Por favor espera a que el administrador reanude las operaciones." },
-    "12": { "title": "Saldo Inconsistente",          "message": "Alerta de seguridad: el saldo de tokens del vault no coincide con sus registros. Contacta al administrador de inmediato." },
-    "13": { "title": "Bloqueo Temporal No Expirado", "message": "Esta propuesta de gobernanza aún no puede ejecutarse. El período de bloqueo temporal no ha expirado." },
-    "14": { "title": "Propuesta No Aprobada",        "message": "Esta propuesta de gobernanza no ha recibido suficientes aprobaciones para ejecutarse." },
-    "15": { "title": "Ya Votó",                      "message": "Ya votaste en esta propuesta. Cada firmante solo puede votar una vez." },
-    "16": { "title": "Límite TVL Excedido",          "message": "Este depósito excedería el límite de valor total bloqueado del vault. Intenta con un monto menor o espera a que haya capacidad." },
-    "17": { "title": "Rendimiento Demasiado Pequeño","message": "El monto de rendimiento es demasiado pequeño para distribuir — se redondea a cero por participación. Acumula más rendimiento primero." },
-    "18": { "title": "Error de Precisión en Distribución", "message": "La verificación de precisión de distribución de rendimiento falló. Ajusta ligeramente el monto e inténtalo de nuevo." },
-    "19": { "title": "Cooldown de Cosecha",          "message": "Una cosecha fue realizada muy recientemente. Espera a que expire el período de cooldown antes de cosechar nuevamente." },
-    "20": { "title": "Retiro en Cola",               "message": "Tu retiro ha sido puesto en cola. Reclamarlo después de que expire el período de desvinculación usando el ID de tu entrada en cola." },
-    "21": { "title": "Entrada en Cola No Encontrada","message": "Entrada en la cola de retiros no encontrada. Puede que no exista o ya haya sido reclamada." },
-    "22": { "title": "Desvinculación Pendiente",     "message": "Tu retiro aún está en el período de desvinculación. Por favor espera e inténtalo después del tiempo de desbloqueo." },
-    "23": { "title": "Tarifa de Retiro Inválida",    "message": "La tarifa de retiro excede la tasa máxima permitida del 5%. Usa un valor entre 0 y 500 puntos básicos." },
-    "24": { "title": "Interruptor de Circuito Activado", "message": "Cosecha rechazada: el movimiento del precio de participación excedió el límite de seguridad. El vault ha sido pausado automáticamente pendiente de revisión del administrador." }
-  "meta": {
-    "title": "Aura Vault Protocol",
-    "description": "Una bóveda de rendimiento basada en acciones sobre Soroban para el ecosistema Stellar."
-    "heading": "Para comenzar, edita el archivo page.tsx.",
-    "body": "¿Buscas un punto de partida o más instrucciones? Visita {templatesLink} o el {learningLink}.",
-    "learning": "Centro de aprendizaje",
-    "faqLink": "FAQ",
-    "deployNow": "Desplegar ahora"
-    "faq": "FAQ",
-    "heading": "Notificaciones",
-    "markAllRead": "Marcar todas como leídas",
-    "clear": "Limpiar",
-    "unreadAriaLabel": "Notificaciones, {count} sin leer",
-    "readAriaLabel": "Notificaciones",
-    "dismissAriaLabel": "Cerrar notificación",
-    "timestamp": "{date}"
-    "heading": "Configuración",
-      "heading": "Billetera conectada",
-      "noWallet": "Sin billetera conectada",
-      "connect": "Conectar billetera"
-      "heading": "Tolerancia de deslizamiento",
-      "highWarning": "Un deslizamiento alto puede resultar en operaciones desfavorables"
-      "heading": "Notificaciones",
-      "vaultEvents": "Alertas de rendimiento de la bóveda",
-      "emailAddress": "Dirección de correo electrónico",
-      "emailPlaceholder": "tu@ejemplo.com"
-      "heading": "Seguridad",
-      "twoFactor": "Autenticación de dos factores",
-      "twoFactorDescription": "Agrega una capa extra de seguridad"
-      "heading": "Zona de peligro",
-      "deactivate": "Desactivar cuenta",
-      "confirmPrompt": "¿Estás seguro? Esta acción es irreversible.",
-      "confirm": "Confirmar desactivación"
-    "heading": "Preguntas frecuentes",
-    "subheading": "Todo lo que necesitas saber sobre Aura Vault Protocol.",
-    "searchPlaceholder": "Buscar preguntas\u2026",
-    "allCategory": "Todas",
-    "noResults": "No se encontraron resultados.",
-    "cantFind": "¿No encuentras tu respuesta?",
-    "openIssue": "Abre un issue en GitHub"
-  "languageSwitcher": {
-    "label": "Idioma",
-    "en": "English",
-    "es": "Español"
+    "1": {
+      "title": "Error del vault 1",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "2": {
+      "title": "Error del vault 2",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "3": {
+      "title": "Error del vault 3",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "4": {
+      "title": "Error del vault 4",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "5": {
+      "title": "Error del vault 5",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "6": {
+      "title": "Error del vault 6",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "7": {
+      "title": "Error del vault 7",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "8": {
+      "title": "Error del vault 8",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "9": {
+      "title": "Error del vault 9",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "10": {
+      "title": "Error del vault 10",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "11": {
+      "title": "Error del vault 11",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "12": {
+      "title": "Error del vault 12",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "13": {
+      "title": "Error del vault 13",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "14": {
+      "title": "Error del vault 14",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "15": {
+      "title": "Error del vault 15",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "16": {
+      "title": "Error del vault 16",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "17": {
+      "title": "Error del vault 17",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "18": {
+      "title": "Error del vault 18",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "19": {
+      "title": "Error del vault 19",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "20": {
+      "title": "Error del vault 20",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "21": {
+      "title": "Error del vault 21",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "22": {
+      "title": "Error del vault 22",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "23": {
+      "title": "Error del vault 23",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "24": {
+      "title": "Error del vault 24",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    }
+  },
+  "dashboard": {
+    "title": "Panel de la bóveda",
+    "connected": "Conectado: {address}",
+    "wallet_not_connected": "Billetera no conectada",
+    "vault_balance": "Saldo de la bóveda",
+    "updated": "Actualizado: {time}",
+    "apy": "Rendimiento porcentual anual",
+    "current_yield": "Rendimiento actual",
+    "tvl": "Valor total bloqueado",
+    "total_users": "Usuarios totales",
+    "active_participants": "Participantes activos",
+    "recent_transactions": "Transacciones recientes",
+    "type": "Tipo",
+    "amount": "Importe",
+    "date": "Fecha",
+    "status": "Estado",
+    "transaction_status": {
+      "completed": "Completada",
+      "pending": "Pendiente",
+      "failed": "Fallida"
+    }
   }
 }

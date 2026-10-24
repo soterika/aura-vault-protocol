@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { estimateYieldPerSecond } from "../lib/yieldAccrual";
 
 /* ─────────────────────────────────────────────────────────────────
    Inline copies of the pure helpers from the card modules.
@@ -175,6 +176,20 @@ describe("UserPositionCard wallet-gating", () => {
 
   it("returns true (visible) while loading even with no position (undefined)", () => {
     expect(shouldRenderPositionCard(true, undefined)).toBe(true);
+  });
+});
+
+describe("estimated yield accrual", () => {
+  it("annualizes APY over 365.25 days and returns per-second position yield", () => {
+    expect(estimateYieldPerSecond("1000 USDC", 0.1)).toBeCloseTo(
+      1000 * 0.1 / (365.25 * 24 * 60 * 60),
+    );
+  });
+
+  it("returns zero for empty positions and invalid APY", () => {
+    expect(estimateYieldPerSecond("0 USDC", 0.1)).toBe(0);
+    expect(estimateYieldPerSecond("100 USDC", Number.NaN)).toBe(0);
+    expect(estimateYieldPerSecond("100 USDC", -0.1)).toBe(0);
   });
 });
 

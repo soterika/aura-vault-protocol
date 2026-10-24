@@ -73,7 +73,13 @@ scrape_configs:
             err: err
             pid: pid
 
-      # 3. Promote Pino level, service, and correlationId to Loki labels
+      # 3. Normalize Pino's numeric levels before promoting them to labels.
+      #    Pino emits 10/20/30/40/50/60 for trace/debug/info/warn/error/fatal.
+      - template:
+          source: level
+          template: '{{ if eq .level "60" }}fatal{{ else if eq .level "50" }}error{{ else if eq .level "40" }}warn{{ else if eq .level "30" }}info{{ else if eq .level "20" }}debug{{ else if eq .level "10" }}trace{{ else }}unknown{{ end }}'
+
+      # Promote Pino level, service, and stream to Loki labels.
       #    (keep label cardinality low — don't label high-cardinality fields like correlationId)
       - labels:
           level:

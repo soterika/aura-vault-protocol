@@ -74,6 +74,16 @@ they affect integrators or release behavior.
 
 ## Code Quality Standards
 
+### Internationalization
+
+The App Router uses `next-intl` with locale routes under `frontend/src/app/[locale]`.
+Add or update translation keys in every supported locale file under
+`frontend/src/locales/` (`en`, `es`, `fr`, `de`, `zh`, and `ar`), and use the
+translation hook in user-facing components instead of adding new hardcoded
+English labels. Use `Intl.NumberFormat` and `Intl.DateTimeFormat` for locale-
+sensitive numbers and dates. Include a translation update with UI changes so
+the English fallback and translated routes stay in sync.
+
 ### JavaScript and TypeScript
 
 - Follow workspace lint rules: `npm run lint` within the target package (`backend` or `ui`).

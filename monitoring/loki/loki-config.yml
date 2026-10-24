@@ -24,6 +24,19 @@ schema_config:
         prefix: index_
         period: 24h
 
+ruler:
+  enable_api: true
+  enable_alertmanager_v2: true
+  alertmanager_url: http://alertmanager:9093
+  rule_path: /tmp/loki/rules-temp
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+
 # =============================================================================
 # Log Retention Policy — tiered by log level label set by Promtail
 #

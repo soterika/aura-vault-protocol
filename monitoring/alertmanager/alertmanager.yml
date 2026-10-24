@@ -1,5 +1,6 @@
 global:
   resolve_timeout: 5m
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
 
 route:
   group_by: ["alertname", "severity"]
@@ -19,13 +20,22 @@ route:
 
 receivers:
   - name: "default"
-    # Configure webhook, email, or Slack here
-    # webhook_configs:
-    #   - url: "http://host.docker.internal:3000/api/alerts"
+    slack_configs:
+      - channel: '#alerts'
+        title: '[{{ .GroupLabels.alertname }}] {{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+        send_resolved: true
 
   - name: "critical"
-    # webhook_configs:
-    #   - url: "http://host.docker.internal:3000/api/alerts/critical"
+    slack_configs:
+      - channel: '#critical-alerts'
+        title: '[CRITICAL] {{ .CommonAnnotations.summary }}'
+        text: '{{ .CommonAnnotations.description }}'
+        send_resolved: true
+    pagerduty_configs:
+      - routing_key: '${PAGERDUTY_ROUTING_KEY}'
+        severity: critical
+        send_resolved: true
 
 inhibit_rules:
   - source_match:

@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslations } from "next-intl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useWidgetLayout } from "@/lib/useWidgetLayout";
 import { AppearanceSettings } from "@/components/AppearanceSettings";
-import "@/lib/i18n";
 
 interface Settings {
   slippageTolerance: number;
@@ -43,7 +42,7 @@ function saveSettings(settings: Settings) {
 }
 
 export default function SettingsContent() {
-  const { t } = useTranslation();
+  const t = useTranslations();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
   const [showDeactivate, setShowDeactivate] = useState(false);

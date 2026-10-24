@@ -47,6 +47,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - ./monitoring/loki/rules.yaml:/loki/rules/fake/aura-alerts.yaml:ro
       - loki_data:/loki
     ports:
       - "3100:3100"
@@ -108,8 +109,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:?Set SLACK_WEBHOOK_URL before starting Alertmanager}
+      PAGERDUTY_ROUTING_KEY: ${PAGERDUTY_ROUTING_KEY:?Set PAGERDUTY_ROUTING_KEY before starting Alertmanager}
     ports:
       - "9093:9093"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--config.expand-env"
     networks:
       - monitoring
 
