@@ -43,7 +43,7 @@
     "pino-http": "^10.5.0",
     "uuid": "^14.0.3",
     "winston": "^3.19.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
