@@ -18,7 +18,9 @@
 
 import { getReadPool } from "../db.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache.js";
+import { getRedis } from "../redis.js";
 import { logger } from "../logger.js";
+import { randomUUID } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -27,6 +29,12 @@ import { logger } from "../logger.js";
 export const VAULT_STATS_CACHE_NS = "vault:stats:v1";
 export const VAULT_STATS_CACHE_TTL_SECS =
   parseInt(process.env.VAULT_STATS_CACHE_TTL_SECS ?? "30", 10);
+export const HORIZON_TIMEOUT_MS = Math.max(
+  100,
+  parseInt(process.env.HORIZON_TIMEOUT_MS ?? "5000", 10) || 5000,
+);
+const STALE_CACHE_TTL_SECS = 5 * 60;
+const LOCK_TTL_MS = HORIZON_TIMEOUT_MS + 2_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -50,6 +58,13 @@ export interface VaultStats {
 export interface VaultStatsCacheEntry {
   data: VaultStats;
   cached_at: number; // Unix epoch ms
+}
+
+export interface VaultStatsResult {
+  stats: VaultStats;
+  cached: boolean;
+  cacheAgeSecs: number | null;
+  stale?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,44 +157,139 @@ function cacheKey(contractId?: string): string {
   return contractId ? `current:${contractId}` : "current";
 }
 
+function staleCacheKey(key: string): string {
+  return `stale:${key}`;
+}
+
+function redisLockKey(key: string): string {
+  // The hash tag keeps the lock and cache keys in one Redis Cluster slot.
+  return `vault:stats:{${key}}:lock`;
+}
+
+async function getFreshEntry(key: string): Promise<VaultStatsCacheEntry | null> {
+  try {
+    return await cacheGet<VaultStatsCacheEntry>(VAULT_STATS_CACHE_NS, key);
+  } catch (redisErr) {
+    logger.warn({ redisErr }, "[vaultStats] Redis unavailable while reading cache");
+    return null;
+  }
+}
+
+async function getStaleEntry(key: string): Promise<VaultStatsCacheEntry | null> {
+  try {
+    return await cacheGet<VaultStatsCacheEntry>(VAULT_STATS_CACHE_NS, staleCacheKey(key));
+  } catch {
+    return null;
+  }
+}
+
+function withinTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Vault stats fetch exceeded ${HORIZON_TIMEOUT_MS}ms`)),
+      HORIZON_TIMEOUT_MS,
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+async function waitForFreshEntry(key: string): Promise<VaultStatsCacheEntry | null> {
+  const deadline = Date.now() + HORIZON_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const entry = await getFreshEntry(key);
+    if (entry) return entry;
+  }
+  return null;
+}
+
 /**
  * Fetch vault stats — Redis cache hit path (< 1ms) or DB fallback.
  * Returns { stats, cached, cacheAgeSecs }.
  */
-export async function getVaultStats(contractId?: string): Promise<{
-  stats: VaultStats;
-  cached: boolean;
-  cacheAgeSecs: number | null;
-}> {
+export async function getVaultStats(contractId?: string): Promise<VaultStatsResult> {
   const key = cacheKey(contractId);
 
   // Cache hit path
+  const cachedEntry = await getFreshEntry(key);
+  if (cachedEntry) {
+    return {
+      stats: cachedEntry.data,
+      cached: true,
+      cacheAgeSecs: Math.max(0, Math.floor((Date.now() - cachedEntry.cached_at) / 1000)),
+    };
+  }
+
+  const staleEntry = await getStaleEntry(key);
+  const token = randomUUID();
+  let ownsLock = false;
   try {
-    const entry = await cacheGet<VaultStatsCacheEntry>(VAULT_STATS_CACHE_NS, key);
-    if (entry !== null) {
-      const ageMs = Date.now() - entry.cached_at;
+    ownsLock = (await getRedis().set(redisLockKey(key), token, "PX", LOCK_TTL_MS, "NX")) === "OK";
+  } catch (redisErr) {
+    logger.warn({ redisErr }, "[vaultStats] Redis lock unavailable; fetching without lock");
+    ownsLock = true;
+  }
+
+  if (!ownsLock) {
+    if (staleEntry) {
       return {
-        stats: entry.data,
+        stats: staleEntry.data,
         cached: true,
-        cacheAgeSecs: Math.floor(ageMs / 1000),
+        cacheAgeSecs: Math.max(0, Math.floor((Date.now() - staleEntry.cached_at) / 1000)),
+        stale: true,
       };
     }
-  } catch (redisErr) {
-    // Redis unavailable — fall through to live fetch
-    logger.warn({ redisErr }, "[vaultStats] Redis unavailable, fetching live data");
+    const freshAfterWait = await waitForFreshEntry(key);
+    if (freshAfterWait) {
+      return { stats: freshAfterWait.data, cached: true, cacheAgeSecs: 0 };
+    }
+    const lateStale = staleEntry ?? await getStaleEntry(key);
+    if (lateStale) {
+      return { stats: lateStale.data, cached: true, cacheAgeSecs: Math.max(0, Math.floor((Date.now() - lateStale.cached_at) / 1000)), stale: true };
+    }
+    // The lock owner may have failed. Try to become the fetcher once more.
+    try {
+      ownsLock = (await getRedis().set(redisLockKey(key), token, "PX", LOCK_TTL_MS, "NX")) === "OK";
+    } catch {
+      ownsLock = false;
+    }
+    if (!ownsLock) {
+      // Redis outages should not turn a stats endpoint into a Redis dependency.
+      ownsLock = true;
+    }
   }
-
-  // Cache miss — fetch live and populate cache
-  const stats = await fetchLiveVaultStats(contractId);
-  const entry: VaultStatsCacheEntry = { data: stats, cached_at: Date.now() };
 
   try {
-    await cacheSet(VAULT_STATS_CACHE_NS, key, entry, VAULT_STATS_CACHE_TTL_SECS);
-  } catch {
-    // Best-effort cache write — do not fail the request
+    const stats = await withinTimeout(fetchLiveVaultStats(contractId));
+    const entry: VaultStatsCacheEntry = { data: stats, cached_at: Date.now() };
+    try {
+      await cacheSet(VAULT_STATS_CACHE_NS, key, entry, VAULT_STATS_CACHE_TTL_SECS);
+      await cacheSet(VAULT_STATS_CACHE_NS, staleCacheKey(key), entry, STALE_CACHE_TTL_SECS);
+    } catch {
+      // Best-effort cache write — do not fail the request.
+    }
+    return { stats, cached: false, cacheAgeSecs: null };
+  } catch (err) {
+    const fallback = staleEntry ?? await getStaleEntry(key);
+    if (fallback) {
+      logger.warn({ err }, "[vaultStats] Live fetch failed; serving stale stats");
+      return { stats: fallback.data, cached: true, cacheAgeSecs: Math.max(0, Math.floor((Date.now() - fallback.cached_at) / 1000)), stale: true };
+    }
+    throw err;
+  } finally {
+    if (ownsLock) {
+      try {
+        await getRedis().eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+          1,
+          redisLockKey(key),
+          token,
+        );
+      } catch {
+        // The lock expires automatically if Redis is unavailable.
+      }
+    }
   }
-
-  return { stats, cached: false, cacheAgeSecs: null };
 }
 
 /**
@@ -188,5 +298,9 @@ export async function getVaultStats(contractId?: string): Promise<{
  * the new share price immediately.
  */
 export async function invalidateVaultStats(contractId?: string): Promise<void> {
-  await cacheDel(VAULT_STATS_CACHE_NS, cacheKey(contractId));
+  const key = cacheKey(contractId);
+  await Promise.all([
+    cacheDel(VAULT_STATS_CACHE_NS, key),
+    cacheDel(VAULT_STATS_CACHE_NS, staleCacheKey(key)),
+  ]);
 }

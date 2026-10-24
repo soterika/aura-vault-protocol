@@ -142,3 +142,22 @@ The governance module integrates seamlessly with existing vault:
 - Weighted voting (different signature weights)
 - Delegation (signers can delegate votes temporarily)
 - Governance token (tie voting power to holdings)
+
+## Indexed Lifecycle Events
+
+The vault emits the following contract events for off-chain governance history:
+
+| Event | Emitted when | Indexed data |
+|-------|-------------|--------------|
+| `proposal_created` | A signer creates an operation | Proposal ID, proposer, expiry timestamp |
+| `vote_cast` | A signer approves an operation | Proposal ID, voter, current signature count |
+| `timelock_started` | The signature threshold is reached (or a proposal is immediately ready) | Proposal ID, ready timestamp, expiry timestamp |
+| `proposal_executed` | A ready operation executes | Proposal ID and ledger timestamp |
+| `proposal_expired` | `expire_proposal` persists an expired operation | Proposal ID and expiry timestamp |
+
+`backend/src/services/horizonEventListener.ts` accepts decoded Soroban events and
+upserts the proposal projection and vote rows. Migration
+`014_create_governance_proposals.sql` creates `governance_proposals` and
+`governance_proposal_votes`. Call `expire_proposal(proposal_id)` after the
+operation expiry time to persist expiry and emit its event; it is permissionless
+and safe to call more than once.
