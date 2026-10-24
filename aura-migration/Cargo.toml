@@ -10,10 +10,10 @@ repository = "https://github.com/soterika/aura-vault-protocol"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = { version = "28", default-features = true }
+soroban-sdk = { version = "29", default-features = true }
 
 [dev-dependencies]
-soroban-sdk = { version = "28", features = ["testutils"] }
+soroban-sdk = { version = "29", features = ["testutils"] }
 
 [profile.release]
 overflow-checks = true
