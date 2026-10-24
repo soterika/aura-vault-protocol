@@ -15,7 +15,10 @@
 mod security_attacks {
     extern crate std;
 
-    use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
+    use soroban_sdk::{
+        testutils::{Address as _, Events},
+        Address, BytesN, Env, Vec,
+    };
     use soroban_sdk::token::StellarAssetClient;
 
     use crate::{AuraVault, AuraVaultClient, VaultError};
@@ -444,6 +447,13 @@ mod security_attacks {
         // Attempt to harvest 1_000 tokens into a vault with zero shareholders.
         let keeper = Address::generate(&env);
         mint(&env, &token, &admin, &keeper, 1_000);
+        let vault_id = vault.address.clone();
+        let events_before = env
+            .events()
+            .all()
+            .iter()
+            .filter(|(contract, _, _)| contract == &vault_id)
+            .count();
         let result = vault.try_harvest(&keeper, &1_000);
 
         // AC-6 ASSERTION: ZeroShares is returned.
@@ -458,6 +468,16 @@ mod security_attacks {
             vault.total_assets(),
             0,
             "Vault state must not change after rejected harvest"
+        );
+        let events_after = env
+            .events()
+            .all()
+            .iter()
+            .filter(|(contract, _, _)| contract == &vault_id)
+            .count();
+        assert_eq!(
+            events_after, events_before,
+            "Harvest rejected with ZeroShares must not emit a vault event"
         );
     }
 

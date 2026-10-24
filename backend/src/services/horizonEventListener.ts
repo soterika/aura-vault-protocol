@@ -26,6 +26,7 @@ export interface RawHorizonEvent {
 export interface ParsedVaultEvent {
   id: string;
   type: "deposit" | "harvest" | "unknown";
+  inSuccessfulContractCall?: boolean;
   caller?: string;
   amount?: number;
   shares?: number;
@@ -80,6 +81,11 @@ export function parseHorizonEvent(raw: RawHorizonEvent): ParsedVaultEvent {
 
   if (typeof parsed !== "object" || parsed === null) return base;
   const obj = parsed as Record<string, unknown>;
+  const successfulContractCall =
+    obj["inSuccessfulContractCall"] ?? obj["in_successful_contract_call"];
+  if (typeof successfulContractCall === "boolean") {
+    base.inSuccessfulContractCall = successfulContractCall;
+  }
 
   const eventType = obj["type"] as string | undefined;
   if (eventType === "deposit") {
@@ -126,6 +132,11 @@ export function createHorizonEventListener(
     cursor = raw.id;
 
     const parsed = parseHorizonEvent(raw);
+
+    if (parsed.inSuccessfulContractCall === false) {
+      logger.info("Unsuccessful contract event — skipping", { id: raw.id });
+      return;
+    }
 
     if (parsed.type === "unknown") {
       logger.warn("Malformed or unknown vault event — skipping", { id: raw.id, data: raw.data });

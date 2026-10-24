@@ -145,6 +145,13 @@ describe("parseHorizonEvent", () => {
     expect(result.amount).toBe(500);
   });
 
+  it("parses snake_case unsuccessful-contract metadata", () => {
+    const raw = makeHarvestRaw({
+      data: JSON.stringify({ type: "harvest", in_successful_contract_call: false }),
+    });
+    expect(parseHorizonEvent(raw).inSuccessfulContractCall).toBe(false);
+  });
+
   it("returns type=unknown for invalid JSON", () => {
     const raw = makeRaw({ data: "not-json{{{" });
     const result = parseHorizonEvent(raw);
@@ -247,6 +254,33 @@ describe("HorizonEventListener — harvest event triggers cache invalidation", (
 
     expect(cache.invalidationCount).toBe(2);
 
+    listener.stop();
+  });
+
+  it("skips reverted contract events without storing or invalidating cache", async () => {
+    const { source, emit } = makeMockSSESource();
+    const store = makeMockStore();
+    const cache = makeMockCache();
+    const logger = makeMockLogger();
+    const listener = createHorizonEventListener(source, store, cache, logger, {
+      reconnectDelayMs: 60_000,
+    });
+    listener.start();
+
+    emit(makeHarvestRaw({
+      id: "reverted-harvest",
+      data: JSON.stringify({
+        type: "harvest",
+        caller: "GKEEPER",
+        amount: 500,
+        inSuccessfulContractCall: false,
+      }),
+    }));
+    await flushPromises();
+
+    expect(store.stored).toHaveLength(0);
+    expect(cache.invalidationCount).toBe(0);
+    expect(logger.warns).toHaveLength(0);
     listener.stop();
   });
 
