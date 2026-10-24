@@ -11,8 +11,10 @@
 import { Router, Request, Response } from "express";
 import { cacheGet, cacheSet, cacheDel } from "../cache.js";
 import { getVaultStats, VaultStatsData } from "../services/vaultStatsService.js";
+import { runCacheWarmup, getWarmupStatus } from "../services/cacheWarmup.js";
 import { getDbMetrics, getSlowQueryLog, dbMetricsPrometheusText } from "../services/dbMonitor.js";
 import { successResponse, errorResponse } from "../dto/index.js";
+import { authenticate } from "../middleware/authMiddleware.js";
 
 export const VAULT_STATS_CACHE_NS = "vault:stats";
 export const VAULT_STATS_CACHE_KEY = "current";
@@ -97,6 +99,24 @@ vaultRouter.post("/stats/invalidate", async (_req: Request, res: Response): Prom
   } catch (err) {
     console.error("[vault/stats/invalidate]", err);
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Cache invalidation failed"));
+  }
+});
+
+/**
+ * POST /api/v1/vault/stats/refresh
+ * Runs the cache warm-up pipeline to refresh the vault stats, share price,
+ * and top-depositor cache entries on demand.
+ *
+ * Intentionally protected behind authentication so it is only callable by
+ * an authorized operator or admin workflow.
+ */
+vaultRouter.post("/stats/refresh", authenticate, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    await runCacheWarmup();
+    res.json(successResponse({ refreshed: true, status: getWarmupStatus() }));
+  } catch (err) {
+    console.error("[vault/stats/refresh]", err);
+    res.status(500).json(errorResponse("INTERNAL_ERROR", "Vault stats cache refresh failed"));
   }
 });
 
