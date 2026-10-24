@@ -50,6 +50,18 @@ body {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+/* A consistent keyboard indicator remains visible even when components use
+   reset utilities such as outline-none. Blue contrasts against light and
+   dark surfaces and is applied only for keyboard focus. */
+:where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 3px solid #2563eb !important;
+  outline-offset: 2px;
+}
+
+.dark :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline-color: #60a5fa !important;
+}
+
 /* ── Page transitions ── */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }
