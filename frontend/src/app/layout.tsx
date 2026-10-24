@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { AppearanceInitializer } from "@/components/AppearanceInitializer";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -36,6 +37,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <ThemeProvider>
+          <AppearanceInitializer />
           <NextIntlClientProvider messages={messages}>
             <ToastProvider>
               <NotificationProvider>

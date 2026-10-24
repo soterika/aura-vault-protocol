@@ -15,7 +15,12 @@ const stellarAddress = /^G[A-Z2-7]{55}$/;
 const dashboardSchema = z.object({
   dashboardWidgets: z.array(widgetSchema).max(12).optional(),
   addressAliases: z.record(z.string().regex(stellarAddress), z.string().trim().min(1).max(64).nullable()).optional(),
-}).strict().refine((value) => value.dashboardWidgets !== undefined || value.addressAliases !== undefined);
+  appearance: z.object({
+    accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    fontSize: z.enum(["small", "medium", "large"]),
+    compactMode: z.boolean(),
+  }).strict().optional(),
+}).strict().refine((value) => value.dashboardWidgets !== undefined || value.addressAliases !== undefined || value.appearance !== undefined);
 
 function userId(req: Request): string | null {
   const id = (req as Request & { user?: { sub?: unknown } }).user?.sub;
@@ -49,6 +54,7 @@ userPreferencesRouter.put("/", async (req: Request, res: Response): Promise<void
     const updates = {
       ...(parsed.data.dashboardWidgets ? { dashboardWidgets: parsed.data.dashboardWidgets } : {}),
       ...(parsed.data.addressAliases ? { addressAliases: parsed.data.addressAliases } : {}),
+      ...(parsed.data.appearance ? { appearance: parsed.data.appearance } : {}),
     };
     const result = await getWritePool().query<{ preferences: Record<string, unknown> }>(
       `INSERT INTO user_preferences (user_id, preferences)

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCw, Wallet as WalletIcon } from "lucide-react";
 import { WalletSelectionModal, type SupportedWalletId, type WalletInfo } from "./WalletSelectionModal";
 import { useWalletStore } from "@/lib/walletStore";
+import { WalletDisconnectControl } from "@/components/WalletDisconnectControl";
 
 const STORAGE_KEY = "aura_wallet_state";
 const LAST_WALLET_KEY = "aura_last_wallet_type";
@@ -177,7 +178,7 @@ export default function WalletConnect({ onConnected, onDisconnected }: { onConne
     return (
       <div className="flex items-center gap-2">
         <span className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm" title={`${network ?? "Stellar"} ${wallet?.type ?? "wallet"}`}><WalletIcon size={16} aria-hidden="true" />{truncateAddress(address)}</span>
-        <button type="button" onClick={disconnect} className="rounded-lg border px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">Disconnect</button>
+        <WalletDisconnectControl address={address} onConfirm={disconnect} />
       </div>
     );
   }
