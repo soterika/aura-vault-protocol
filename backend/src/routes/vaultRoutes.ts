@@ -32,6 +32,7 @@ import { resolveVault } from "../services/vaultRegistryService.js";
 import { ipRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import { logger } from "../logger.js";
 import { depositSimulateSchema } from "../types/schemas.js";
+import { getReadPool } from "../db.js";
 
 // ── Simulate-deposit cache namespace ─────────────────────────────────────────
 export const VAULT_SIMULATE_CACHE_NS = NS.VAULT_SIMULATE;
@@ -49,6 +50,60 @@ export const VAULT_STATS_CACHE_KEY = "current";
 export const USER_VOLUME_CACHE_TTL_SECS = 300;
 
 export const vaultRouter = Router();
+
+/** Public daily vault activity series for the analytics page. */
+vaultRouter.get("/analytics/history", async (req: Request, res: Response): Promise<void> => {
+  const periods: Record<string, number | null> = { "1D": 1, "7D": 7, "30D": 30, ALL: null };
+  const period = typeof req.query.period === "string" ? req.query.period : "30D";
+  if (!(period in periods)) {
+    res.status(400).json(errorResponse("INVALID_PERIOD", "period must be 1D, 7D, 30D, or ALL"));
+    return;
+  }
+  const days = periods[period];
+  try {
+    const pool = getReadPool();
+    const [historyResult, baselineResult] = await Promise.all([pool.query<{
+      day: Date; deposits: string; withdrawals: string; shares_minted: string;
+      shares_burned: string; unique_depositors: string;
+    }>(
+      `SELECT date_trunc($2::text, timestamp) AS day,
+              (COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0) / 10000000)::text AS deposits,
+              (COALESCE(SUM(amount) FILTER (WHERE type = 'withdraw'), 0) / 10000000)::text AS withdrawals,
+              (COALESCE(SUM(shares) FILTER (WHERE type = 'deposit'), 0) / 10000000)::text AS shares_minted,
+              (COALESCE(SUM(shares) FILTER (WHERE type = 'withdraw'), 0) / 10000000)::text AS shares_burned,
+              COUNT(DISTINCT address) FILTER (WHERE type = 'deposit')::text AS unique_depositors
+       FROM vault_events_history
+       WHERE ($1::int IS NULL OR timestamp >= NOW() - ($1::int * INTERVAL '1 day'))
+       GROUP BY 1 ORDER BY 1 ASC`,
+      [days, days === 1 ? 'hour' : 'day'],
+    ), days === null ? Promise.resolve({ rows: [{ tvl: '0', shares: '0' }] }) : pool.query<{ tvl: string; shares: string }>(
+      `SELECT ((COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0) -
+                COALESCE(SUM(amount) FILTER (WHERE type = 'withdraw'), 0)) / 10000000)::text AS tvl,
+              ((COALESCE(SUM(shares) FILTER (WHERE type = 'deposit'), 0) -
+                COALESCE(SUM(shares) FILTER (WHERE type = 'withdraw'), 0)) / 10000000)::text AS shares
+       FROM vault_events_history WHERE timestamp < NOW() - ($1::int * INTERVAL '1 day')`,
+      [days],
+    )]);
+    let tvl = Number(baselineResult.rows[0]?.tvl ?? 0);
+    let shares = Number(baselineResult.rows[0]?.shares ?? 0);
+    const history = historyResult.rows.map((row) => {
+      tvl = Math.max(0, tvl + Number(row.deposits) - Number(row.withdrawals));
+      shares = Math.max(0, shares + Number(row.shares_minted) - Number(row.shares_burned));
+      return {
+        date: row.day.toISOString(),
+        tvl,
+        deposits: Number(row.deposits),
+        withdrawals: Number(row.withdrawals),
+        uniqueDepositors: Number(row.unique_depositors),
+        sharePrice: shares > 0 ? tvl / shares : 0,
+      };
+    });
+    res.set("Cache-Control", "public, max-age=60").json(successResponse({ history, period }));
+  } catch (error) {
+    logger.error({ error }, "[vault/analytics/history] failed to load event history");
+    res.status(503).json(errorResponse("ANALYTICS_UNAVAILABLE", "Vault history is temporarily unavailable"));
+  }
+});
 
 /** Dedicated per-IP rate limiter for the public volume endpoint (30 req/min). */
 const volumeRateLimiter = ipRateLimiter({

@@ -188,6 +188,23 @@ export function DepositModal({
     onClose();
   }, [onClose, txStatus]);
 
+  // Preserve the success screen during the close animation, then clear the
+  // modal state so reopening always starts with a fresh amount.
+  useEffect(() => {
+    if (isOpen || txStatus !== "success") return;
+    const timer = setTimeout(() => {
+      setStep(1);
+      setAmount("");
+      setAmountError("");
+      setTxStatus("idle");
+      setTxHash("");
+      setTxError("");
+      setNewShareBalance("");
+      setGasEstimate(null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isOpen, txStatus]);
+
   // Reset when closed
   useEffect(() => {
     if (!isOpen) {

@@ -81,6 +81,7 @@ import { governanceRouter } from "./routes/governanceRoutes.js";
 import { vaultEventsRouter } from "./routes/vaultEventsRoutes.js";
 // Issue #263: Admin panel — router + middleware
 import { adminRouter } from "./routes/adminRoutes.js";
+import { federationRouter } from "./routes/federationRoutes.js";
 import { authenticateAdmin } from "./middleware/adminMiddleware.js";
 import {
   applySecurityHeaders,
@@ -256,6 +257,7 @@ app.use("/api/v1/vault", vaultEventsRouter);
 
 // ── Issue #285: Contract event stream (SSE) ───────────────────────────────────
 app.use("/api/v1/events", eventsRouter);
+app.use("/api/federation", federationRouter);
 
 // Admin APIs require both an admin JWT and (when configured) an allowed source IP.
 app.use("/api/admin", authenticateAdmin, adminIpAllowlist, adminRouter);
