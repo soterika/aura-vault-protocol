@@ -13,8 +13,21 @@ vi.mock("../../cache.js", () => ({
   cacheSet: mocks.cacheSet,
   cacheDel: mocks.cacheDel,
 }));
+vi.mock("../../redis.js", () => ({
+  getRedis: () => ({
+    set: vi.fn().mockResolvedValue("OK"),
+    eval: vi.fn().mockResolvedValue(1),
+  }),
+}));
 vi.mock("../../db.js", () => ({ getReadPool: () => ({ query: mocks.query }) }));
-vi.mock("../../logger.js", () => ({ logger: { warn: mocks.warn } }));
+vi.mock("../../logger.js", () => ({
+  logger: {
+    warn: mocks.warn,
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
 import {
   getVaultStats,

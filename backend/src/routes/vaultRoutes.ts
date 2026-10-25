@@ -26,6 +26,7 @@ import {
 } from "../services/vaultStatsServiceV2.js";
 // Re-export for consumers (e.g. tests) that import this constant from the route module
 export { VAULT_STATS_CACHE_NS };
+import { runCacheWarmup, getWarmupStatus } from "../services/cacheWarmup.js";
 import { getDbMetrics, getSlowQueryLog, dbMetricsPrometheusText } from "../services/dbMonitor.js";
 import { successResponse, errorResponse } from "../dto/index.js";
 import { resolveVault } from "../services/vaultRegistryService.js";
@@ -33,6 +34,7 @@ import { ipRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import { logger } from "../logger.js";
 import { depositSimulateSchema } from "../types/schemas.js";
 import { getReadPool } from "../db.js";
+import { authenticate } from "../middleware/authMiddleware.js";
 
 // ── Simulate-deposit cache namespace ─────────────────────────────────────────
 export const VAULT_SIMULATE_CACHE_NS = NS.VAULT_SIMULATE;
@@ -271,6 +273,24 @@ vaultRouter.post("/stats/invalidate", async (req: Request, res: Response): Promi
   } catch (err) {
     logger.error({ err }, "[vault/stats/invalidate] Cache invalidation failed");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Cache invalidation failed"));
+  }
+});
+
+/**
+ * POST /api/v1/vault/stats/refresh
+ * Runs the cache warm-up pipeline to refresh the vault stats, share price,
+ * and top-depositor cache entries on demand.
+ *
+ * Intentionally protected behind authentication so it is only callable by
+ * an authorized operator or admin workflow.
+ */
+vaultRouter.post("/stats/refresh", authenticate, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    await runCacheWarmup();
+    res.json(successResponse({ refreshed: true, status: getWarmupStatus() }));
+  } catch (err) {
+    console.error("[vault/stats/refresh]", err);
+    res.status(500).json(errorResponse("INTERNAL_ERROR", "Vault stats cache refresh failed"));
   }
 });
 
