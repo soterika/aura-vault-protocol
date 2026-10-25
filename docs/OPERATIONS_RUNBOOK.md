@@ -447,6 +447,34 @@ curl https://api.auravault.io/api/health
 # status "degraded" = Redis unreachable; backend still serves cached data
 ```
 
+### 5.7 Request Tracing with Correlation IDs
+
+Every HTTP request receives a correlation ID that is attached to the logger context and echoed back to the client in the `X-Correlation-ID` response header.
+
+- Incoming requests may include `X-Correlation-ID`; if absent, the backend generates a UUID v4.
+- The same value is attached to `req.correlationId`, `res.locals.correlationId`, and the structured log metadata as `correlationId`.
+- This allows a single user request to be traced across backend logs, HTTP access logs, and downstream Horizon/Soroban event processing.
+
+Example request:
+
+```bash
+curl -H 'X-Correlation-ID: abc123' https://api.auravault.io/api/health
+```
+
+Example Loki query:
+
+```logql
+{job="aura-backend"} |= `"correlationId":"abc123"`
+```
+
+To trace a single request end-to-end in Grafana Loki:
+
+1. Capture the client-supplied or generated ID from the response header.
+2. Search for the same value in all backend log streams.
+3. Correlate request-log events, auth failures, worker jobs, and Horizon listener output using the same `correlationId`.
+
+This is the primary key for debugging multi-step failures without manually stitching together lines from separate requests.
+
 ---
 
 ## 6. Common Issues Runbook
