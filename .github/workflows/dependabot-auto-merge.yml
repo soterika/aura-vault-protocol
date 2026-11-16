@@ -1,0 +1,80 @@
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ─── Auto-merge patch and minor updates after CI passes ───────────────────
+  auto-merge-patch-minor:
+    name: Auto-merge patch/minor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.actor == 'dependabot[bot]'
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Issue #948: auto-merge PATCH updates for all ecosystems (npm + Cargo).
+      # Minor and major updates require manual review.
+      - name: Enable auto-merge for patch updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          echo "Update type: ${{ steps.metadata.outputs.update-type }}"
+          echo "Dependency: ${{ steps.metadata.outputs.dependency-names }}"
+          echo "Ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}"
+          echo "Enabling auto-merge (squash) — will merge once all CI checks pass."
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Minor updates open a PR but require manual review before merge.
+      - name: Label minor updates for manual review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          echo "Minor update detected for ${{ steps.metadata.outputs.dependency-names }} — manual review required."
+          gh pr edit "$PR_URL" --add-label "needs-review"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Immediately merge security updates ───────────────────────────────────
+  auto-merge-security:
+    name: Auto-merge security updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.actor == 'dependabot[bot]'
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge security updates immediately
+        # dependabot/fetch-metadata sets dependency-type to "direct:production"
+        # and a separate alert-state field for security advisories.
+        # We check the PR title for the Dependabot security advisory pattern
+        # as well as the alert-state output when available.
+        if: |
+          contains(github.event.pull_request.title, '[security]') ||
+          steps.metadata.outputs.alert-state == 'OPEN' ||
+          steps.metadata.outputs.ghsa-id != ''
+        run: |
+          echo "Security advisory detected: ${{ steps.metadata.outputs.ghsa-id }}"
+          echo "Alert state: ${{ steps.metadata.outputs.alert-state }}"
+          echo "Merging security update immediately..."
+          gh pr merge --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

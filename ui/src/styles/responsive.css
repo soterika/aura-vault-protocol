@@ -1,0 +1,388 @@
+/* ── Mobile-First Responsive Design ──────────────────────────────────── */
+
+/* Breakpoints */
+:root {
+  --breakpoint-mobile: 320px;   /* Mobile first */
+  --breakpoint-tablet: 768px;   /* Tablet and up */
+  --breakpoint-desktop: 1024px; /* Desktop and up */
+  --breakpoint-wide: 1440px;    /* Wide screens */
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  /* Increase tap targets for touch devices */
+  button,
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    min-width: 44px;
+    padding-top: max(8px, calc((44px - 1em) / 2));
+    padding-bottom: max(8px, calc((44px - 1em) / 2));
+  }
+
+  /* Disable hover effects on touch devices */
+  button:hover,
+  [role="button"]:hover,
+  a:hover {
+    background-color: inherit;
+  }
+}
+
+/* Pointer fine devices (mouse) */
+@media (hover: hover) and (pointer: fine) {
+  button,
+  [role="button"],
+  a {
+    transition: all 150ms ease-out;
+  }
+
+  button:hover,
+  [role="button"]:hover {
+    opacity: 0.85;
+  }
+}
+
+/* Mobile Navigation */
+.ds-mobile-nav__toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 767px) {
+  .ds-mobile-nav__toggle {
+    display: flex;
+  }
+}
+
+.ds-mobile-nav__hamburger span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background-color: currentColor;
+  transition: all 200ms ease;
+}
+
+.ds-mobile-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: var(--color-bg-primary);
+  transform: translateX(-100%);
+  transition: transform 300ms ease;
+  z-index: 999;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ds-mobile-nav--open {
+  transform: translateX(0);
+}
+
+.ds-mobile-nav__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 998;
+}
+
+.ds-mobile-nav__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ds-mobile-nav__link {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-border);
+  min-height: 44px;
+  gap: 12px;
+  transition: background-color 200ms ease;
+}
+
+.ds-mobile-nav__link:active {
+  background-color: var(--color-bg-secondary);
+}
+
+/* Responsive Grid */
+.ds-responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    var(--ds-grid-columns-mobile, 1),
+    minmax(var(--ds-grid-min-width, 100%), 1fr)
+  );
+  gap: var(--ds-grid-gap, 1rem);
+  width: 100%;
+}
+
+/* Tablet breakpoint */
+@media (min-width: 768px) {
+  .ds-responsive-grid {
+    grid-template-columns: repeat(
+      var(--ds-grid-columns-tablet, var(--ds-grid-columns-mobile, 2)),
+      minmax(var(--ds-grid-min-width, 100%), 1fr)
+    );
+  }
+}
+
+/* Desktop breakpoint */
+@media (min-width: 1024px) {
+  .ds-responsive-grid {
+    grid-template-columns: repeat(
+      var(--ds-grid-columns-desktop, var(--ds-grid-columns-tablet, 3)),
+      minmax(var(--ds-grid-min-width, 100%), 1fr)
+    );
+  }
+}
+
+/* Touch-friendly button */
+.ds-touch-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: max(8px, calc((44px - 1em) / 2)) 16px;
+}
+
+/* Mobile Drawer */
+.ds-drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 998;
+  animation: fadeIn 200ms ease;
+}
+
+.ds-mobile-drawer {
+  position: fixed;
+  z-index: 999;
+  background-color: var(--color-bg-primary);
+  border-radius: 12px 12px 0 0;
+  max-height: 90vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: slideUp 300ms ease;
+}
+
+.ds-mobile-drawer--bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.ds-mobile-drawer--left {
+  left: 0;
+  top: 0;
+  height: 100vh;
+  width: 80%;
+  max-width: 320px;
+  animation: slideRight 300ms ease;
+}
+
+.ds-mobile-drawer--right {
+  right: 0;
+  top: 0;
+  height: 100vh;
+  width: 80%;
+  max-width: 320px;
+  animation: slideLeft 300ms ease;
+}
+
+.ds-mobile-drawer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+  min-height: 44px;
+}
+
+.ds-mobile-drawer__close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ds-mobile-drawer__content {
+  padding: 16px;
+}
+
+/* Sticky Header */
+.ds-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border);
+  transition: box-shadow 200ms ease;
+}
+
+.ds-sticky-header--stuck {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Form inputs responsive */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select,
+  .ds-input,
+  .ds-select {
+    font-size: 16px; /* Prevent zoom on iOS */
+    min-height: 44px;
+  }
+
+  /* Full width on mobile */
+  .ds-input__field,
+  .ds-select,
+  .ds-textarea {
+    width: 100%;
+  }
+}
+
+/* Typography responsive */
+@media (max-width: 767px) {
+  h1 {
+    font-size: 28px;
+  }
+
+  h2 {
+    font-size: 24px;
+  }
+
+  h3 {
+    font-size: 20px;
+  }
+
+  body {
+    font-size: 16px;
+  }
+}
+
+/* Spacing responsive */
+@media (max-width: 767px) {
+  .ds-card {
+    padding: 12px;
+  }
+
+  .ds-card--pad-md {
+    padding: 16px;
+  }
+
+  .ds-card--pad-lg {
+    padding: 20px;
+  }
+}
+
+/* Horizontal scroll prevention */
+@media (max-width: 767px) {
+  body,
+  html {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Prevent horizontal scrolling from iframes, embeds, etc */
+  embed,
+  iframe,
+  img,
+  object,
+  video {
+    max-width: 100%;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+}
+
+/* Keyboard navigation improvements */
+@media (prefers-reduced-motion: no-preference) {
+  *:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* Animations */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideLeft {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideRight {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Loading state for better perceived performance */
+.ds-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

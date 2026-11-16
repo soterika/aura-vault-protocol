@@ -1,0 +1,51 @@
+name: Fuzz Tests — Zod Input Validation
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/src/validation.fuzz.test.ts"
+      - "backend/package.json"
+      - ".github/workflows/fuzz-validation.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "backend/src/validation.fuzz.test.ts"
+      - "backend/package.json"
+      - ".github/workflows/fuzz-validation.yml"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  fuzz:
+    name: Fuzz Validation Schemas (fast-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run fuzz tests
+        run: npx vitest run src/validation.fuzz.test.ts --reporter=verbose
+        timeout-minutes: 5
+        env:
+          NODE_ENV: test
+
+      - name: Assert no crashes reported
+        if: failure()
+        run: |
+          echo "Fuzz tests FAILED. A Zod schema threw an unhandled exception or rejected a valid input."
+          echo "Review backend/src/validation.fuzz.test.ts and the corresponding schema."
+          exit 1

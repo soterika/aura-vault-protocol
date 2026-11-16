@@ -1,0 +1,35 @@
+name: Changelog entry
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-entry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require an Unreleased entry for application changes
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          mapfile -t changed < <(git diff --name-only "origin/$BASE_REF...HEAD")
+          app_changed=false
+          changelog_changed=false
+          for path in "${changed[@]}"; do
+            case "$path" in
+              backend/*|frontend/*) app_changed=true ;;
+              CHANGELOG.md) changelog_changed=true ;;
+            esac
+          done
+          if [[ "$app_changed" == true && "$changelog_changed" != true ]]; then
+            echo "Backend/frontend changes require an entry in CHANGELOG.md under [Unreleased]." >&2
+            exit 1
+          fi

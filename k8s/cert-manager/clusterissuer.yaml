@@ -1,0 +1,89 @@
+# =============================================================================
+# cert-manager — Installation Namespace and ClusterIssuer
+#
+# This file installs cert-manager (via Helm values reference) and configures:
+#   1. cert-manager Namespace
+#   2. ClusterIssuer for Let's Encrypt Production (HTTP-01 challenge)
+#   3. ClusterIssuer for Let's Encrypt Staging (safe for testing)
+#
+# Deployment order:
+#   1. Install cert-manager CRDs + controller via Helm or static manifest:
+#      kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml
+#
+#   2. Wait for cert-manager webhook to be ready:
+#      kubectl rollout status deployment/cert-manager-webhook -n cert-manager
+#
+#   3. Apply this file:
+#      kubectl apply -f k8s/cert-manager/clusterissuer.yaml
+#
+# Required: an Ingress Controller (nginx-ingress, Traefik, etc.) running in
+#           the cluster with an externally reachable IP / hostname. The HTTP-01
+#           solver routes Let's Encrypt validation traffic through it.
+#
+# Closes #951
+# =============================================================================
+
+---
+# ── cert-manager namespace ────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    name: cert-manager
+
+---
+# ── Let's Encrypt Staging ClusterIssuer ──────────────────────────────────────
+# Use this ClusterIssuer during initial setup and testing to avoid hitting
+# Let's Encrypt production rate limits. Certificates issued by the staging CA
+# are NOT trusted by browsers.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: cluster-issuer
+    environment: staging
+spec:
+  acme:
+    # Staging ACME endpoint — does not count toward production rate limits
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Email to receive expiry warnings from Let's Encrypt
+    email: platform@aura-vault.xyz
+    privateKeySecretRef:
+      # Stores the ACME account private key; created automatically
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            # Must match the ingressClassName used by your Ingress resources
+            class: nginx
+
+---
+# ── Let's Encrypt Production ClusterIssuer ───────────────────────────────────
+# Issues publicly-trusted TLS certificates. Subject to rate limits:
+#   - 50 certificates per registered domain per week
+#   - 5 duplicate certificates per week
+# Switch Ingress annotations from letsencrypt-staging → letsencrypt-prod once
+# staging certificates have been successfully issued.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: cluster-issuer
+    environment: production
+spec:
+  acme:
+    # Production ACME endpoint
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: platform@aura-vault.xyz
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx

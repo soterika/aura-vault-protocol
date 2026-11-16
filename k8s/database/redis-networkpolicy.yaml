@@ -1,0 +1,50 @@
+# =============================================================================
+# NetworkPolicy — Redis Cache / Queue Isolation
+#
+# Denies all ingress and egress by default, then permits only:
+#   Ingress  port 6379  ← pods with app: backend (backend API pods)
+#   Egress               → kube-dns (UDP/TCP 53) for name resolution only
+#
+# Redis is only accessed by the backend; no other component (frontend,
+# monitoring agents, backup jobs) has a legitimate reason to talk to Redis
+# directly. This policy enforces that guarantee at the network layer.
+#
+# Closes #952
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-network-policy
+  namespace: aura-vault
+  labels:
+    app: redis
+    managed-by: kustomize
+  annotations:
+    description: "Restricts Redis to backend pods only — Issue #952"
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # ── Allow backend API pods to connect on 6379 ────────────────────────────
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 6379
+
+  egress:
+    # ── Allow DNS resolution only ────────────────────────────────────────────
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

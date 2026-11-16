@@ -1,0 +1,299 @@
+groups:
+  - name: horizon-rate-limit
+    rules:
+      - alert: HorizonRateLimitHigh
+        expr: horizon_rate_limit_events_5m > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Horizon returned more than five rate limits in five minutes"
+          description: "The Horizon listener received {{ $value }} HTTP 429 responses in the last five minutes and has switched to reduced polling."
+
+  - name: aura-vault-critical
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been unreachable for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "Error rate is above 5% for 5 minutes (current: {{ $value | humanizePercentage }})."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: "95th percentile latency is above 2 seconds (current: {{ $value }}s)."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 512
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.job }}"
+          description: "Memory usage is above 512MB for 10 minutes."
+
+  - name: aura-vault-sla
+    rules:
+      - alert: SLABreachAvailability
+        expr: avg_over_time(up{job="aura-vault-api"}[1h]) < 0.999
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLA breach: availability below 99.9%"
+          description: "API availability has dropped below 99.9% over the last hour."
+
+      - alert: SLABreachLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="aura-vault-api"}[1h])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SLA breach: p99 latency above 5s"
+          description: "99th percentile latency exceeds 5 seconds over the last hour."
+
+  - name: aura-vault-blockchain
+    rules:
+      - alert: TransactionFailureRate
+        expr: rate(blockchain_transactions_total{status="failed"}[10m]) / rate(blockchain_transactions_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High blockchain transaction failure rate"
+          description: "More than 10% of transactions are failing."
+
+      - alert: VaultBalanceLow
+        expr: vault_balance_xlm < 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vault balance is low"
+          description: "Vault XLM balance is below 100 (current: {{ $value }})."
+
+  # ── Issue #944: BullMQ harvest repeatable job alerts ─────────────────────────
+  - name: aura-harvest-job
+    rules:
+      # Fires when any harvest job exhausts all 3 retries
+      - alert: HarvestJobFailed
+        expr: increase(harvest_job_failure_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "BullMQ harvest job failed all retries"
+          description: >
+            A BullMQ harvest job has exhausted all 3 retry attempts in the
+            last hour. Keeper harvests may have stopped. Check the worker logs
+            for Stellar SDK / Horizon errors.
+
+      # Fires when harvest jobs haven't succeeded in 2× the configured interval
+      - alert: HarvestJobStale
+        expr: >
+          (time() - harvest_job_last_success_timestamp) > (harvest_interval_hours * 7200)
+          and harvest_job_last_success_timestamp > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful harvest in >2× the configured interval"
+          description: >
+            The last successful harvest was more than {{ $value | humanizeDuration }}
+            ago, which exceeds twice the configured HARVEST_INTERVAL_HOURS.
+            Verify the harvest worker is running and Horizon is reachable.
+
+  - name: aura-vault-operations
+    rules:
+      - alert: VaultPaused
+        expr: vault_is_paused == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vault is paused"
+          description: "The Aura Vault has been paused for more than 5 minutes. Deposits, withdrawals, and harvests are blocked."
+
+      - alert: VaultBalanceMismatch
+        expr: increase(vault_balance_mismatch_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vault balance mismatch detected (possible flash-loan attack)"
+          description: "The flash-loan guard triggered {{ $value }} time(s) in the last 5 minutes."
+
+      - alert: VaultDepositsStopped
+        expr: rate(vault_deposits_total[15m]) == 0 and vault_total_shares > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No vault deposits in the last 15 minutes"
+          description: "The vault has shares outstanding but no deposits have been recorded recently."
+
+      - alert: VaultSharePriceDrop
+        expr: (vault_total_assets / vault_total_shares) < (vault_total_assets offset 1h / vault_total_shares offset 1h) * 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vault share price dropped >5% in 1 hour"
+          description: "Share price has fallen significantly. Current: {{ $value }}."
+
+      - alert: VaultHighFeeAccumulation
+        expr: vault_total_fees_collected > 1000000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vault has accumulated large unclaimed fees"
+          description: "Unclaimed fees: {{ $value }} stroops. Consider withdrawing to treasury."
+
+      - alert: VaultTransactionFailureRate
+        expr: rate(vault_transactions_total{status="failed"}[5m]) / rate(vault_transactions_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High vault transaction failure rate"
+          description: "More than 5% of vault transactions are failing (current: {{ $value | humanizePercentage }})."
+
+  - name: aura-strategy-health
+    rules:
+      # ── Core health ──────────────────────────────────────────────────────────
+
+      - alert: StrategyUnhealthy
+        expr: aura_strategy_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AuraStrategy is reporting unhealthy"
+          description: >
+            The strategy's healthCheck() returned healthy=false for more than
+            2 minutes. Check emergency mode, pause state, token count, and
+            harvest staleness. Instance: {{ $labels.instance }}.
+
+      - alert: StrategyEmergencyModeActive
+        expr: aura_strategy_emergency_mode == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AuraStrategy is in emergency mode"
+          description: >
+            emergencyWithdrawAll() was triggered — all funds have been pulled
+            from lending protocols. Immediate human review required.
+            Instance: {{ $labels.instance }}.
+
+      # ── Harvest staleness ────────────────────────────────────────────────────
+
+      - alert: StrategyHarvestStale
+        expr: aura_strategy_stale_harvest == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AuraStrategy harvest is stale (>48 h since last harvest)"
+          description: >
+            No harvest has been executed for more than 48 hours. Yield is not
+            being compounded. Last harvest timestamp:
+            {{ $value | humanizeTimestamp }}. Instance: {{ $labels.instance }}.
+
+      - alert: StrategyHarvestNeverRun
+        expr: aura_strategy_last_harvest_timestamp == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AuraStrategy has never been harvested"
+          description: >
+            The lastHarvestTimestamp is 0 — harvest() has never been called on
+            this strategy. Ensure the keeper bot is configured and running.
+            Instance: {{ $labels.instance }}.
+
+      # ── Token count ──────────────────────────────────────────────────────────
+
+      - alert: StrategyInsufficientTokens
+        expr: aura_strategy_active_token_count < 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AuraStrategy has fewer than 5 active tokens"
+          description: >
+            The strategy requires at least 5 active tokens to meet the minimum
+            diversification requirement. Current count:
+            {{ $value }}. Instance: {{ $labels.instance }}.
+
+      - alert: StrategyZeroTokens
+        expr: aura_strategy_active_token_count == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AuraStrategy has no active tokens"
+          description: >
+            All tokens have been disabled or none have been registered. No
+            funds are being deployed for yield. Instance: {{ $labels.instance }}.
+
+      # ── Deployed capital ─────────────────────────────────────────────────────
+
+      - alert: StrategyDeployedCapitalZero
+        expr: aura_strategy_total_deployed == 0 and aura_strategy_active_token_count > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AuraStrategy has active tokens but zero deployed capital"
+          description: >
+            Tokens are registered but no funds are deployed into lending
+            protocols. This may indicate a deposit failure or emergency
+            withdrawal. Instance: {{ $labels.instance }}.
+
+      - alert: StrategyDeployedCapitalDropped
+        expr: >
+          (aura_strategy_total_deployed
+            - aura_strategy_total_deployed offset 1h)
+          / aura_strategy_total_deployed offset 1h < -0.10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AuraStrategy deployed capital dropped >10% in 1 hour"
+          description: >
+            Deployed capital fell by more than 10% within the past hour.
+            Possible cause: large vault withdrawal, protocol failure, or
+            emergency mode activation. Instance: {{ $labels.instance }}.
+
+      # ── Gas budget (partial emergency withdrawal) ─────────────────────────────
+
+      - alert: StrategyEmergencyWithdrawalPartial
+        expr: increase(aura_strategy_emergency_withdrawal_partial_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AuraStrategy emergency withdrawal was only partial"
+          description: >
+            emergencyWithdrawAll() ran out of gas budget before all tokens
+            were processed. Some funds remain in lending protocols. Re-run
+            emergencyWithdrawAll() with higher gas or process remaining tokens
+            individually. Instance: {{ $labels.instance }}.

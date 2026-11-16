@@ -1,0 +1,113 @@
+name: Pact Contract Tests
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "frontend/src/tests/vault-stats.consumer.pact.test.ts"
+      - "backend/src/routes/__tests__/vault-stats.provider.pact.test.ts"
+      - "pacts/**"
+      - ".github/workflows/pact.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "frontend/src/tests/vault-stats.consumer.pact.test.ts"
+      - "backend/src/routes/__tests__/vault-stats.provider.pact.test.ts"
+      - "pacts/**"
+      - ".github/workflows/pact.yml"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  consumer:
+    name: Consumer Contract Tests (Frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Pact
+        run: npm install --save-dev @pact-foundation/pact@13
+
+      - name: Run consumer Pact tests
+        run: npx vitest run src/tests/vault-stats.consumer.pact.test.ts
+
+      - name: Upload generated pact file
+        uses: actions/upload-artifact@v4
+        with:
+          name: pact-consumer-contract
+          path: pacts/AuraVaultFrontend-AuraVaultBackend.json
+          if-no-files-found: warn
+
+  provider:
+    name: Provider Contract Verification (Backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: consumer
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Pact
+        run: npm install --save-dev @pact-foundation/pact@13
+
+      - name: Download consumer pact artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pact-consumer-contract
+          path: ../pacts
+        continue-on-error: true
+
+      - name: Use committed pact file as fallback
+        run: |
+          if [ ! -f "../pacts/AuraVaultFrontend-AuraVaultBackend.json" ]; then
+            echo "No artifact found, using committed pact file"
+            cp ../pacts/AuraVaultFrontend-AuraVaultBackend.json ../pacts/AuraVaultFrontend-AuraVaultBackend.json || true
+          fi
+
+      - name: Run provider Pact verification
+        run: npx vitest run src/routes/__tests__/vault-stats.provider.pact.test.ts
+        env:
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+
+      - name: Fail CI if provider does not satisfy contract
+        if: failure()
+        run: |
+          echo "Provider verification FAILED. The backend response does not satisfy the consumer contract."
+          echo "Review pacts/AuraVaultFrontend-AuraVaultBackend.json and update the backend route."
+          exit 1

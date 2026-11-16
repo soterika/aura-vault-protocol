@@ -1,0 +1,235 @@
+# =============================================================================
+# NetworkPolicy Connectivity Check — Issue #952
+#
+# Validates that the database and Redis NetworkPolicies are enforced correctly:
+#
+#   ✓ backend  → postgres:5432   ALLOWED
+#   ✓ backend  → redis:6379      ALLOWED
+#   ✗ frontend → postgres:5432   BLOCKED
+#   ✗ frontend → redis:6379      BLOCKED
+#   ✓ postgres-backup → postgres:5432 ALLOWED
+#
+# This workflow runs against a local kind cluster that mirrors the production
+# NetworkPolicy configuration. It does not require a real Kubernetes cluster.
+#
+# Triggers: pull requests touching k8s/database/ or this file.
+#
+# Closes #952
+# =============================================================================
+
+name: NetworkPolicy Connectivity Check
+
+on:
+  pull_request:
+    paths:
+      - "k8s/database/**"
+      - ".github/workflows/networkpolicy-check.yml"
+  workflow_dispatch:
+
+jobs:
+  networkpolicy-check:
+    name: Validate NetworkPolicies (kind cluster)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Set up a local Kubernetes cluster (kind) ───────────────────────────
+      - name: Install kind
+        run: |
+          curl -sSLo /usr/local/bin/kind \
+            "https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64"
+          chmod +x /usr/local/bin/kind
+          kind version
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.30.0"
+
+      - name: Create kind cluster with Calico CNI (NetworkPolicy support)
+        run: |
+          # kind's default CNI (kindnet) does not enforce NetworkPolicies.
+          # We use a custom kind config that disables kindnet so Calico can be installed.
+          cat <<'EOF' > /tmp/kind-config.yaml
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          networking:
+            disableDefaultCNI: true
+            podSubnet: "192.168.0.0/16"
+          EOF
+
+          kind create cluster --config /tmp/kind-config.yaml --name netpol-test
+
+          # Install Calico for NetworkPolicy enforcement
+          kubectl apply -f \
+            https://raw.githubusercontent.com/projectcalico/calico/v3.27.3/manifests/calico.yaml
+
+          # Wait for Calico to be ready
+          kubectl rollout status daemonset/calico-node -n kube-system --timeout=120s
+
+      # ── Create namespace and apply NetworkPolicies ─────────────────────────
+      - name: Create test namespace
+        run: |
+          kubectl create namespace aura-vault
+          kubectl label namespace aura-vault name=aura-vault
+
+      - name: Apply NetworkPolicies
+        run: |
+          kubectl apply -f k8s/database/postgres-networkpolicy.yaml
+          kubectl apply -f k8s/database/redis-networkpolicy.yaml
+          echo "NetworkPolicies applied:"
+          kubectl get networkpolicy -n aura-vault
+
+      # ── Deploy minimal test pods ───────────────────────────────────────────
+      - name: Deploy target services (netcat listeners simulating postgres/redis)
+        run: |
+          # Postgres simulator (listens on 5432)
+          kubectl run postgres \
+            --image=alpine:3.19 \
+            --namespace=aura-vault \
+            --labels="app=postgres" \
+            --command -- sh -c "apk add --no-cache ncat && ncat -lk 5432"
+
+          # Redis simulator (listens on 6379)
+          kubectl run redis \
+            --image=alpine:3.19 \
+            --namespace=aura-vault \
+            --labels="app=redis" \
+            --command -- sh -c "apk add --no-cache ncat && ncat -lk 6379"
+
+          # Backend pod (should be ALLOWED to both databases)
+          kubectl run backend \
+            --image=alpine:3.19 \
+            --namespace=aura-vault \
+            --labels="app=backend" \
+            --command -- sleep 300
+
+          # Frontend pod (should be BLOCKED from databases)
+          kubectl run frontend \
+            --image=alpine:3.19 \
+            --namespace=aura-vault \
+            --labels="app=frontend" \
+            --command -- sleep 300
+
+          # Backup pod (should be ALLOWED to postgres only)
+          kubectl run postgres-backup \
+            --image=alpine:3.19 \
+            --namespace=aura-vault \
+            --labels="app=postgres-backup" \
+            --command -- sleep 300
+
+          # Wait for all pods to be ready
+          kubectl wait pod --all -n aura-vault --for=condition=Ready --timeout=90s
+
+      - name: Get pod IPs
+        run: |
+          kubectl get pods -n aura-vault -o wide
+
+      # ── Connectivity assertions ────────────────────────────────────────────
+      - name: Assert backend → postgres ALLOWED (port 5432)
+        run: |
+          echo "Checking backend → postgres:5432 (expect: ALLOWED)"
+          POSTGRES_IP=$(kubectl get pod postgres -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault backend -- \
+              sh -c "apk add --no-cache -q ncat && \
+                     ncat -zw3 ${POSTGRES_IP} 5432"; then
+            echo "✓ backend → postgres:5432 ALLOWED (expected)"
+          else
+            echo "✗ backend → postgres:5432 BLOCKED (unexpected — policy misconfigured)"
+            exit 1
+          fi
+
+      - name: Assert backend → redis ALLOWED (port 6379)
+        run: |
+          echo "Checking backend → redis:6379 (expect: ALLOWED)"
+          REDIS_IP=$(kubectl get pod redis -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault backend -- \
+              sh -c "ncat -zw3 ${REDIS_IP} 6379"; then
+            echo "✓ backend → redis:6379 ALLOWED (expected)"
+          else
+            echo "✗ backend → redis:6379 BLOCKED (unexpected — policy misconfigured)"
+            exit 1
+          fi
+
+      - name: Assert frontend → postgres BLOCKED (port 5432)
+        run: |
+          echo "Checking frontend → postgres:5432 (expect: BLOCKED)"
+          POSTGRES_IP=$(kubectl get pod postgres -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault frontend -- \
+              sh -c "apk add --no-cache -q ncat && \
+                     ncat -zw3 ${POSTGRES_IP} 5432" 2>/dev/null; then
+            echo "✗ frontend → postgres:5432 ALLOWED (unexpected — NetworkPolicy not enforced)"
+            exit 1
+          else
+            echo "✓ frontend → postgres:5432 BLOCKED (expected)"
+          fi
+
+      - name: Assert frontend → redis BLOCKED (port 6379)
+        run: |
+          echo "Checking frontend → redis:6379 (expect: BLOCKED)"
+          REDIS_IP=$(kubectl get pod redis -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault frontend -- \
+              sh -c "ncat -zw3 ${REDIS_IP} 6379" 2>/dev/null; then
+            echo "✗ frontend → redis:6379 ALLOWED (unexpected — NetworkPolicy not enforced)"
+            exit 1
+          else
+            echo "✓ frontend → redis:6379 BLOCKED (expected)"
+          fi
+
+      - name: Assert postgres-backup → postgres ALLOWED (port 5432)
+        run: |
+          echo "Checking postgres-backup → postgres:5432 (expect: ALLOWED)"
+          POSTGRES_IP=$(kubectl get pod postgres -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault postgres-backup -- \
+              sh -c "apk add --no-cache -q ncat && \
+                     ncat -zw3 ${POSTGRES_IP} 5432"; then
+            echo "✓ postgres-backup → postgres:5432 ALLOWED (expected)"
+          else
+            echo "✗ postgres-backup → postgres:5432 BLOCKED (unexpected — backup will fail)"
+            exit 1
+          fi
+
+      - name: Assert postgres-backup → redis BLOCKED (port 6379)
+        run: |
+          echo "Checking postgres-backup → redis:6379 (expect: BLOCKED)"
+          REDIS_IP=$(kubectl get pod redis -n aura-vault \
+            -o jsonpath='{.status.podIP}')
+
+          if kubectl exec -n aura-vault postgres-backup -- \
+              sh -c "ncat -zw3 ${REDIS_IP} 6379" 2>/dev/null; then
+            echo "✗ postgres-backup → redis:6379 ALLOWED (unexpected)"
+            exit 1
+          else
+            echo "✓ postgres-backup → redis:6379 BLOCKED (expected)"
+          fi
+
+      - name: Print test summary
+        run: |
+          {
+            echo "## NetworkPolicy Connectivity Check Results"
+            echo ""
+            echo "| Source | Destination | Port | Result |"
+            echo "|---|---|---|---|"
+            echo "| backend | postgres | 5432 | ✅ ALLOWED |"
+            echo "| backend | redis | 6379 | ✅ ALLOWED |"
+            echo "| frontend | postgres | 5432 | ✅ BLOCKED |"
+            echo "| frontend | redis | 6379 | ✅ BLOCKED |"
+            echo "| postgres-backup | postgres | 5432 | ✅ ALLOWED |"
+            echo "| postgres-backup | redis | 6379 | ✅ BLOCKED |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── Cleanup ───────────────────────────────────────────────────────────
+      - name: Delete kind cluster
+        if: always()
+        run: kind delete cluster --name netpol-test

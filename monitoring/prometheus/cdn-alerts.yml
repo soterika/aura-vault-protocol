@@ -1,0 +1,29 @@
+groups:
+  - name: cdn_performance
+    rules:
+      - alert: LowCacheHitRate
+        expr: cloudfront_cache_hit_rate < 95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CloudFront cache hit rate below 95%"
+          description: "Cache hit rate is {{ $value }}%. Target: ≥95%."
+
+      - alert: HighGlobalLoadTime
+        expr: cloudfront_p95_latency_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Global p95 load time exceeded 1s"
+          description: "p95 latency is {{ $value }}ms. Target: <1000ms."
+
+      - alert: CompressionRateLow
+        expr: cloudfront_compression_ratio < 40
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Asset compression ratio below 40%"
+          description: "Current compression ratio: {{ $value }}%."

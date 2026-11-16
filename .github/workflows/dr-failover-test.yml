@@ -1,0 +1,273 @@
+name: DR Failover Test
+
+on:
+  schedule:
+    # Quarterly — 1st of January, April, July, October at 06:00 UTC
+    - cron: '0 6 1 1,4,7,10 *'
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: 'Promote DR replica to standalone (only for actual DR drill, not health check)'
+        type: boolean
+        default: false
+      environment:
+        description: 'Environment to test'
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: dr-failover-test
+  cancel-in-progress: false
+
+jobs:
+  dr-test:
+    name: DR Failover Health Check & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials (primary region)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.5.0'
+
+      - name: Read DR config from SSM
+        id: dr_config
+        run: |
+          CONFIG=$(aws ssm get-parameter \
+            --name "/aura-vault/prod/dr/config" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo '{}')
+          echo "config=${CONFIG}" >> "$GITHUB_OUTPUT"
+          DR_REPLICA=$(echo "${CONFIG}" | jq -r '.dr_replica_id // "aura-vault-db-dr-prod"')
+          echo "dr_replica_id=${DR_REPLICA}" >> "$GITHUB_OUTPUT"
+          PRIMARY_DB=$(echo "${CONFIG}" | jq -r '.primary_db_id // "aura-vault-db-prod"')
+          echo "primary_db_id=${PRIMARY_DB}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify DR replica status
+        id: replica_status
+        run: |
+          DR_ID="${{ steps.dr_config.outputs.dr_replica_id }}"
+          echo "Checking DR replica: ${DR_ID}"
+
+          STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier "${DR_ID}" \
+            --region eu-west-1 \
+            --query "DBInstances[0].DBInstanceStatus" \
+            --output text 2>/dev/null || echo "not-found")
+
+          echo "dr_replica_status=${STATUS}" >> "$GITHUB_OUTPUT"
+          echo "DR replica status: ${STATUS}"
+
+          if [ "${STATUS}" == "available" ]; then
+            echo "replica_healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "replica_healthy=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ DR replica is not in 'available' state: ${STATUS}"
+          fi
+
+      - name: Measure replication lag (RPO assessment)
+        id: replication_lag
+        run: |
+          DR_ID="${{ steps.dr_config.outputs.dr_replica_id }}"
+          END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          START_TIME=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+            || date -u -v-5M +%Y-%m-%dT%H:%M:%SZ)
+
+          LAG_JSON=$(aws cloudwatch get-metric-statistics \
+            --namespace "AWS/RDS" \
+            --metric-name "ReplicaLag" \
+            --dimensions "Name=DBInstanceIdentifier,Value=${DR_ID}" \
+            --start-time "${START_TIME}" \
+            --end-time "${END_TIME}" \
+            --period 300 \
+            --statistics Average \
+            --region eu-west-1 \
+            --output json 2>/dev/null || echo '{"Datapoints":[]}')
+
+          LAG=$(echo "${LAG_JSON}" | jq -r '.Datapoints | sort_by(.Timestamp) | last | .Average // -1')
+          echo "replica_lag_seconds=${LAG}" >> "$GITHUB_OUTPUT"
+
+          if [ "${LAG}" == "-1" ] || [ "${LAG}" == "null" ]; then
+            echo "lag_status=no_data" >> "$GITHUB_OUTPUT"
+            echo "⚠️ No replication lag data available (replica may be unavailable)"
+          elif (( $(echo "${LAG} <= 300" | bc -l 2>/dev/null || echo 0) )); then
+            echo "lag_status=within_rpo" >> "$GITHUB_OUTPUT"
+            echo "✅ Replication lag ${LAG}s is within 5-minute RPO target"
+          else
+            echo "lag_status=exceeds_rpo" >> "$GITHUB_OUTPUT"
+            echo "⚠️ Replication lag ${LAG}s EXCEEDS 5-minute RPO target (300s)"
+          fi
+
+      - name: Check Route 53 health check status
+        id: health_checks
+        run: |
+          # Get health check IDs for primary
+          PRIMARY_HC=$(aws route53 list-health-checks \
+            --query "HealthChecks[?HealthCheckConfig.FullyQualifiedDomainName!=null] | [0].Id" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${PRIMARY_HC}" ] && [ "${PRIMARY_HC}" != "None" ]; then
+            HC_STATUS=$(aws route53 get-health-check-status \
+              --health-check-id "${PRIMARY_HC}" \
+              --query "HealthCheckObservations[*].StatusReport.Status" \
+              --output text 2>/dev/null || echo "unknown")
+            echo "primary_hc_status=${HC_STATUS}" >> "$GITHUB_OUTPUT"
+            echo "Primary health check status: ${HC_STATUS}"
+          else
+            echo "primary_hc_status=not_configured" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote DR replica to standalone (actual DR drill only)
+        id: promote
+        if: github.event.inputs.promote == 'true'
+        run: |
+          DR_ID="${{ steps.dr_config.outputs.dr_replica_id }}"
+          echo "⚠️ PROMOTING DR REPLICA TO STANDALONE: ${DR_ID}"
+          echo "This will break replication. Manual intervention required to re-establish."
+
+          PROMOTE_START=$(date +%s)
+
+          aws rds promote-read-replica \
+            --db-instance-identifier "${DR_ID}" \
+            --region eu-west-1
+
+          echo "Waiting for promotion to complete (target RTO: 30 minutes)..."
+          aws rds wait db-instance-available \
+            --db-instance-identifier "${DR_ID}" \
+            --region eu-west-1
+
+          PROMOTE_END=$(date +%s)
+          RTO_SECONDS=$(( PROMOTE_END - PROMOTE_START ))
+          RTO_MINUTES=$(echo "scale=1; ${RTO_SECONDS}/60" | bc)
+
+          echo "rto_minutes=${RTO_MINUTES}" >> "$GITHUB_OUTPUT"
+          echo "✅ Promotion completed in ${RTO_MINUTES} minutes"
+
+          if (( $(echo "${RTO_MINUTES} <= 30" | bc -l) )); then
+            echo "rto_status=within_target" >> "$GITHUB_OUTPUT"
+          else
+            echo "rto_status=exceeds_target" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build test results
+        id: results
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          REPLICA_STATUS="${{ steps.replica_status.outputs.dr_replica_status }}"
+          REPLICA_HEALTHY="${{ steps.replica_status.outputs.replica_healthy }}"
+          LAG="${{ steps.replication_lag.outputs.replica_lag_seconds }}"
+          LAG_STATUS="${{ steps.replication_lag.outputs.lag_status }}"
+          PROMOTED="${{ github.event.inputs.promote }}"
+          RTO="${{ steps.promote.outputs.rto_minutes }}"
+
+          cat > dr_test_results.json <<EOF
+          {
+            "timestamp": "${TIMESTAMP}",
+            "dr_replica_id": "${{ steps.dr_config.outputs.dr_replica_id }}",
+            "primary_db_id": "${{ steps.dr_config.outputs.primary_db_id }}",
+            "replica_status": "${REPLICA_STATUS}",
+            "replica_healthy": ${REPLICA_HEALTHY:-false},
+            "replication_lag_seconds": ${LAG:--1},
+            "lag_status": "${LAG_STATUS}",
+            "rpo_target_seconds": 300,
+            "rpo_met": $([ "${LAG_STATUS}" == "within_rpo" ] && echo true || echo false),
+            "promotion_performed": ${PROMOTED:-false},
+            "rto_minutes": ${RTO:-null},
+            "rto_target_minutes": 30,
+            "rto_met": $([ "${{ steps.promote.outputs.rto_status }}" == "within_target" ] && echo true || echo false),
+            "workflow_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+
+          cat dr_test_results.json
+
+      - name: Upload DR test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: dr-test-results-${{ github.run_id }}
+          retention-days: 90
+          path: dr_test_results.json
+
+      - name: Send SNS notification with results
+        run: |
+          RESULTS=$(cat dr_test_results.json | tr -d '\n' | head -c 4000)
+          REPLICA_HEALTHY="${{ steps.replica_status.outputs.replica_healthy }}"
+          LAG_STATUS="${{ steps.replication_lag.outputs.lag_status }}"
+
+          if [ "${REPLICA_HEALTHY}" == "true" ] && [ "${LAG_STATUS}" == "within_rpo" ]; then
+            STATUS="PASS"
+          else
+            STATUS="DEGRADED"
+          fi
+
+          # Publish to failover alerts SNS topic if configured
+          TOPIC_ARN=$(aws sns list-topics \
+            --query "Topics[?contains(TopicArn, 'failover-alerts')].TopicArn | [0]" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${TOPIC_ARN}" ] && [ "${TOPIC_ARN}" != "None" ]; then
+            aws sns publish \
+              --topic-arn "${TOPIC_ARN}" \
+              --subject "[${STATUS}] Quarterly DR Failover Test — $(date +%Y-%m-%d)" \
+              --message "${RESULTS}" \
+              2>/dev/null || echo "SNS publish failed (non-fatal)"
+          fi
+
+      - name: Post summary to GitHub Step Summary
+        if: always()
+        run: |
+          REPLICA_HEALTHY="${{ steps.replica_status.outputs.replica_healthy }}"
+          LAG="${{ steps.replication_lag.outputs.replica_lag_seconds }}"
+          LAG_STATUS="${{ steps.replication_lag.outputs.lag_status }}"
+
+          echo "## 🌍 DR Failover Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Date:** $(date -u)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Primary Region:** us-east-1 | **DR Region:** eu-west-1" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Check | Status | Target |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${REPLICA_HEALTHY}" == "true" ]; then
+            echo "| DR Replica Status | ✅ Available | Available |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| DR Replica Status | ❌ ${{ steps.replica_status.outputs.dr_replica_status }} | Available |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          case "${LAG_STATUS}" in
+            within_rpo)  echo "| Replication Lag | ✅ ${LAG}s | ≤ 300s (5 min) |" >> "$GITHUB_STEP_SUMMARY" ;;
+            exceeds_rpo) echo "| Replication Lag | ⚠️ ${LAG}s — EXCEEDS RPO | ≤ 300s (5 min) |" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)           echo "| Replication Lag | ❓ No data | ≤ 300s (5 min) |" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+
+          if [ "${{ github.event.inputs.promote }}" == "true" ]; then
+            RTO="${{ steps.promote.outputs.rto_minutes }}"
+            RTO_STATUS="${{ steps.promote.outputs.rto_status }}"
+            if [ "${RTO_STATUS}" == "within_target" ]; then
+              echo "| Failover RTO | ✅ ${RTO} min | ≤ 30 min |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| Failover RTO | ⚠️ ${RTO} min — EXCEEDS TARGET | ≤ 30 min |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "| Failover RTO | ℹ️ Health check only (not tested) | ≤ 30 min |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Note:** To execute an actual failover drill, re-run with \`promote: true\` input." >> "$GITHUB_STEP_SUMMARY"
+          echo "> See [DR Runbook](docs/disaster-recovery/runbook.md) for procedures." >> "$GITHUB_STEP_SUMMARY"

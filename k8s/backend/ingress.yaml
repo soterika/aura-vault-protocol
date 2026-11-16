@@ -1,0 +1,55 @@
+# =============================================================================
+# Ingress — Backend API (api.aura-vault.xyz) with cert-manager TLS
+#
+# cert-manager reads the annotation cert-manager.io/cluster-issuer and
+# automatically provisions and renews the certificate named in tls[].secretName.
+#
+# Closes #951
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  namespace: aura-vault
+  labels:
+    app: backend
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: ingress
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/hsts: "true"
+    nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
+    nginx.ingress.kubernetes.io/hsts-include-subdomains: "true"
+
+    # CORS — frontend origin allowed
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.aura-vault.xyz"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type"
+
+    # Rate limiting at the ingress layer (supplementary to app-level limiting)
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.aura-vault.xyz
+      secretName: backend-tls
+  rules:
+    - host: api.aura-vault.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 3001

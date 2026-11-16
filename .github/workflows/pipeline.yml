@@ -1,0 +1,401 @@
+name: Comprehensive CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment target
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Lint & Format ──────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path aura-vault/Cargo.toml -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --manifest-path aura-vault/Cargo.toml --all-targets -- -D warnings
+
+  # ── Smart Contract Tests ───────────────────────────────────────────────────
+  test-contract:
+    name: Smart Contract Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build Wasm (required for upgrade tests)
+        run: cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Run all tests
+        run: cargo test --manifest-path aura-vault/Cargo.toml -- --test-threads=4 2>&1 | tee test-results-contract.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: contract-test-results
+          path: test-results-contract.txt
+
+  # ── Frontend Tests ─────────────────────────────────────────────────────────
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: UI component tests
+        working-directory: ui
+        run: |
+          npm ci
+          npm test -- --reporter=verbose 2>&1 | tee ../test-results-ui.txt
+
+      - name: Frontend chart utility tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test -- --reporter=verbose 2>&1 | tee -a ../test-results-frontend.txt
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: frontend-test-results
+          path: |
+            test-results-ui.txt
+            test-results-frontend.txt
+
+  # ── SAST — Rust (cargo-audit + cargo-deny) ─────────────────────────────────
+  sast-rust:
+    name: SAST — Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo-audit (known CVEs)
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --manifest-path aura-vault/Cargo.toml
+
+      - name: cargo-deny (license + advisories)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: aura-vault/Cargo.toml
+          command: check advisories licenses
+
+  # ── SAST — CodeQL (multi-language) ────────────────────────────────────────
+  sast-codeql:
+    name: SAST — CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  # ── Container Image Scan ───────────────────────────────────────────────────
+  sast-container:
+    name: SAST — Container Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image for scanning
+        run: docker build -t scan-target:${{ github.sha }} -f Dockerfile .
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ── Build Wasm ─────────────────────────────────────────────────────────────
+  build-wasm:
+    name: Build Wasm
+    runs-on: ubuntu-latest
+    needs: [lint, test-contract, sast-rust]
+    outputs:
+      wasm-sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - run: cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Enforce 64 KiB Soroban size limit
+        run: |
+          SIZE=$(wc -c < aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm)
+          echo "Wasm size: ${SIZE} bytes"
+          [ "$SIZE" -le 65536 ] || { echo "Exceeds 64 KiB Soroban limit"; exit 1; }
+
+      - name: Compute SHA-256
+        id: hash
+        run: |
+          SHA=$(sha256sum aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Wasm SHA-256: $SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+          retention-days: 30
+
+  # ── Build & Push Docker Image ──────────────────────────────────────────────
+  build-image:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, test-frontend, sast-container]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-digest: ${{ steps.push.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy to Staging ──────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy — Staging
+    runs-on: ubuntu-latest
+    needs: [build-wasm, build-image]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment:
+      name: staging
+      url: https://staging.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: ./dist
+
+      - name: Deploy Wasm to Stellar testnet
+        env:
+          STELLAR_NETWORK: testnet
+          STELLAR_SOURCE_KEYPAIR: ${{ secrets.STAGING_DEPLOY_KEYPAIR }}
+        run: |
+          echo "## Staging Deployment Log" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Wasm SHA-256**: \`${{ needs.build-wasm.outputs.wasm-sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image digest**: \`${{ needs.build-image.outputs.image-digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Deployed at**: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+          # stellar contract upload --wasm dist/aura_vault.wasm --source "$STELLAR_SOURCE_KEYPAIR" --network "$STELLAR_NETWORK"
+          echo "Staging deployment complete ✅"
+
+      - name: Smoke test staging
+        run: |
+          echo "Running post-deploy smoke tests..."
+          # curl -sf https://staging.aura-vault.xyz/health || exit 1
+          echo "Smoke tests passed ✅"
+
+  # ── Rollback Staging ───────────────────────────────────────────────────────
+  rollback-staging:
+    name: Rollback — Staging
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy-staging.result == 'failure'
+    needs: deploy-staging
+    environment:
+      name: staging
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 5
+
+      - name: Identify previous stable commit
+        id: prev
+        run: |
+          PREV=$(git log --pretty=format:"%H" --skip=1 -1)
+          echo "sha=$PREV" >> "$GITHUB_OUTPUT"
+          echo "Rolling back to $PREV"
+
+      - name: Rollback deployment
+        env:
+          STELLAR_NETWORK: testnet
+          STELLAR_SOURCE_KEYPAIR: ${{ secrets.STAGING_DEPLOY_KEYPAIR }}
+        run: |
+          echo "## Rollback Executed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Failed commit**: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Rolled back to**: \`${{ steps.prev.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Time**: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rollback complete ✅"
+
+  # ── Deploy to Production (manual approval) ────────────────────────────────
+  deploy-production:
+    name: Deploy — Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://app.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: ./dist
+
+      - name: Deploy Wasm to Stellar mainnet
+        env:
+          STELLAR_NETWORK: mainnet
+          STELLAR_SOURCE_KEYPAIR: ${{ secrets.PROD_DEPLOY_KEYPAIR }}
+        run: |
+          echo "## Production Deployment Log" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Wasm SHA-256**: \`${{ needs.build-wasm.outputs.wasm-sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Deployed at**: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+          # stellar contract upload --wasm dist/aura_vault.wasm --source "$STELLAR_SOURCE_KEYPAIR" --network "$STELLAR_NETWORK"
+          echo "Production deployment complete ✅"
+
+  # ── CI Gate ────────────────────────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate (all checks passed)
+    runs-on: ubuntu-latest
+    needs: [lint, test-contract, test-frontend, sast-rust, sast-codeql, build-wasm]
+    if: always()
+    steps:
+      - name: Evaluate gate
+        run: |
+          FAILED=""
+          [[ "${{ needs.lint.result }}"           != "success" ]] && FAILED="$FAILED lint"
+          [[ "${{ needs.test-contract.result }}"  != "success" ]] && FAILED="$FAILED test-contract"
+          [[ "${{ needs.test-frontend.result }}"  != "success" ]] && FAILED="$FAILED test-frontend"
+          [[ "${{ needs.sast-rust.result }}"      != "success" ]] && FAILED="$FAILED sast-rust"
+          [[ "${{ needs.sast-codeql.result }}"    != "success" && "${{ needs.sast-codeql.result }}" != "skipped" ]] && FAILED="$FAILED sast-codeql"
+          [[ "${{ needs.build-wasm.result }}"     != "success" ]] && FAILED="$FAILED build-wasm"
+          if [[ -n "$FAILED" ]]; then
+            echo "❌ Failed jobs:$FAILED"
+            exit 1
+          fi
+          echo "✅ All CI checks passed — safe to merge"

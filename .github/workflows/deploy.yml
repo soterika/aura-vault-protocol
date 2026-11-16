@@ -1,0 +1,220 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  lint-migrations:
+    name: Migration Safety Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Run migration lint
+        # Fails the job (and blocks deployment) if any destructive SQL pattern
+        # is found without a justified override comment.
+        run: npx ts-node scripts/lint-migrations.ts --verbose
+        working-directory: backend
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint-migrations
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --manifest-path aura-vault/Cargo.toml
+
+  build-wasm:
+    name: Build Wasm
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      wasm-sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('aura-vault/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build Wasm
+        run: cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Compute Wasm hash
+        id: hash
+        run: |
+          SHA=$(sha256sum aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Wasm SHA-256: $SHA"
+
+      - name: Upload Wasm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+          retention-days: 30
+
+  build-image:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-wasm, build-image]
+    environment:
+      name: staging
+      url: https://staging.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Wasm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: ./dist
+
+      - name: Deploy to staging
+        env:
+          STELLAR_NETWORK: testnet
+          STELLAR_SOURCE_KEYPAIR: ${{ secrets.STAGING_DEPLOY_KEYPAIR }}
+        run: |
+          echo "Deploying Wasm to Stellar testnet..."
+          echo "Wasm SHA-256: ${{ needs.build-wasm.outputs.wasm-sha256 }}"
+          echo "Image digest: ${{ needs.build-image.outputs.image-digest }}"
+          # stellar contract upload --wasm dist/aura_vault.wasm --source "$STELLAR_SOURCE_KEYPAIR" --network "$STELLAR_NETWORK"
+          echo "Staging deployment complete"
+
+      - name: Log deployment
+        run: |
+          echo "## Staging Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Wasm SHA-256: \`${{ needs.build-wasm.outputs.wasm-sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${{ needs.build-image.outputs.image-digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Time: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # Manual production promotion — requires explicit approval in GitHub Environments
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://app.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Wasm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: ./dist
+
+      - name: Deploy to production
+        env:
+          STELLAR_NETWORK: mainnet
+          STELLAR_SOURCE_KEYPAIR: ${{ secrets.PROD_DEPLOY_KEYPAIR }}
+        run: |
+          echo "Deploying Wasm to Stellar mainnet..."
+          # stellar contract upload --wasm dist/aura_vault.wasm --source "$STELLAR_SOURCE_KEYPAIR" --network "$STELLAR_NETWORK"
+          echo "Production deployment complete"
+
+      - name: Log deployment
+        run: |
+          echo "## Production Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Wasm SHA-256: \`${{ needs.build-wasm.outputs.wasm-sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Time: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"

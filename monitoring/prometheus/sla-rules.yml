@@ -1,0 +1,98 @@
+groups:
+  - name: sla_metrics
+    interval: 30s
+    rules:
+      - record: sla:api_availability:5m
+        expr: |
+          (
+            count(rate(http_requests_total{job="backend",status=~"2.."}[5m]) > 0)
+            /
+            count(rate(http_requests_total{job="backend"}[5m]) > 0)
+          ) * 100
+
+      - record: sla:api_latency:p99
+        expr: |
+          histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="backend"}[5m]))
+
+      - record: sla:api_latency:p95
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="backend"}[5m]))
+
+      - record: sla:database_availability:5m
+        expr: |
+          (
+            count(rate(postgres_up{job="postgres"}[5m]) > 0)
+            /
+            count(rate(postgres_up{job="postgres"}[5m]))
+          ) * 100
+
+      - record: sla:cache_hit_ratio:5m
+        expr: |
+          (
+            rate(redis_keyspace_hits_total[5m])
+            /
+            (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))
+          ) * 100
+
+  - name: sla_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="backend",status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          sla: true
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="backend"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          sla: true
+        annotations:
+          summary: "High API latency detected"
+          description: "P99 latency is {{ $value }}s"
+
+      - alert: DatabaseDown
+        expr: postgres_up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          sla: true
+        annotations:
+          summary: "Database is down"
+          description: "PostgreSQL instance {{ $labels.instance }} is not responding"
+
+      - alert: LowCacheHitRatio
+        expr: (rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          sla: true
+        annotations:
+          summary: "Low cache hit ratio"
+          description: "Cache hit ratio is {{ $value | humanizePercentage }}"
+
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          sla: true
+        annotations:
+          summary: "Low disk space"
+          description: "Available disk space on {{ $labels.instance }} is {{ $value | humanizePercentage }}"
+
+      - alert: MemoryUsageHigh
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          sla: true
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }}"

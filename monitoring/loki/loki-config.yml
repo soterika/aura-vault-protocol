@@ -1,0 +1,89 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+ruler:
+  enable_api: true
+  enable_alertmanager_v2: true
+  alertmanager_url: http://alertmanager:9093
+  rule_path: /tmp/loki/rules-temp
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+
+# =============================================================================
+# Log Retention Policy — tiered by log level label set by Promtail
+#
+# Level label  | Retention | Notes
+# -------------|-----------|---------------------------------------------------
+# info         | 30 days   | Normal application / INFO logs
+# error / warn | 90 days   | Errors kept longer for incident analysis
+# security     | 365 days  | Audit / security stream — compliance requirement
+# debug/trace  | 7 days    | High-volume debug noise; short retention
+# (default)    | 30 days   | Any stream without an explicit level label
+#
+# Loki enforces stream-level retention via per-tenant overrides keyed on
+# stream selectors.  The `retention_stream` entries below override the global
+# `retention_period` for streams matching the given selector.
+# =============================================================================
+limits_config:
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_query_series: 500
+
+  # Global default retention — applies to any stream not matched below
+  retention_period: 720h   # 30 days
+
+  # Per-stream retention overrides (matched by label selector)
+  retention_stream:
+    # Error and warning logs — 90 days
+    - selector: '{level=~"error|warn"}'
+      priority: 10
+      period: 2160h   # 90 days
+
+    # Security / audit stream — 365 days
+    - selector: '{level="security"}'
+      priority: 20
+      period: 8760h   # 365 days
+
+    # Debug and trace logs — 7 days
+    - selector: '{level=~"debug|trace"}'
+      priority: 10
+      period: 168h    # 7 days
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

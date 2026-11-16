@@ -1,0 +1,380 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "aura-frontend-vitals",
+    "title": "Frontend — Core Web Vitals",
+    "description": "Real-user monitoring of LCP, FID, CLS and page-load metrics collected via the frontend_web_vitals_* Prometheus series.",
+    "tags": ["aura-vault", "frontend", "cwv", "performance"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "time": { "from": "now-6h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "LCP — p50 / p75 / p95 (ms)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.50, sum(rate(frontend_web_vitals_lcp_bucket[5m])) by (le))",
+            "legendFormat": "LCP p50"
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_lcp_bucket[5m])) by (le))",
+            "legendFormat": "LCP p75"
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.95, sum(rate(frontend_web_vitals_lcp_bucket[5m])) by (le))",
+            "legendFormat": "LCP p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 2500 },
+                { "color": "red", "value": 4000 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 2,
+        "title": "⚠️ LCP p75 Alert — target < 2500 ms",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_lcp_bucket[5m])) by (le))",
+            "legendFormat": "LCP p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 2500 },
+                { "color": "red", "value": 4000 }
+              ]
+            },
+            "mappings": []
+          }
+        },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "orientation": "auto",
+          "textMode": "auto",
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto"
+        },
+        "alert": {
+          "alertRuleTags": {},
+          "conditions": [
+            {
+              "evaluator": { "params": [2500], "type": "gt" },
+              "operator": { "type": "and" },
+              "query": { "params": ["A", "5m", "now"] },
+              "reducer": { "params": [], "type": "avg" },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "for": "5m",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "LCP p75 > 2500 ms",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 3,
+        "title": "CLS Score — current p75",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_cls_bucket[5m])) by (le))",
+            "legendFormat": "CLS p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.1 },
+                { "color": "red", "value": 0.25 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "colorMode": "background"
+        }
+      },
+      {
+        "id": 4,
+        "title": "CLS Distribution — histogram",
+        "type": "histogram",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "sum(increase(frontend_web_vitals_cls_bucket[1h])) by (le)",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.1 },
+                { "color": "red", "value": 0.25 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "bucketSize": "auto",
+          "fillOpacity": 80,
+          "gradientMode": "none"
+        }
+      },
+      {
+        "id": 5,
+        "title": "FID — p50 / p95 (ms)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.50, sum(rate(frontend_web_vitals_fid_bucket[5m])) by (le))",
+            "legendFormat": "FID p50"
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.95, sum(rate(frontend_web_vitals_fid_bucket[5m])) by (le))",
+            "legendFormat": "FID p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 100 },
+                { "color": "red", "value": 300 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Page Load Time Breakdown by Route — p75 (ms)",
+        "description": "Median page-load duration per route reported by the frontend metrics endpoint.",
+        "type": "barchart",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_page_load_duration_bucket[10m])) by (le, route))",
+            "legendFormat": "{{route}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 2000 },
+                { "color": "red", "value": 4000 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "orientation": "horizontal",
+          "xTickLabelRotation": 0,
+          "groupWidth": 0.7,
+          "barWidth": 0.97,
+          "fillOpacity": 80,
+          "gradientMode": "none",
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Error Rate by Page (%)",
+        "description": "JavaScript error rate per page, expressed as a percentage of total page views.",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "100 * sum(rate(frontend_web_vitals_js_errors_total[5m])) by (route) / sum(rate(frontend_web_vitals_page_views_total[5m])) by (route)",
+            "legendFormat": "{{route}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Core Web Vitals Summary — last 1 h",
+        "type": "table",
+        "gridPos": { "h": 6, "w": 24, "x": 0, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_lcp_bucket[1h])) by (le))",
+            "legendFormat": "LCP p75 (ms)",
+            "instant": true
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_cls_bucket[1h])) by (le))",
+            "legendFormat": "CLS p75",
+            "instant": true
+          },
+          {
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "expr": "histogram_quantile(0.75, sum(rate(frontend_web_vitals_fid_bucket[1h])) by (le))",
+            "legendFormat": "FID p75 (ms)",
+            "instant": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "center",
+              "displayMode": "color-background"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "LCP p75 (ms)" },
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 2500 },
+                      { "color": "red", "value": 4000 }
+                    ]
+                  }
+                },
+                { "id": "unit", "value": "ms" }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "CLS p75" },
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 0.1 },
+                      { "color": "red", "value": 0.25 }
+                    ]
+                  }
+                },
+                { "id": "decimals", "value": 3 }
+              ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "FID p75 (ms)" },
+              "properties": [
+                {
+                  "id": "thresholds",
+                  "value": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "yellow", "value": 100 },
+                      { "color": "red", "value": 300 }
+                    ]
+                  }
+                },
+                { "id": "unit", "value": "ms" }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "showHeader": true
+        }
+      }
+    ],
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "schemaVersion": 38,
+    "version": 1
+  }
+}

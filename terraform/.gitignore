@@ -1,0 +1,22 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Lambda deployment package
+lambda/backup.zip
+lambda/__pycache__/
+lambda/*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db

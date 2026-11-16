@@ -1,0 +1,190 @@
+name: Frontend Performance Budget
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/perf-budget.yml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'frontend/**'
+
+concurrency:
+  group: perf-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-bundle-size:
+    name: Check bundle size against budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js app
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Run size-limit check
+        id: size_check
+        working-directory: frontend
+        # --json emits machine-readable output; we capture it for the PR comment.
+        # The exit code is non-zero when any limit is exceeded, failing the job.
+        run: |
+          set +e
+          npx size-limit --json > size-report.json 2>&1
+          SIZE_EXIT=$?
+          echo "exit_code=$SIZE_EXIT" >> "$GITHUB_OUTPUT"
+
+          # Also produce a human-readable table for the step summary
+          npx size-limit 2>&1 | tee size-report-table.txt || true
+
+          cat size-report.json
+          exit $SIZE_EXIT
+
+      - name: Upload size report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bundle-size-report-${{ github.sha }}
+          path: |
+            frontend/size-report.json
+            frontend/size-report-table.txt
+          retention-days: 30
+
+      - name: Post PR comment with size delta
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            let reportJson = [];
+            try {
+              reportJson = JSON.parse(fs.readFileSync('frontend/size-report.json', 'utf8'));
+            } catch (e) {
+              console.log('Could not parse size-report.json:', e.message);
+            }
+
+            let baselineMap = {};
+            try {
+              if (fs.existsSync('frontend/bundle-baseline.json')) {
+                baselineMap = JSON.parse(fs.readFileSync('frontend/bundle-baseline.json', 'utf8'));
+              }
+            } catch (e) {
+              console.log('Could not parse bundle-baseline.json:', e.message);
+            }
+
+            const exitCode = '${{ steps.size_check.outputs.exit_code }}';
+            const passed = exitCode === '0';
+            const statusIcon = passed ? '✅' : '❌';
+            const statusText = passed ? 'All bundles within budget' : 'One or more bundles exceed budget';
+
+            let tableRows = '';
+            for (const entry of reportJson) {
+              const name = entry.name || entry.path;
+              const currentBytes = entry.size || 0;
+              const size = entry.size ? (entry.size / 1024).toFixed(1) + ' kB' : '—';
+              const baseBytes = baselineMap[name];
+              let deltaStr = '—';
+              if (baseBytes !== undefined && entry.size) {
+                const diffBytes = currentBytes - baseBytes;
+                const diffKb = (Math.abs(diffBytes) / 1024).toFixed(1);
+                if (diffBytes > 0) {
+                  deltaStr = `🔺 +${diffKb} kB (increased)`;
+                } else if (diffBytes < 0) {
+                  deltaStr = `🟢 -${diffKb} kB (decreased)`;
+                } else {
+                  deltaStr = `0.0 kB (no change)`;
+                }
+              }
+              const limit = entry.limit || '—';
+              const exceeded = entry.exceeded ? '❌ OVER LIMIT' : '✅';
+              tableRows += `| ${name} | ${size} (gzip) | ${deltaStr} | ${limit} | ${exceeded} |\n`;
+            }
+
+            if (!tableRows) {
+              tableRows = '| _(size-limit output unavailable)_ | — | — | — | — |\n';
+            }
+
+            const body = [
+              `## ${statusIcon} Bundle Size Report`,
+              '',
+              `**Status:** ${statusText}`,
+              `**Commit:** \`${{ github.sha }}\``,
+              '',
+              '| Bundle | Size (gzip) | Size Delta | Limit | Status |',
+              '|---|---|---|---|---|',
+              tableRows,
+              '',
+              '<details>',
+              '<summary>Budget thresholds</summary>',
+              '',
+              '- Main JS bundle: **200 kB** gzip',
+              '- Per-route chunks: **50 kB** gzip each',
+              '- CSS bundle: **20 kB** gzip',
+              '',
+              '</details>',
+              '',
+              '_Generated by the [Frontend Performance Budget](.github/workflows/perf-budget.yml) workflow._',
+            ].join('\n');
+
+            // Find existing bot comment and update it, or create a new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Bundle Size Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 📦 Bundle Size Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat frontend/size-report-table.txt >> "$GITHUB_STEP_SUMMARY" || echo "_(report unavailable)_" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if budget exceeded
+        if: steps.size_check.outputs.exit_code != '0'
+        run: |
+          echo "❌ One or more bundle size limits were exceeded. See the size report artifact for details."
+          exit 1

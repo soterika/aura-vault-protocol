@@ -1,0 +1,227 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: aura-vault
+  labels:
+    app: backend
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+      # -----------------------------------------------------------------------
+      # Init containers enforce startup ordering (Issue #956).
+      # The main backend container will not start until both Postgres and Redis
+      # are confirmed ready.
+      # -----------------------------------------------------------------------
+      initContainers:
+        # Wait for PostgreSQL to accept connections before the backend starts.
+        # Uses pg_isready with a 30-second per-attempt timeout and retries
+        # every 5 seconds for up to 10 minutes.
+        - name: wait-for-postgres
+          image: alpine:3.19
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534        # nobody
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              apk add --no-cache postgresql-client > /dev/null 2>&1
+              echo "[init] Waiting for PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT}..."
+              until pg_isready \
+                    --host="${POSTGRES_HOST}" \
+                    --port="${POSTGRES_PORT}" \
+                    --username="${POSTGRES_USER}" \
+                    --timeout=30; do
+                echo "[init] PostgreSQL not ready yet — retrying in 5s"
+                sleep 5
+              done
+              echo "[init] PostgreSQL is ready ✓"
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: POSTGRES_USER
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+        # Wait for Redis to respond to PING before the backend starts.
+        # Retries every 3 seconds for up to 5 minutes.
+        - name: wait-for-redis
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534        # nobody
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - |
+              echo "[init] Waiting for Redis at ${REDIS_HOST}:${REDIS_PORT}..."
+              until nc -z "${REDIS_HOST}" "${REDIS_PORT}"; do
+                echo "[init] Redis not reachable yet — retrying in 3s"
+                sleep 3
+              done
+              echo "[init] Redis TCP port is open ✓"
+              # Send PING and expect +PONG
+              until [ "$(echo -e '*1\r\n$4\r\nPING\r\n' | nc -w 2 "${REDIS_HOST}" "${REDIS_PORT}" | head -1 | tr -d '\r')" = "+PONG" ]; do
+                echo "[init] Redis not responding to PING yet — retrying in 3s"
+                sleep 3
+              done
+              echo "[init] Redis PING/PONG confirmed ✓"
+          env:
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: REDIS_PORT
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "8Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"
+
+      containers:
+        - name: backend
+          image: aura-vault-backend:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+            - name: metrics
+              containerPort: 3001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          # Startup probe: allows up to 60s for the backend to initialise
+          # (6 failures × 10s period = 60s maximum startup window)
+          startupProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+            successThreshold: 1
+          # Liveness probe: checked every 30s; 3 consecutive failures restart the pod
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          # Readiness probe checks PostgreSQL, Redis, Horizon, BullMQ, and cache warmup.
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir:
+            sizeLimit: 1Gi

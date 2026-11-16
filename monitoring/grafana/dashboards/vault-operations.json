@@ -1,0 +1,162 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "aura-vault-operations",
+    "title": "Aura Vault - Operations",
+    "tags": ["aura-vault", "vault-ops"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Assets (stroops)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "vault_total_assets",
+            "legendFormat": "Total Assets"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                { "color": "red", "value": 0 },
+                { "color": "green", "value": 1 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Shares",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "expr": "vault_total_shares",
+            "legendFormat": "Total Shares"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Vault Paused",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "vault_is_paused",
+            "legendFormat": "Paused"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "options": { "0": { "text": "Active", "color": "green" }, "1": { "text": "PAUSED", "color": "red" } } }
+            ]
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Accumulated Fees (stroops)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "expr": "vault_total_fees_collected",
+            "legendFormat": "Fees"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Deposit Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "rate(vault_deposits_total[5m])",
+            "legendFormat": "Deposits/s"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "ops" } }
+      },
+      {
+        "id": 6,
+        "title": "Withdrawal Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "rate(vault_withdrawals_total[5m])",
+            "legendFormat": "Withdrawals/s"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "ops" } }
+      },
+      {
+        "id": 7,
+        "title": "Share Price (assets / shares)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "vault_total_assets / vault_total_shares",
+            "legendFormat": "Share Price"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "short" } }
+      },
+      {
+        "id": 8,
+        "title": "Harvest Events",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "rate(vault_harvests_total[5m])",
+            "legendFormat": "Harvests/s"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "ops" } }
+      },
+      {
+        "id": 9,
+        "title": "Balance Mismatch Events (flash-loan guard)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "increase(vault_balance_mismatch_total[5m])",
+            "legendFormat": "Mismatches"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] }
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Transaction Failure Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "targets": [
+          {
+            "expr": "rate(vault_transactions_total{status=\"failed\"}[5m]) / rate(vault_transactions_total[5m])",
+            "legendFormat": "Failure Rate"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "percentunit" } }
+      }
+    ]
+  }
+}

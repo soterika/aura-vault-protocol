@@ -1,0 +1,83 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: aura-redis-prod
+    restart: on-failure:5
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aura-network
+
+  backend:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-aura-vault-protocol}/backend:${IMAGE_TAG:-latest}
+    container_name: aura-backend-prod
+    restart: on-failure:5
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - CACHE_DEFI_PRICE_TTL=30
+      - CACHE_DEFI_POOL_TTL=60
+      - CACHE_API_TTL=60
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - aura-network
+
+  frontend:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-aura-vault-protocol}/frontend:${IMAGE_TAG:-latest}
+    container_name: aura-frontend-prod
+    restart: on-failure:5
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SOROBAN_RPC_URL=${SOROBAN_RPC_URL}
+      - NEXT_PUBLIC_NETWORK_PASSPHRASE=${NETWORK_PASSPHRASE}
+      - NEXT_PUBLIC_API_URL=http://backend:3001
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - aura-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  aura-network:
+    driver: bridge

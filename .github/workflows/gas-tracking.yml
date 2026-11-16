@@ -1,0 +1,229 @@
+name: Gas Tracking
+
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "aura-vault/src/**"
+      - "aura-vault/Cargo.toml"
+      - "aura-vault/Cargo.lock"
+      - "gas-baselines.json"
+      - "scripts/compare_gas.py"
+      - ".github/workflows/gas-tracking.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "aura-vault/src/**"
+      - "aura-vault/Cargo.toml"
+      - "aura-vault/Cargo.lock"
+      - "gas-baselines.json"
+  # Allow manual triggering to capture new baselines.
+  workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: "Update baselines after measuring (commit required separately)"
+        required: false
+        default: "false"
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Run gas measurement tests and emit measurements JSON
+  # ---------------------------------------------------------------------------
+  gas-measure:
+    name: Measure Gas
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: aura-vault
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-gas-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-gas-
+            ${{ runner.os }}-cargo-
+
+      - name: Clean previous measurements
+        run: rm -f ../gas-measurements.json
+
+      - name: Run gas measurement tests
+        # --test-threads=1 ensures stable per-function measurements.
+        # stdout is filtered to only GAS_MEASURE lines; stderr suppressed.
+        run: |
+          GAS_OUTPUT="../gas-measurements.json" \
+          cargo test gas_ --test-threads=1 -- --nocapture 2>/dev/null \
+            | grep "^GAS_MEASURE:" | sed 's/^GAS_MEASURE: //' || true
+
+      - name: Verify measurements file was created
+        run: |
+          if [ ! -f ../gas-measurements.json ]; then
+            echo "::error::gas-measurements.json was not created. Did any gas_ tests run?"
+            exit 1
+          fi
+          echo "Measurements produced:"
+          cat ../gas-measurements.json
+
+      - name: Upload measurements artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gas-measurements-${{ github.run_id }}
+          path: gas-measurements.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Compare measurements against baselines and generate Markdown report
+  # ---------------------------------------------------------------------------
+  gas-compare:
+    name: Compare Gas to Baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: gas-measure
+
+    outputs:
+      passed: ${{ steps.compare.outputs.passed }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Download measurements artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: gas-measurements-${{ github.run_id }}
+          path: .
+
+      - name: Run gas comparison
+        id: compare
+        run: |
+          set +e
+          python3 scripts/compare_gas.py \
+            --baselines gas-baselines.json \
+            --measurements gas-measurements.json \
+            | tee gas-report.md
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "passed=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          exit $EXIT_CODE
+
+      - name: Upload gas report artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gas-report-${{ github.run_id }}
+          path: gas-report.md
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Post PR comment with gas report (PRs only)
+  # ---------------------------------------------------------------------------
+  gas-comment:
+    name: Post Gas Report as PR Comment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: gas-compare
+    if: github.event_name == 'pull_request' && always()
+
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download gas report
+        uses: actions/download-artifact@v8
+        with:
+          name: gas-report-${{ github.run_id }}
+          path: .
+
+      - name: Find existing gas report comment
+        id: find-comment
+        uses: peter-evans/find-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "⛽ Gas Usage Report"
+
+      - name: Create or update PR comment
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: gas-report.md
+          edit-mode: replace
+
+  # ---------------------------------------------------------------------------
+  # Job 4 (optional): Update baselines on workflow_dispatch
+  # ---------------------------------------------------------------------------
+  update-baselines:
+    name: Update Gas Baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: gas-measure
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.update_baselines == 'true'
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Download measurements artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: gas-measurements-${{ github.run_id }}
+          path: .
+
+      - name: Update baselines file
+        run: |
+          python3 scripts/update_baselines.py \
+            --baselines gas-baselines.json \
+            --measurements gas-measurements.json
+
+      - name: Commit updated baselines
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet gas-baselines.json; then
+            echo "No baseline changes to commit."
+          else
+            git add gas-baselines.json
+            git commit -m "chore: update gas baselines [skip ci]"
+            git push
+          fi

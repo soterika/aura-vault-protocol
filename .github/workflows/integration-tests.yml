@@ -1,0 +1,94 @@
+name: Integration Tests (PostgreSQL)
+
+on:
+  push:
+    branches: [main, develop, "feat/**", "integration-tests"]
+    paths:
+      - "backend/**"
+      - "docker-compose.test.yml"
+      - ".github/workflows/integration-tests.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - "docker-compose.test.yml"
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    name: Backend Integration Tests (Postgres + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10           # P99 < 60 s enforced by vitest; workflow cap = 10 min
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ── Spin up the test environment ──────────────────────────────────────
+      - name: Start Docker Compose test services
+        run: |
+          docker compose -f docker-compose.test.yml up -d postgres-test redis-test
+          echo "Waiting for services to become healthy..."
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose -f docker-compose.test.yml exec -T postgres-test \
+                pg_isready -U aura_test -d aura_vault_test; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Attempt $i/30 — waiting..."
+            sleep 2
+          done
+
+      - name: Wait for Redis to be ready
+        run: |
+          for i in $(seq 1 15); do
+            if docker compose -f docker-compose.test.yml exec -T redis-test \
+                redis-cli ping | grep -q PONG; then
+              echo "Redis is ready"
+              break
+            fi
+            sleep 1
+          done
+
+      # ── Node.js setup ─────────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      # ── Run integration tests ─────────────────────────────────────────────
+      - name: Run PostgreSQL integration tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://aura_test:aura_test_password@localhost:5433/aura_vault_test
+          REDIS_URL: redis://localhost:6380
+          JWT_SECRET: integration-test-secret-do-not-use-in-production
+          NODE_ENV: test
+          # Record timing for P99 check
+          VITEST_REPORTER: verbose
+        run: |
+          START=$(date +%s%N)
+          npx vitest run src/routes/__tests__/integration.postgres.test.ts --reporter=verbose
+          END=$(date +%s%N)
+          ELAPSED=$(( (END - START) / 1000000 ))
+          echo "Integration test suite runtime: ${ELAPSED}ms"
+          if [ $ELAPSED -gt 60000 ]; then
+            echo "::warning::P99 test runtime ${ELAPSED}ms exceeds 60s target"
+          fi
+
+      # ── Tear down ─────────────────────────────────────────────────────────
+      - name: Tear down Docker Compose services
+        if: always()
+        run: |
+          docker compose -f docker-compose.test.yml down -v --remove-orphans

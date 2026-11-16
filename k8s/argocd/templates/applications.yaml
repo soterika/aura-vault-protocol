@@ -1,0 +1,61 @@
+{{- $repository := .Values.repository.url -}}
+{{- $revision := .Values.repository.revision -}}
+{{- range $environment, $settings := .Values.environments }}
+{{- range $.Values.applications }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aura-vault-{{ $environment }}-{{ . }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: aura-vault
+    aura-vault.io/environment: {{ $environment }}
+    aura-vault.io/component: {{ . }}
+spec:
+  project: default
+  revisionHistoryLimit: 10
+  source:
+    repoURL: {{ $repository | quote }}
+    targetRevision: {{ $revision | quote }}
+    path: {{ if and (eq $environment "production") (eq . "database") }}k8s/argocd/apps/production/database{{ else }}k8s/{{ . }}{{ end }}
+    kustomize:
+      namespace: {{ if eq . "monitoring" }}{{ $settings.monitoringNamespace }}{{ else }}{{ $settings.namespace }}{{ end }}
+      {{- if and (eq . "monitoring") (eq $environment "staging") }}
+      patches:
+        - target:
+            group: rbac.authorization.k8s.io
+            version: v1
+            kind: ClusterRole
+            name: prometheus
+          patch: |-
+            - op: replace
+              path: /metadata/name
+              value: staging-prometheus
+        - target:
+            group: rbac.authorization.k8s.io
+            version: v1
+            kind: ClusterRoleBinding
+            name: prometheus
+          patch: |-
+            - op: replace
+              path: /metadata/name
+              value: staging-prometheus
+            - op: replace
+              path: /roleRef/name
+              value: staging-prometheus
+      {{- end }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ if eq . "monitoring" }}{{ $settings.monitoringNamespace }}{{ else }}{{ $settings.namespace }}{{ end }}
+  syncPolicy:
+    {{- if $settings.automatedSync }}
+    automated:
+      prune: true
+      selfHeal: true
+    {{- end }}
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+{{- end }}
+{{- end }}

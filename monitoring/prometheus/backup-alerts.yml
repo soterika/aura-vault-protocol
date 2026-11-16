@@ -1,0 +1,167 @@
+groups:
+  # ── PostgreSQL Backup Alerts ──────────────────────────────────────────────
+  #
+  # Metrics are pushed by scripts/backup-postgres.sh and scripts/restore-test.sh
+  # to Prometheus Pushgateway after each run.
+  #
+  # Metric names (all pushed with labels: job="postgres_backup", database="aura_vault"):
+  #   backup_last_success_timestamp_seconds  — unix timestamp of last successful backup
+  #   backup_last_duration_seconds           — wall-clock time of last backup run
+  #   backup_last_size_bytes                 — encrypted backup file size
+  #   backup_success_total                   — 1 if last run succeeded, 0 if failed
+  #   backup_restore_test_success            — 1 if last restore test passed, 0 if failed
+  #   backup_restore_test_duration_seconds   — wall-clock time of last restore test
+  #   backup_restore_test_last_run_timestamp_seconds — when restore test last ran
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - name: aura-vault-backup
+    rules:
+      # ── CRITICAL: No successful backup in the last 25 hours ──────────────
+      # Fires if the backup CronJob has not completed successfully since yesterday.
+      # The 25h window gives a 1-hour slack over the 24h schedule to avoid noise
+      # from brief delays.
+      - alert: BackupMissed
+        expr: |
+          (time() - backup_last_success_timestamp_seconds{job="postgres_backup"}) > 90000
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "PostgreSQL backup missed — no successful backup in {{ $value | humanizeDuration }}"
+          description: >
+            The last successful PostgreSQL backup was {{ $value | humanizeDuration }} ago.
+            Expected interval is 24h. The CronJob may have failed or been skipped.
+            Check k8s CronJob logs: kubectl logs -n aura-vault -l app=postgres-backup
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#backup-missed"
+
+      # ── CRITICAL: Backup metric has never been seen ───────────────────────
+      # Absent metric means the Pushgateway has never received a backup completion.
+      # This fires if the backup has never run since monitoring was set up.
+      - alert: BackupMetricAbsent
+        expr: |
+          absent(backup_last_success_timestamp_seconds{job="postgres_backup"})
+        for: 30m
+        labels:
+          severity: critical
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "Backup completion metric is missing — backup may never have run"
+          description: >
+            The metric backup_last_success_timestamp_seconds is absent from Prometheus.
+            Either the backup has never run, the Pushgateway is unreachable, or the
+            CronJob has consistently failed before reaching the metrics push step.
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#metric-absent"
+
+      # ── CRITICAL: Last backup run explicitly reported failure ─────────────
+      - alert: BackupFailed
+        expr: |
+          backup_success_total{job="postgres_backup"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "PostgreSQL backup run failed (reported by backup script)"
+          description: >
+            The backup script reported a failure on its last run.
+            Check the CronJob pod logs for the specific error:
+            kubectl logs -n aura-vault -l app=postgres-backup --tail=100
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#backup-failed"
+
+      # ── WARNING: Backup took unusually long ───────────────────────────────
+      # Fires if the backup duration exceeds 30 minutes (baseline: ~5–10 min).
+      # A slow backup may indicate DB growth, network issues, or S3 throttling.
+      - alert: BackupDurationHigh
+        expr: |
+          backup_last_duration_seconds{job="postgres_backup"} > 1800
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "PostgreSQL backup took {{ $value | humanizeDuration }} (threshold: 30m)"
+          description: >
+            The last backup took longer than expected. This may indicate database growth,
+            slow network to S3, or resource contention on the backup pod.
+            Current duration: {{ $value | humanizeDuration }}
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#backup-slow"
+
+      # ── WARNING: Backup file suspiciously small ───────────────────────────
+      # A 10KB threshold catches empty / near-empty dumps.
+      # Adjust the threshold as the database grows.
+      - alert: BackupSizeSuspiciouslySmall
+        expr: |
+          backup_last_size_bytes{job="postgres_backup"} < 10240
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "Backup file is suspiciously small: {{ $value | humanize1024 }}B"
+          description: >
+            The encrypted backup file is smaller than 10KB, which suggests the dump
+            may be empty or truncated. Verify the database has data and that pg_dump
+            ran successfully before the compression + encryption steps.
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#backup-small"
+
+  # ── Restore Test Alerts ───────────────────────────────────────────────────
+
+  - name: aura-vault-backup-restore
+    rules:
+      # ── CRITICAL: Weekly restore test failed ─────────────────────────────
+      - alert: BackupRestoreTestFailed
+        expr: |
+          backup_restore_test_success{job="backup_restore_test"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "PostgreSQL backup restore test FAILED — backup may be unrecoverable"
+          description: >
+            The weekly restore test reported a failure. The last backup may be corrupted
+            or the decryption key may have changed. Backups cannot be trusted until this
+            is resolved.
+            Check the GitHub Actions restore test workflow for details.
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#restore-test-failed"
+
+      # ── CRITICAL: Restore test has not run in 8 days ─────────────────────
+      # 8 days = 7-day schedule + 1 day slack
+      - alert: BackupRestoreTestNotRun
+        expr: |
+          (time() - backup_restore_test_last_run_timestamp_seconds{job="backup_restore_test"}) > 691200
+        for: 1h
+        labels:
+          severity: critical
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "Restore test has not run in {{ $value | humanizeDuration }} (expected: weekly)"
+          description: >
+            The backup restore test has not run in over 8 days. The weekly GitHub Actions
+            workflow may be disabled, failing at the start, or the Pushgateway may be
+            unreachable.
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#restore-test-not-run"
+
+      # ── WARNING: Restore test metric absent ──────────────────────────────
+      - alert: BackupRestoreTestMetricAbsent
+        expr: |
+          absent(backup_restore_test_success{job="backup_restore_test"})
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+          service: postgresql-backup
+        annotations:
+          summary: "Restore test completion metric is missing"
+          description: >
+            The metric backup_restore_test_success is absent. The restore test workflow
+            may never have run, or the Pushgateway is unreachable.
+          runbook_url: "https://github.com/soterika/aura-vault-protocol/blob/main/docs/backup-recovery.md#restore-test-absent"

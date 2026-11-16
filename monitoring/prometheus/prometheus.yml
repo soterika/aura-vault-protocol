@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert.rules.yml"
+  - "indexer-alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "aura-vault-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:3000"]
+        labels:
+          service: "aura-vault-api"
+          environment: "development"
+
+  - job_name: "aura-vault-frontend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:3002"]
+        labels:
+          service: "aura-vault-frontend"
+          environment: "development"
+
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels:
+          service: "node-exporter"
+
+  # Scrapes event indexer metrics from the Aura Vault backend
+  - job_name: "event-indexer"
+    metrics_path: /api/v1/indexer/metrics/prometheus
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["host.docker.internal:3001"]
+        labels:
+          service: "event-indexer"
+          environment: "production"

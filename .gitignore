@@ -1,0 +1,24 @@
+target/
+Cargo.lock
+.DS_Store
+*.wasm
+mutants.out/
+
+*storybook.log
+storybook-static
+
+# Local secrets must remain untracked.
+.env
+.env.*
+!.env.example
+!*.env.example
+
+dist/
+backend/dist/
+backend/node_modules/
+
+# Gas regression — generated measurement file (not the baseline)
+gas-measurements.json
+gas-report.md
+gas-measurement-log.txt
+node_modules

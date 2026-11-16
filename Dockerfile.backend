@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+
+# ── Build stage ──────────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
+
+# Copy workspace files
+COPY package*.json ./
+COPY backend/package*.json ./backend/
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy source code
+COPY backend ./backend
+
+# Build TypeScript
+WORKDIR /app/backend
+RUN npm run build
+
+# ── Runtime stage ────────────────────────────────────────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S backend -u 1001
+
+# Copy built application from builder
+COPY --from=builder --chown=backend:nodejs /app/backend/dist ./backend/dist
+COPY --from=builder --chown=backend:nodejs /app/backend/package*.json ./backend/
+
+# Install only production dependencies
+WORKDIR /app/backend
+RUN npm ci --only=production && npm cache clean --force
+
+# Switch to non-root user
+USER backend
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3001/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["npm", "start"]

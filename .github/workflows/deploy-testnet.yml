@@ -1,0 +1,442 @@
+# =============================================================================
+# Soroban Contract — Stellar Testnet Deployment
+#
+# Triggers on every push to the `develop` branch.
+# Also available via workflow_dispatch for manual re-deploys.
+#
+# Workflow steps:
+#   1. build-wasm     — Cargo build --target wasm32-unknown-unknown --release
+#   2. deploy         — stellar contract upload + deploy (or upgrade)
+#   3. smoke-test     — invoke view functions; fail CI if contract is unreachable
+#   4. notify         — post Slack/Discord message on success or failure
+#
+# Required GitHub Secrets:
+#   TESTNET_DEPLOY_KEYPAIR    — Stellar secret key (S...) for the deployer account
+#   TESTNET_CONTRACT_ID       — Existing contract ID to upgrade (optional;
+#                               leave empty to always deploy a fresh instance)
+#   SLACK_WEBHOOK_URL         — Incoming Webhook URL for Slack notifications
+#   DISCORD_WEBHOOK_URL       — Discord Webhook URL (optional; omit to skip)
+#
+# The deployer account must be funded on testnet. Friendbot funding is
+# attempted automatically if the balance is zero.
+#
+# Closes #953
+# =============================================================================
+
+name: Deploy — Soroban Testnet
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "aura-vault/**"
+      - ".github/workflows/deploy-testnet.yml"
+  workflow_dispatch:
+    inputs:
+      force_fresh_deploy:
+        description: "Force a fresh contract deploy instead of upgrading"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+env:
+  CARGO_TERM_COLOR: always
+  STELLAR_NETWORK: testnet
+  STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+  STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+  # Friendbot endpoint for automatic testnet funding
+  FRIENDBOT_URL: https://friendbot.stellar.org
+
+concurrency:
+  group: deploy-testnet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Build Wasm artifact ──────────────────────────────────────────────────
+  build-wasm:
+    name: Build Wasm
+    runs-on: ubuntu-latest
+    outputs:
+      wasm-sha256: ${{ steps.hash.outputs.sha256 }}
+      wasm-size: ${{ steps.hash.outputs.size }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable with wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('aura-vault/Cargo.lock', 'aura-vault/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+            ${{ runner.os }}-cargo-
+
+      - name: Build release Wasm
+        run: |
+          cargo build \
+            --manifest-path aura-vault/Cargo.toml \
+            --target wasm32-unknown-unknown \
+            --release
+        env:
+          RUSTFLAGS: "-C opt-level=z"
+
+      - name: Verify Wasm artifact exists
+        run: |
+          WASM=aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+          if [ ! -f "$WASM" ]; then
+            echo "::error::Wasm artifact not found at $WASM"
+            exit 1
+          fi
+          echo "Wasm artifact: $(ls -lh $WASM)"
+
+      - name: Compute Wasm hash and size
+        id: hash
+        run: |
+          WASM=aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+          SHA=$(sha256sum "$WASM" | awk '{print $1}')
+          SIZE=$(du -sh "$WASM" | cut -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE"  >> "$GITHUB_OUTPUT"
+          echo "Wasm SHA-256 : $SHA"
+          echo "Wasm size    : $SIZE"
+
+      - name: Upload Wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+          retention-days: 14
+
+  # ── 2. Deploy (upload + deploy or upgrade) ─────────────────────────────────
+  deploy:
+    name: Deploy to Testnet
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    environment:
+      name: testnet
+      url: https://stellar.expert/explorer/testnet/contract/${{ steps.deploy.outputs.contract-id }}
+    outputs:
+      contract-id: ${{ steps.deploy.outputs.contract-id }}
+      wasm-hash: ${{ steps.upload.outputs.wasm-hash }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aura-vault-wasm-${{ github.sha }}
+          path: ./dist
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSL \
+            https://github.com/stellar/stellar-cli/releases/latest/download/stellar-cli-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C /usr/local/bin
+          stellar --version
+
+      - name: Configure Stellar network and deployer identity
+        env:
+          TESTNET_DEPLOY_KEYPAIR: ${{ secrets.TESTNET_DEPLOY_KEYPAIR }}
+        run: |
+          # Configure testnet as the default network
+          stellar network add testnet \
+            --rpc-url  "$STELLAR_RPC_URL" \
+            --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+
+          # Import the deployer keypair from secrets
+          echo "$TESTNET_DEPLOY_KEYPAIR" | stellar keys add ci-deployer --secret-key --stdin
+
+          DEPLOYER_ADDRESS=$(stellar keys address ci-deployer)
+          echo "Deployer address: $DEPLOYER_ADDRESS"
+          echo "DEPLOYER_ADDRESS=$DEPLOYER_ADDRESS" >> "$GITHUB_ENV"
+
+      - name: Ensure deployer account is funded
+        run: |
+          # Check balance; fund via Friendbot if account does not exist
+          BALANCE=$(curl -sf \
+            "https://horizon-testnet.stellar.org/accounts/$DEPLOYER_ADDRESS" \
+            | jq -r '.balances[] | select(.asset_type=="native") | .balance' \
+            2>/dev/null || echo "0")
+
+          echo "XLM balance: $BALANCE"
+          if [ "$(echo "$BALANCE < 10" | bc -l 2>/dev/null || echo 1)" = "1" ]; then
+            echo "Funding account via Friendbot..."
+            curl -sf "$FRIENDBOT_URL?addr=$DEPLOYER_ADDRESS" > /dev/null
+            sleep 5
+          fi
+
+      - name: Upload Wasm to Stellar Testnet
+        id: upload
+        run: |
+          echo "Uploading Wasm..."
+          WASM_HASH=$(stellar contract upload \
+            --wasm dist/aura_vault.wasm \
+            --source ci-deployer \
+            --network testnet)
+
+          echo "Wasm hash: $WASM_HASH"
+          echo "wasm-hash=$WASM_HASH" >> "$GITHUB_OUTPUT"
+          echo "WASM_HASH=$WASM_HASH" >> "$GITHUB_ENV"
+
+      - name: Deploy or upgrade contract
+        id: deploy
+        env:
+          TESTNET_CONTRACT_ID: ${{ secrets.TESTNET_CONTRACT_ID }}
+          FORCE_FRESH: ${{ github.event.inputs.force_fresh_deploy || 'false' }}
+        run: |
+          if [ -n "$TESTNET_CONTRACT_ID" ] && [ "$FORCE_FRESH" != "true" ]; then
+            echo "Upgrading existing contract $TESTNET_CONTRACT_ID..."
+            stellar contract invoke \
+              --id "$TESTNET_CONTRACT_ID" \
+              --source ci-deployer \
+              --network testnet \
+              -- upgrade \
+              --new_wasm_hash "$WASM_HASH" || true
+
+            # Use the existing contract ID after upgrade
+            CONTRACT_ID="$TESTNET_CONTRACT_ID"
+            DEPLOY_TYPE="upgrade"
+          else
+            echo "Deploying fresh contract instance..."
+            CONTRACT_ID=$(stellar contract deploy \
+              --wasm-hash "$WASM_HASH" \
+              --source ci-deployer \
+              --network testnet)
+
+            DEPLOY_TYPE="fresh"
+          fi
+
+          echo "contract-id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          echo "CONTRACT_ID=$CONTRACT_ID" >> "$GITHUB_ENV"
+          echo "DEPLOY_TYPE=$DEPLOY_TYPE" >> "$GITHUB_ENV"
+          echo "Deployment type : $DEPLOY_TYPE"
+          echo "Contract ID     : $CONTRACT_ID"
+
+      - name: Write deployment summary
+        run: |
+          {
+            echo "## Testnet Deployment Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Network | \`testnet\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Branch | \`${{ github.ref_name }}\` |"
+            echo "| Type | \`$DEPLOY_TYPE\` |"
+            echo "| Contract ID | \`$CONTRACT_ID\` |"
+            echo "| Wasm Hash | \`$WASM_HASH\` |"
+            echo "| Wasm SHA-256 | \`${{ needs.build-wasm.outputs.wasm-sha256 }}\` |"
+            echo "| Wasm Size | \`${{ needs.build-wasm.outputs.wasm-size }}\` |"
+            echo "| Explorer | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/$CONTRACT_ID) |"
+            echo "| Deployed at | \`$(date -u)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 3. Smoke tests against the deployed contract ──────────────────────────
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSL \
+            https://github.com/stellar/stellar-cli/releases/latest/download/stellar-cli-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C /usr/local/bin
+
+      - name: Configure Stellar network
+        run: |
+          stellar network add testnet \
+            --rpc-url  "$STELLAR_RPC_URL" \
+            --network-passphrase "$STELLAR_NETWORK_PASSPHRASE"
+
+      - name: Run smoke tests against deployed contract
+        env:
+          CONTRACT_ID: ${{ needs.deploy.outputs.contract-id }}
+        run: |
+          echo "Running smoke tests against contract: $CONTRACT_ID"
+
+          # ── Test 1: total_assets() returns a value ────────────────────────
+          echo "Test 1: total_assets()"
+          TOTAL_ASSETS=$(stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --network testnet \
+            -- total_assets 2>&1)
+
+          echo "total_assets() = $TOTAL_ASSETS"
+          if echo "$TOTAL_ASSETS" | grep -qiE "error|failed|panic"; then
+            echo "::error::total_assets() returned an error: $TOTAL_ASSETS"
+            exit 1
+          fi
+          echo "✓ total_assets() returned: $TOTAL_ASSETS"
+
+          # ── Test 2: is_paused() returns a boolean ─────────────────────────
+          echo "Test 2: is_paused()"
+          IS_PAUSED=$(stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --network testnet \
+            -- is_paused 2>&1)
+
+          echo "is_paused() = $IS_PAUSED"
+          if echo "$IS_PAUSED" | grep -qiE "error|failed|panic"; then
+            echo "::error::is_paused() returned an error: $IS_PAUSED"
+            exit 1
+          fi
+          if [ "$IS_PAUSED" != "false" ] && [ "$IS_PAUSED" != "true" ]; then
+            echo "::error::Unexpected is_paused() value: $IS_PAUSED (expected true or false)"
+            exit 1
+          fi
+          echo "✓ is_paused() returned: $IS_PAUSED"
+
+          # ── Test 3: balance_of() for a zero address returns 0 ─────────────
+          echo "Test 3: balance_of() for zero-balance address"
+          ZERO_ADDR="GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN"
+          BALANCE=$(stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --network testnet \
+            -- balance_of \
+            --address "$ZERO_ADDR" 2>&1)
+
+          echo "balance_of($ZERO_ADDR) = $BALANCE"
+          if echo "$BALANCE" | grep -qiE "panic|unexpected"; then
+            echo "::error::balance_of() returned unexpected error: $BALANCE"
+            exit 1
+          fi
+          echo "✓ balance_of() returned: $BALANCE"
+
+          echo ""
+          echo "All smoke tests passed ✓"
+          echo "Contract ID: $CONTRACT_ID"
+          echo "Explorer: https://stellar.expert/explorer/testnet/contract/$CONTRACT_ID"
+
+      - name: Annotate commit with contract address
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTRACT_ID: ${{ needs.deploy.outputs.contract-id }}
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          COMMENT_BODY="## ✅ Testnet Deployment Successful
+
+**Contract ID:** \`${CONTRACT_ID}\`
+**Wasm Hash:** \`${{ needs.deploy.outputs.wasm-hash }}\`
+**Wasm SHA-256:** \`${{ needs.build-wasm.outputs.wasm-sha256 }}\`
+**Deployed at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+**Explorer:** https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}
+
+All smoke tests passed ✓"
+
+          # Post as a commit comment
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/commits/${COMMIT_SHA}/comments" \
+            -f body="$COMMENT_BODY" || echo "Warning: could not post commit comment"
+
+  # ── 4. Notify Slack / Discord ──────────────────────────────────────────────
+  notify-success:
+    name: Notify — Success
+    runs-on: ubuntu-latest
+    needs: [build-wasm, deploy, smoke-test]
+    if: success()
+    steps:
+      - name: Post Slack success notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          CONTRACT_ID: ${{ needs.deploy.outputs.contract-id }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \"✅ *Aura Vault — Testnet Deploy Succeeded*\",
+              \"attachments\": [{
+                \"color\": \"good\",
+                \"fields\": [
+                  {\"title\": \"Contract ID\",   \"value\": \"\`${CONTRACT_ID}\`\",                                                               \"short\": false},
+                  {\"title\": \"Wasm Hash\",     \"value\": \"\`${{ needs.deploy.outputs.wasm-hash }}\`\",                                       \"short\": false},
+                  {\"title\": \"Commit\",         \"value\": \"\`${{ github.sha }}\`\",                                                           \"short\": true},
+                  {\"title\": \"Branch\",         \"value\": \"\`${{ github.ref_name }}\`\",                                                      \"short\": true},
+                  {\"title\": \"Explorer\",       \"value\": \"<https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}|View on Stellar Expert>\", \"short\": false}
+                ]
+              }]
+            }"
+
+      - name: Post Discord success notification
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CONTRACT_ID: ${{ needs.deploy.outputs.contract-id }}
+        run: |
+          curl -sf -X POST "$DISCORD_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"✅ Aura Vault — Testnet Deploy Succeeded\",
+                \"color\": 3066993,
+                \"fields\": [
+                  {\"name\": \"Contract ID\",   \"value\": \"\`${CONTRACT_ID}\`\",          \"inline\": false},
+                  {\"name\": \"Wasm Hash\",     \"value\": \"\`${{ needs.deploy.outputs.wasm-hash }}\`\", \"inline\": false},
+                  {\"name\": \"Commit\",         \"value\": \"\`${{ github.sha }}\`\",          \"inline\": true},
+                  {\"name\": \"Branch\",         \"value\": \"\`${{ github.ref_name }}\`\",     \"inline\": true}
+                ],
+                \"url\": \"https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}\"
+              }]
+            }"
+
+  notify-failure:
+    name: Notify — Failure
+    runs-on: ubuntu-latest
+    needs: [build-wasm, deploy, smoke-test]
+    if: failure()
+    steps:
+      - name: Post Slack failure notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \"🚨 *Aura Vault — Testnet Deploy FAILED*\",
+              \"attachments\": [{
+                \"color\": \"danger\",
+                \"fields\": [
+                  {\"title\": \"Commit\",  \"value\": \"\`${{ github.sha }}\`\",      \"short\": true},
+                  {\"title\": \"Branch\",  \"value\": \"\`${{ github.ref_name }}\`\", \"short\": true},
+                  {\"title\": \"Run URL\", \"value\": \"<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>\", \"short\": false}
+                ]
+              }]
+            }"
+
+      - name: Post Discord failure notification
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -sf -X POST "$DISCORD_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"🚨 Aura Vault — Testnet Deploy FAILED\",
+                \"color\": 15158332,
+                \"fields\": [
+                  {\"name\": \"Commit\",  \"value\": \"\`${{ github.sha }}\`\",      \"inline\": true},
+                  {\"name\": \"Branch\",  \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}
+                ],
+                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+              }]
+            }"

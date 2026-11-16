@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-tests:
+    name: Rust Smart Contract Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: aura-vault
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build Wasm (required by upgrade tests)
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Run all tests
+        run: cargo test -- --test-threads=4 2>&1 | tee ../test-results-rust.txt
+
+      - name: Upload Rust test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-test-results
+          path: test-results-rust.txt
+
+  ui-tests:
+    name: UI Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: ui
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run UI tests
+        run: pnpm test -- --reporter=verbose 2>&1 | tee ../test-results-ui.txt
+
+      - name: Upload UI test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-test-results
+          path: test-results-ui.txt
+
+  report:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [rust-tests, ui-tests]
+    if: always()
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+
+      - name: Print Rust results
+        run: cat rust-test-results/test-results-rust.txt || echo "No Rust results"
+
+      - name: Print UI results
+        run: cat ui-test-results/test-results-ui.txt || echo "No UI results"
+
+      - name: Fail if any job failed
+        if: ${{ needs.rust-tests.result == 'failure' || needs.ui-tests.result == 'failure' }}
+        run: |
+          echo "One or more test jobs failed. See artifacts for details."
+          exit 1

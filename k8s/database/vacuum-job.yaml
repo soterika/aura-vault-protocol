@@ -1,0 +1,386 @@
+# =============================================================================
+# postgres-maintenance CronJob — Issue #960
+#
+# Runs scheduled VACUUM ANALYZE and REINDEX CONCURRENTLY on high-write tables
+# to prevent bloat and index degradation.
+#
+# Schedule:
+#   Weekly vacuum:   Sundays 03:00 UTC  (0 3 * * 0)
+#   Monthly reindex: 1st of month 03:00 UTC  (0 3 1 * *)
+#
+# Maintenance window: Sundays 03:00 UTC — lowest traffic period.
+#
+# Required Secrets (backend-secrets):
+#   DB_PASSWORD  — PostgreSQL password
+#
+# Required ConfigMap (backup-config):
+#   PGHOST, PGPORT, PGUSER, PGDATABASE
+#   PUSHGATEWAY_URL  — Prometheus Pushgateway endpoint (optional)
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weekly VACUUM ANALYZE CronJob
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-vacuum
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+    component: vacuum
+  annotations:
+    description: "Weekly VACUUM ANALYZE on high-write tables — Sundays 03:00 UTC"
+spec:
+  # Sundays 03:00 UTC — lowest traffic maintenance window
+  schedule: "0 3 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 7200
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600   # 1-hour hard timeout
+      template:
+        metadata:
+          labels:
+            app: postgres-maintenance
+            component: vacuum
+        spec:
+          serviceAccountName: postgres-maintenance
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: OnFailure
+          containers:
+            - name: vacuum
+              image: postgres:16-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backend-secrets
+                      key: DB_PASSWORD
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "[vacuum] Starting weekly VACUUM ANALYZE — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+                  # Tables requiring proactive maintenance (high write / large row count)
+                  TABLES="contract_events vault_positions transaction_queue apy_snapshots audit_logs yield_calculations"
+
+                  for TABLE in $TABLES; do
+                    echo "[vacuum] VACUUM ANALYZE $TABLE ..."
+                    psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+                      -c "VACUUM ANALYZE $TABLE;" \
+                      && echo "[vacuum] OK: $TABLE" \
+                      || echo "[vacuum] WARN: $TABLE failed, continuing"
+                  done
+
+                  # Push success metric to Prometheus Pushgateway (if configured)
+                  if [ -n "$PUSHGATEWAY_URL" ]; then
+                    cat <<EOF | curl --silent --data-binary @- \
+                      "${PUSHGATEWAY_URL}/metrics/job/postgres_vacuum/instance/${PGHOST}"
+                  # HELP postgres_vacuum_last_success_timestamp Unix timestamp of last successful vacuum run
+                  # TYPE postgres_vacuum_last_success_timestamp gauge
+                  postgres_vacuum_last_success_timestamp $(date +%s)
+                  EOF
+                  fi
+
+                  echo "[vacuum] Completed — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Monthly REINDEX CONCURRENTLY CronJob
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-reindex
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+    component: reindex
+  annotations:
+    description: "Monthly REINDEX CONCURRENTLY on high-write indexes — 1st of month 03:00 UTC"
+spec:
+  # 1st of every month, 03:00 UTC
+  schedule: "0 3 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 7200
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200   # 2-hour hard timeout (reindex can be slow)
+      template:
+        metadata:
+          labels:
+            app: postgres-maintenance
+            component: reindex
+        spec:
+          serviceAccountName: postgres-maintenance
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: OnFailure
+          containers:
+            - name: reindex
+              image: postgres:16-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backend-secrets
+                      key: DB_PASSWORD
+              resources:
+                requests:
+                  cpu: "200m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "512Mi"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "[reindex] Starting monthly REINDEX CONCURRENTLY — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+                  # High-write indexes most prone to bloat
+                  INDEXES="
+                    idx_contract_events_created_at
+                    idx_contract_events_wallet_address
+                    idx_vault_positions_wallet_address
+                    idx_transaction_queue_status
+                    idx_audit_logs_created_at
+                    idx_apy_snapshots_created_at
+                  "
+
+                  for IDX in $INDEXES; do
+                    IDX=$(echo "$IDX" | xargs)  # trim whitespace
+                    [ -z "$IDX" ] && continue
+                    echo "[reindex] REINDEX INDEX CONCURRENTLY $IDX ..."
+                    psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+                      -c "REINDEX INDEX CONCURRENTLY $IDX;" \
+                      && echo "[reindex] OK: $IDX" \
+                      || echo "[reindex] WARN: $IDX failed, continuing"
+                  done
+
+                  # Push success metric
+                  if [ -n "$PUSHGATEWAY_URL" ]; then
+                    cat <<EOF | curl --silent --data-binary @- \
+                      "${PUSHGATEWAY_URL}/metrics/job/postgres_reindex/instance/${PGHOST}"
+                  # HELP postgres_reindex_last_success_timestamp Unix timestamp of last successful reindex run
+                  # TYPE postgres_reindex_last_success_timestamp gauge
+                  postgres_reindex_last_success_timestamp $(date +%s)
+                  EOF
+                  fi
+
+                  echo "[reindex] Completed — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Table Bloat Monitoring CronJob (runs every 6 hours)
+# Pushes dead-tuple ratio metrics to Prometheus Pushgateway
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-bloat-monitor
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+    component: bloat-monitor
+  annotations:
+    description: "Collects dead-tuple ratios and pushes to Prometheus every 6 hours"
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 1800
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600   # 10-minute hard timeout
+      template:
+        metadata:
+          labels:
+            app: postgres-maintenance
+            component: bloat-monitor
+        spec:
+          serviceAccountName: postgres-maintenance
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: OnFailure
+          containers:
+            - name: bloat-monitor
+              image: postgres:16-alpine
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backend-secrets
+                      key: DB_PASSWORD
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "128Mi"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache curl > /dev/null 2>&1
+
+                  echo "[bloat-monitor] Collecting dead tuple ratios — $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+                  # Query pg_stat_user_tables for dead tuple ratios
+                  # dead_tuple_ratio = n_dead_tup / (n_live_tup + n_dead_tup)
+                  METRICS=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" \
+                    --no-align --tuples-only -c "
+                    SELECT
+                      relname,
+                      n_live_tup,
+                      n_dead_tup,
+                      CASE
+                        WHEN (n_live_tup + n_dead_tup) > 0
+                        THEN ROUND(n_dead_tup::numeric / (n_live_tup + n_dead_tup), 4)
+                        ELSE 0
+                      END AS dead_ratio
+                    FROM pg_stat_user_tables
+                    WHERE schemaname = 'public'
+                    ORDER BY dead_ratio DESC;
+                  ")
+
+                  if [ -z "$PUSHGATEWAY_URL" ]; then
+                    echo "[bloat-monitor] PUSHGATEWAY_URL not set, printing metrics to stdout:"
+                    echo "$METRICS"
+                    exit 0
+                  fi
+
+                  # Build Prometheus exposition format
+                  PROM_PAYLOAD="# HELP postgres_table_dead_tuple_ratio Ratio of dead tuples to total tuples
+                  # TYPE postgres_table_dead_tuple_ratio gauge
+                  # HELP postgres_table_live_tuples Number of live tuples
+                  # TYPE postgres_table_live_tuples gauge
+                  # HELP postgres_table_dead_tuples Number of dead tuples
+                  # TYPE postgres_table_dead_tuples gauge
+                  "
+
+                  while IFS='|' read -r TABLE LIVE DEAD RATIO; do
+                    TABLE=$(echo "$TABLE" | xargs)
+                    LIVE=$(echo "$LIVE" | xargs)
+                    DEAD=$(echo "$DEAD" | xargs)
+                    RATIO=$(echo "$RATIO" | xargs)
+                    [ -z "$TABLE" ] && continue
+                    PROM_PAYLOAD="${PROM_PAYLOAD}
+                  postgres_table_dead_tuple_ratio{table=\"$TABLE\"} $RATIO
+                  postgres_table_live_tuples{table=\"$TABLE\"} $LIVE
+                  postgres_table_dead_tuples{table=\"$TABLE\"} $DEAD"
+                  done <<EOF
+                  $METRICS
+                  EOF
+
+                  echo "$PROM_PAYLOAD" | curl --silent --data-binary @- \
+                    "${PUSHGATEWAY_URL}/metrics/job/postgres_bloat/instance/${PGHOST}"
+
+                  echo "[bloat-monitor] Metrics pushed successfully"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# ServiceAccount for maintenance jobs
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-maintenance
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+  annotations:
+    # IRSA: set to IAM role ARN if Pushgateway access requires AWS auth
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/aura-vault-maintenance-role
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgres-maintenance
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["backend-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: postgres-maintenance
+  namespace: aura-vault
+  labels:
+    app: postgres-maintenance
+subjects:
+  - kind: ServiceAccount
+    name: postgres-maintenance
+    namespace: aura-vault
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: postgres-maintenance

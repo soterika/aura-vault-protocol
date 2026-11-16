@@ -1,0 +1,73 @@
+version: "3.8"
+
+# Staging environment — mirrors production topology with Stellar testnet
+# Usage: docker compose -f docker-compose.staging.yml up -d
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aura-frontend-staging
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SOROBAN_RPC_URL=${SOROBAN_RPC_URL}
+      - NEXT_PUBLIC_NETWORK_PASSPHRASE=${NETWORK_PASSPHRASE}
+      - NEXT_PUBLIC_VAULT_CONTRACT_ID=${VAULT_CONTRACT_ID}
+      - NEXT_PUBLIC_API_URL=http://backend:3001
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - aura-staging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build:
+      context: ./backend
+    container_name: aura-backend-staging
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET}
+      - VAULT_CONTRACT_ID=${VAULT_CONTRACT_ID}
+      - SOROBAN_RPC_URL=${SOROBAN_RPC_URL}
+    networks:
+      - aura-staging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: aura-prometheus-staging
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_staging_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "9090:9090"
+    networks:
+      - aura-staging
+
+volumes:
+  prometheus_staging_data:
+
+networks:
+  aura-staging:
+    driver: bridge

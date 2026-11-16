@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aura Vault — Register</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="card">
+    <h1>⬡ Aura Vault — Create Account</h1>
+
+    <form id="vault-form" novalidate>
+
+      <!-- Username -->
+      <div class="field">
+        <label for="username">Username</label>
+        <div class="input-wrap">
+          <input id="username" name="username" type="text"
+                 placeholder="vault_user" autocomplete="username" />
+          <span class="icon" aria-hidden="true"></span>
+        </div>
+        <p class="error-msg" aria-live="polite"></p>
+      </div>
+
+      <!-- Email + autocomplete -->
+      <div class="field">
+        <label for="email">Email</label>
+        <div class="input-wrap">
+          <input id="email" name="email" type="email"
+                 placeholder="you@stellar.org" autocomplete="off" />
+          <span class="icon" aria-hidden="true"></span>
+          <ul class="suggestions" role="listbox" hidden></ul>
+        </div>
+        <p class="error-msg" aria-live="polite"></p>
+      </div>
+
+      <!-- Phone (masked) -->
+      <div class="field">
+        <label for="phone">Phone <span style="color:#64748b">(optional)</span></label>
+        <div class="input-wrap">
+          <input id="phone" name="phone" type="tel"
+                 placeholder="+1 234 567 8900" autocomplete="tel" />
+        </div>
+      </div>
+
+      <!-- Password + strength -->
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="input-wrap">
+          <input id="password" name="password" type="password"
+                 placeholder="Min 8 characters" autocomplete="new-password" />
+          <button type="button" class="toggle-pw" aria-label="Toggle password">👁</button>
+        </div>
+        <div class="strength-bar" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <p class="strength-label"></p>
+        <p class="error-msg" aria-live="polite"></p>
+      </div>
+
+      <!-- Confirm password -->
+      <div class="field">
+        <label for="confirm">Confirm Password</label>
+        <div class="input-wrap">
+          <input id="confirm" name="confirm" type="password"
+                 placeholder="Repeat password" autocomplete="new-password" />
+          <button type="button" class="toggle-pw" aria-label="Toggle password">👁</button>
+        </div>
+        <p class="error-msg" aria-live="polite"></p>
+      </div>
+
+      <button type="submit" disabled>Create Account</button>
+      <p class="success-banner">✓ Account created successfully!</p>
+
+    </form>
+  </div>
+
+  <script src="validation.js"></script>
+</body>
+</html>

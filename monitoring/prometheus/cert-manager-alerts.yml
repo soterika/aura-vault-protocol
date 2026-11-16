@@ -1,0 +1,131 @@
+# =============================================================================
+# cert-manager — Prometheus Alert Rules
+#
+# Fires when a certificate managed by cert-manager is close to expiry.
+# cert-manager exposes the following metrics via its /metrics endpoint:
+#
+#   certmanager_certificate_expiration_timestamp_seconds
+#     Labels: name, namespace, issuer_name, issuer_kind, issuer_group
+#     Value:  Unix timestamp of the certificate's NotAfter field
+#
+#   certmanager_certificate_ready_status
+#     Labels: name, namespace, condition, issuer_name, ...
+#     Value:  1 if the condition is True, 0 otherwise
+#
+# Prometheus must be configured to scrape the cert-manager metrics service.
+# Add the following job to prometheus.yml or use the ServiceMonitor CRD:
+#
+#   - job_name: cert-manager
+#     kubernetes_sd_configs:
+#       - role: endpoints
+#         namespaces:
+#           names: [cert-manager]
+#     relabel_configs:
+#       - source_labels: [__meta_kubernetes_service_name]
+#         action: keep
+#         regex: cert-manager
+#
+# Closes #951
+# =============================================================================
+
+groups:
+  - name: cert-manager-certificates
+    rules:
+      # ── CRITICAL: Certificate expires in less than 14 days ────────────────
+      # cert-manager renews 30 days before expiry by default. If a certificate
+      # is still less than 14 days from expiry, renewal has failed and manual
+      # intervention is required.
+      - alert: CertManagerCertificateExpiringSoon
+        expr: |
+          (certmanager_certificate_expiration_timestamp_seconds - time()) < (14 * 24 * 3600)
+        for: 1h
+        labels:
+          severity: critical
+          team: platform
+          service: cert-manager
+        annotations:
+          summary: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in
+            {{ $value | humanizeDuration }}
+          description: >
+            The TLS certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+            will expire in {{ $value | humanizeDuration }}.
+            cert-manager should have renewed it 30 days before expiry — check the
+            CertificateRequest and Order resources for errors:
+
+              kubectl describe certificate {{ $labels.name }} -n {{ $labels.namespace }}
+              kubectl describe certificaterequest -n {{ $labels.namespace }}
+              kubectl logs -n cert-manager deploy/cert-manager
+
+            Issuer: {{ $labels.issuer_name }} ({{ $labels.issuer_kind }})
+          runbook_url: "https://cert-manager.io/docs/troubleshooting/"
+
+      # ── WARNING: Certificate expires in less than 30 days ─────────────────
+      # Early warning — renewal is imminent but may be stuck.
+      - alert: CertManagerCertificateExpiryWarning
+        expr: |
+          (certmanager_certificate_expiration_timestamp_seconds - time()) < (30 * 24 * 3600)
+          and
+          (certmanager_certificate_expiration_timestamp_seconds - time()) >= (14 * 24 * 3600)
+        for: 6h
+        labels:
+          severity: warning
+          team: platform
+          service: cert-manager
+        annotations:
+          summary: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in
+            {{ $value | humanizeDuration }}
+          description: >
+            The TLS certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+            will expire in {{ $value | humanizeDuration }}.
+            cert-manager should be renewing it automatically. Monitor the
+            CertificateRequest status to confirm renewal is in progress.
+          runbook_url: "https://cert-manager.io/docs/troubleshooting/"
+
+      # ── CRITICAL: Certificate is not in Ready state ───────────────────────
+      # Fires if cert-manager cannot obtain or renew a certificate.
+      - alert: CertManagerCertificateNotReady
+        expr: |
+          certmanager_certificate_ready_status{condition="Ready"} == 0
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+          service: cert-manager
+        annotations:
+          summary: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          description: >
+            The certificate {{ $labels.name }} in namespace {{ $labels.namespace }}
+            has condition Ready=False for more than 10 minutes.
+            This means TLS termination may be broken or using an expired certificate.
+
+            Diagnose with:
+              kubectl describe certificate {{ $labels.name }} -n {{ $labels.namespace }}
+              kubectl get certificaterequest -n {{ $labels.namespace }}
+              kubectl get order -n {{ $labels.namespace }}
+              kubectl get challenge -n {{ $labels.namespace }}
+
+            Issuer: {{ $labels.issuer_name }} ({{ $labels.issuer_kind }})
+          runbook_url: "https://cert-manager.io/docs/troubleshooting/"
+
+      # ── WARNING: cert-manager controller is not running ───────────────────
+      - alert: CertManagerDown
+        expr: |
+          absent(up{job="cert-manager"})
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          service: cert-manager
+        annotations:
+          summary: "cert-manager controller metrics are not being scraped"
+          description: >
+            No cert-manager metrics have been received for 5 minutes.
+            The cert-manager controller may be down or Prometheus cannot reach it.
+
+            Check controller status:
+              kubectl get pods -n cert-manager
+              kubectl logs -n cert-manager deploy/cert-manager
+          runbook_url: "https://cert-manager.io/docs/troubleshooting/"

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "regressionThresholdPercent": 20,
+  "endpoints": {
+    "GET /api/v1/vault/stats": { "p95Ms": 250 },
+    "GET /api/vault/leaderboard": { "p95Ms": 250 },
+    "GET /api/v1/yield/apy-history": { "p95Ms": 250 },
+    "POST /api/auth/login": { "p95Ms": 400 },
+    "GET /api/health": { "p95Ms": 100 }
+  }
+}

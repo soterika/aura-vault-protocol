@@ -1,0 +1,72 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Weekly scan every Sunday at 03:00 UTC
+    - cron: "0 3 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+        # Add more languages here if needed: python, go, etc.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # Use extended query suite for broader coverage
+          queries: security-extended,security-and-quality
+          # Additional queries
+          config: |
+            query-filters:
+              - exclude:
+                  problem.severity:
+                    - note
+                    - recommendation
+
+      - name: Setup Node (for TypeScript autobuild)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: codeql-${{ matrix.language }}
+          output: codeql-results
+          upload: always
+
+      - name: Upload CodeQL results artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeql-${{ matrix.language }}-results
+          path: codeql-results/
+          retention-days: 14

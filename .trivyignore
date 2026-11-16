@@ -1,0 +1,2 @@
+# Add accepted vulnerability IDs here only with a documented reason and review date.
+# Example: CVE-2025-00000 # false positive in build-only tool; reviewed 2026-10-22

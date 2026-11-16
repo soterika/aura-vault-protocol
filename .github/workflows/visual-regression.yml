@@ -1,0 +1,100 @@
+name: Visual Regression Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  visual-regression:
+    name: Playwright Visual Regression (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browsers (Chromium only)
+        run: npx playwright install chromium --with-deps
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+
+      - name: Start frontend server
+        run: npm start &
+        working-directory: frontend
+        env:
+          PORT: 3000
+          NODE_ENV: production
+
+      - name: Wait for frontend to be ready
+        run: npx wait-on http://localhost:3000 --timeout 60000
+
+      - name: Run visual regression tests
+        run: npx playwright test --project=visual-regression
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          CI: true
+
+      - name: Upload screenshot diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-regression-diffs-${{ github.run_id }}
+          path: |
+            playwright-report/
+            playwright/snapshots/**/*-diff.png
+            playwright/snapshots/**/*-actual.png
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Comment on PR with visual regression results
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Visual Regression Failures Detected
+
+              Screenshots differ from baselines by more than the allowed 0.1% threshold.
+
+              **Artifacts uploaded:** [Visual Regression Diffs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+              To update baselines (if changes are intentional):
+              \`\`\`bash
+              npx playwright test --project=visual-regression --update-snapshots
+              git add playwright/snapshots
+              git commit -m "chore: update visual regression baselines"
+              \`\`\`
+              `
+            })

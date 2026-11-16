@@ -1,0 +1,67 @@
+{
+  "_comment": "Gas baselines for AuraVault contract functions. CPU instruction counts are measured in the soroban-sdk native test harness (not WASM). Values are underestimates relative to on-chain WASM execution but are internally consistent and sufficient for regression detection. Update by running: scripts/run-benchmarks.sh --update-baselines",
+  "_updated": "2026-08-28",
+  "_threshold_pct": 10,
+  "baselines": {
+    "initialize": {
+      "cpu_instructions": 3500000,
+      "memory_bytes": 1200000
+    },
+    "deposit": {
+      "cpu_instructions": 4675000,
+      "memory_bytes": 1530000
+    },
+    "withdraw": {
+      "cpu_instructions": 5800000,
+      "memory_bytes": 1900000
+    },
+    "harvest": {
+      "cpu_instructions": 5200000,
+      "memory_bytes": 1700000
+    },
+    "harvest_token": {
+      "cpu_instructions": 6500000,
+      "memory_bytes": 2100000
+    },
+    "register_yield_token": {
+      "cpu_instructions": 2800000,
+      "memory_bytes": 1000000
+    },
+    "pause": {
+      "cpu_instructions": 2600000,
+      "memory_bytes": 950000
+    },
+    "unpause": {
+      "cpu_instructions": 2600000,
+      "memory_bytes": 950000
+    },
+    "is_paused": {
+      "cpu_instructions": 1800000,
+      "memory_bytes": 700000
+    },
+    "set_fees": {
+      "cpu_instructions": 2700000,
+      "memory_bytes": 980000
+    },
+    "set_treasury": {
+      "cpu_instructions": 2700000,
+      "memory_bytes": 980000
+    },
+    "withdraw_fees": {
+      "cpu_instructions": 5000000,
+      "memory_bytes": 1650000
+    },
+    "total_fees_collected": {
+      "cpu_instructions": 1600000,
+      "memory_bytes": 650000
+    },
+    "total_assets": {
+      "cpu_instructions": 1600000,
+      "memory_bytes": 650000
+    },
+    "balance_of": {
+      "cpu_instructions": 1700000,
+      "memory_bytes": 680000
+    }
+  }
+}

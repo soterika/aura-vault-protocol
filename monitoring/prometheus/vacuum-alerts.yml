@@ -1,0 +1,121 @@
+# =============================================================================
+# PostgreSQL Vacuum & Table Bloat Alert Rules — Issue #960
+#
+# Requires the postgres-bloat-monitor CronJob in k8s/database/vacuum-job.yaml
+# to be running and pushing metrics to the Prometheus Pushgateway.
+# =============================================================================
+groups:
+  - name: postgres-maintenance
+    rules:
+      # ── Dead tuple ratio alerts ────────────────────────────────────────────
+
+      - alert: PostgresTableHighBloat
+        expr: postgres_table_dead_tuple_ratio > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL table {{ $labels.table }} has high dead tuple ratio"
+          description: >
+            Table {{ $labels.table }} has a dead tuple ratio of
+            {{ $value | humanizePercentage }} which exceeds the 20% threshold.
+            A manual VACUUM ANALYZE may be required before the next scheduled run.
+            Run: psql -c "VACUUM ANALYZE {{ $labels.table }};"
+
+      - alert: PostgresTableCriticalBloat
+        expr: postgres_table_dead_tuple_ratio > 0.40
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL table {{ $labels.table }} has critical dead tuple ratio"
+          description: >
+            Table {{ $labels.table }} dead tuple ratio is
+            {{ $value | humanizePercentage }}, exceeding 40%. This will
+            severely impact query performance. Immediate manual VACUUM ANALYZE
+            is required.
+            Run: psql -c "VACUUM ANALYZE {{ $labels.table }};"
+
+      # ── Maintenance job health ─────────────────────────────────────────────
+
+      - alert: PostgresVacuumJobMissed
+        expr: >
+          (time() - postgres_vacuum_last_success_timestamp) > (7 * 24 * 3600 + 3600)
+        for: 30m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL weekly vacuum job has not run in over 7 days"
+          description: >
+            The postgres-vacuum CronJob has not reported a successful completion
+            in more than 7 days (last success: {{ $value | humanizeTimestamp }}).
+            Check the CronJob status: kubectl get cronjob postgres-vacuum -n aura-vault
+
+      - alert: PostgresReindexJobMissed
+        expr: >
+          (time() - postgres_reindex_last_success_timestamp) > (32 * 24 * 3600)
+        for: 30m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL monthly reindex job has not run in over 32 days"
+          description: >
+            The postgres-reindex CronJob has not reported a successful completion
+            in more than 32 days (last success: {{ $value | humanizeTimestamp }}).
+            Check the CronJob status: kubectl get cronjob postgres-reindex -n aura-vault
+
+      - alert: PostgresBloatMonitorDown
+        expr: >
+          absent(postgres_table_dead_tuple_ratio) == 1
+        for: 13h
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL bloat monitor metrics are missing"
+          description: >
+            No postgres_table_dead_tuple_ratio metrics have been received for
+            more than 13 hours. The postgres-bloat-monitor CronJob may have
+            failed or the Pushgateway is unreachable.
+            Check: kubectl get cronjob postgres-bloat-monitor -n aura-vault
+
+      # ── Bloat trend alerts ─────────────────────────────────────────────────
+
+      - alert: PostgresTableBloatIncreasing
+        expr: >
+          (
+            postgres_table_dead_tuple_ratio
+            - postgres_table_dead_tuple_ratio offset 24h
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL table {{ $labels.table }} bloat increasing rapidly"
+          description: >
+            Table {{ $labels.table }} dead tuple ratio increased by more than
+            5 percentage points in the last 24 hours. Current ratio:
+            {{ $value | humanizePercentage }}. Autovacuum may not be keeping up.
+
+      # ── Dead tuple count thresholds ───────────────────────────────────────
+
+      - alert: PostgresTableExcessiveDeadTuples
+        expr: postgres_table_dead_tuples > 10000000
+        for: 15m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "PostgreSQL table {{ $labels.table }} has >10M dead tuples"
+          description: >
+            Table {{ $labels.table }} has {{ $value }} dead tuples.
+            This volume can cause significant bloat and slow sequential scans.
+            Current dead tuple ratio:
+            {{ with printf "postgres_table_dead_tuple_ratio{table=\"%s\"}" $labels.table | query }}
+              {{ . | first | value | humanizePercentage }}
+            {{ end }}

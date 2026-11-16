@@ -1,0 +1,53 @@
+name: Queue Retry Integration Tests
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/src/queue.retry.test.ts"
+      - "backend/src/queue.ts"
+      - "backend/package.json"
+      - ".github/workflows/queue-retry.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "backend/src/queue.retry.test.ts"
+      - "backend/src/queue.ts"
+      - "backend/package.json"
+      - ".github/workflows/queue-retry.yml"
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  queue-retry:
+    name: Queue Retry Behaviour Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run queue retry tests
+        run: npx vitest run src/queue.retry.test.ts --reporter=verbose
+        env:
+          NODE_ENV: test
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: queue-retry-test-results
+          path: backend/test-results*.txt
+          if-no-files-found: ignore

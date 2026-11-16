@@ -1,0 +1,320 @@
+name: Blue-Green Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options: [staging, production]
+      skip_aws:
+        description: "Skip AWS ALB updates (k8s-only mode)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Dry run (print actions without executing)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: blue-green-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false  # never cancel a blue-green deploy mid-flight
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: us-east-1
+
+jobs:
+  # ── Build & Test ─────────────────────────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      - name: Log build summary
+        run: |
+          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image**: \`${{ steps.meta.outputs.tags }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Digest**: \`${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy to Staging (blue-green) ───────────────────────────────────────
+  deploy-staging:
+    name: Deploy — Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'))
+    environment:
+      name: staging
+      url: https://staging.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "${{ secrets.EKS_CLUSTER_NAME_STAGING }}" \
+            --alias staging
+
+      - name: Run blue-green deploy script
+        id: deploy
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+          K8S_NAMESPACE: aura-vault-staging
+          ALB_LISTENER_ARN: ${{ secrets.ALB_LISTENER_ARN_STAGING }}
+          BLUE_TG_ARN: ${{ secrets.BLUE_TG_ARN_STAGING }}
+          GREEN_TG_ARN: ${{ secrets.GREEN_TG_ARN_STAGING }}
+          PREVIEW_HOST: preview.staging.aura-vault.internal
+          PRODUCTION_URL: https://staging.aura-vault.xyz
+          SKIP_AWS: ${{ github.event.inputs.skip_aws || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          chmod +x scripts/blue-green-deploy.sh scripts/smoke-test.sh
+          bash scripts/blue-green-deploy.sh \
+            --image-tag "$IMAGE_TAG" \
+            --namespace "$K8S_NAMESPACE" \
+            --listener-arn "$ALB_LISTENER_ARN" \
+            --blue-tg-arn "$BLUE_TG_ARN" \
+            --green-tg-arn "$GREEN_TG_ARN" \
+            --preview-host "$PREVIEW_HOST" \
+            --timeout 300 \
+            $([ "$SKIP_AWS" == "true" ] && echo "--skip-aws") \
+            $([ "$DRY_RUN" == "true" ] && echo "--dry-run")
+
+      - name: Log deployment summary
+        if: always()
+        run: |
+          echo "## Staging Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment**: staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image**: \`${{ needs.build.outputs.image-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status**: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Deployed at**: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Staging blue-green deployment failed. Check logs above for details."
+          echo "## ⚠️ Deployment Failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Automatic rollback was attempted. Verify cluster state manually." >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Cleanup old slot warm-down (30 min after deploy) ────────────────────
+  cleanup-old-slot-staging:
+    name: Cleanup Old Slot — Staging
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: success()
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ env.AWS_REGION }}" \
+            --name "${{ secrets.EKS_CLUSTER_NAME_STAGING }}" \
+            --alias staging
+
+      - name: Wait for rollback window (30 min)
+        run: |
+          echo "Keeping old slot warm for 30-minute rollback window …"
+          sleep 1800  # 30 minutes
+
+      - name: Scale down old slot
+        run: |
+          # Identify the standby slot (inverse of current active)
+          ACTIVE=$(kubectl get service aura-vault-stable \
+            --namespace aura-vault-staging \
+            --output jsonpath='{.metadata.annotations.blue-green/active-slot}')
+          OLD_SLOT=$([[ "$ACTIVE" == "blue" ]] && echo "green" || echo "blue")
+
+          echo "Active slot: ${ACTIVE}"
+          echo "Scaling down old slot: ${OLD_SLOT}"
+
+          kubectl scale deployment aura-vault-"${OLD_SLOT}" \
+            --namespace aura-vault-staging \
+            --replicas=0
+
+          echo "Old slot (${OLD_SLOT}) scaled to 0 after 30-minute warm-down" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Deploy to Production (manual approval required) ──────────────────────
+  deploy-production:
+    name: Deploy — Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://app.aura-vault.xyz
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "${{ secrets.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --alias production
+
+      - name: Production pre-flight checks
+        run: |
+          echo "## Production Pre-Flight Checks" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [ ] Staging deployment successful (> 1 hour)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [ ] No active incidents" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [ ] On-call engineer notified" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Proceeding with production blue-green deploy …" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run blue-green deploy script
+        id: deploy
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
+          K8S_NAMESPACE: aura-vault
+          ALB_LISTENER_ARN: ${{ secrets.ALB_LISTENER_ARN_PRODUCTION }}
+          BLUE_TG_ARN: ${{ secrets.BLUE_TG_ARN_PRODUCTION }}
+          GREEN_TG_ARN: ${{ secrets.GREEN_TG_ARN_PRODUCTION }}
+          PREVIEW_HOST: preview.aura-vault.internal
+          PRODUCTION_URL: https://app.aura-vault.xyz
+          SKIP_AWS: ${{ github.event.inputs.skip_aws || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          chmod +x scripts/blue-green-deploy.sh scripts/smoke-test.sh
+          bash scripts/blue-green-deploy.sh \
+            --image-tag "$IMAGE_TAG" \
+            --namespace "$K8S_NAMESPACE" \
+            --listener-arn "$ALB_LISTENER_ARN" \
+            --blue-tg-arn "$BLUE_TG_ARN" \
+            --green-tg-arn "$GREEN_TG_ARN" \
+            --preview-host "$PREVIEW_HOST" \
+            --timeout 300 \
+            $([ "$SKIP_AWS" == "true" ] && echo "--skip-aws") \
+            $([ "$DRY_RUN" == "true" ] && echo "--dry-run")
+
+      - name: Log production deployment
+        if: always()
+        run: |
+          echo "## 🚀 Production Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment**: production" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image**: \`${{ needs.build.outputs.image-tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status**: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Deployed at**: \`$(date -u)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit**: [\`${{ github.sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Send deployment notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          echo "${EMOJI} Production blue-green deployment: ${STATUS}"
+          # Webhook / Slack notification here if configured
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "::error::Production blue-green deployment FAILED. Rollback was attempted."
+          echo "## ⚠️ PRODUCTION DEPLOYMENT FAILED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Automatic rollback was attempted. VERIFY CLUSTER STATE IMMEDIATELY." >> "$GITHUB_STEP_SUMMARY"
+          echo "Contact: on-call engineer" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Cleanup old slot warm-down (production) ──────────────────────────────
+  cleanup-old-slot-production:
+    name: Cleanup Old Slot — Production
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: success()
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ env.AWS_REGION }}" \
+            --name "${{ secrets.EKS_CLUSTER_NAME_PRODUCTION }}" \
+            --alias production
+
+      - name: Wait for rollback window (30 min)
+        run: |
+          echo "Keeping old slot warm for 30-minute rollback window …"
+          sleep 1800
+
+      - name: Scale down old slot
+        run: |
+          ACTIVE=$(kubectl get service aura-vault-stable \
+            --namespace aura-vault \
+            --output jsonpath='{.metadata.annotations.blue-green/active-slot}')
+          OLD_SLOT=$([[ "$ACTIVE" == "blue" ]] && echo "green" || echo "blue")
+
+          echo "Active slot: ${ACTIVE}"
+          echo "Scaling down old slot: ${OLD_SLOT}"
+
+          kubectl scale deployment aura-vault-"${OLD_SLOT}" \
+            --namespace aura-vault \
+            --replicas=0
+
+          echo "Production old slot (${OLD_SLOT}) scaled to 0 after 30-minute warm-down" >> "$GITHUB_STEP_SUMMARY"

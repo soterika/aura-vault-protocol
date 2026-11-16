@@ -1,0 +1,173 @@
+{
+  "consumer": {
+    "name": "AuraVaultFrontend"
+  },
+  "provider": {
+    "name": "AuraVaultBackend"
+  },
+  "interactions": [
+    {
+      "description": "a request for vault stats (success)",
+      "providerState": "yield worker is running with recent run data",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/vault/stats",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "workerRunning": true,
+          "lastRun": {
+            "lastRunAt": "2026-09-27T20:00:00.000Z",
+            "processed": 42,
+            "failed": 0,
+            "durationMs": 1234,
+            "errors": []
+          }
+        },
+        "matchingRules": {
+          "body": {
+            "$.workerRunning": { "match": "type" },
+            "$.lastRun": { "match": "type" },
+            "$.lastRun.lastRunAt": { "match": "type" },
+            "$.lastRun.processed": { "match": "integer" },
+            "$.lastRun.failed": { "match": "integer" },
+            "$.lastRun.durationMs": { "match": "integer" }
+          }
+        }
+      }
+    },
+    {
+      "description": "a request for vault stats when vault is paused",
+      "providerState": "vault is paused",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/vault/stats",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "workerRunning": false,
+          "vaultPaused": true,
+          "lastRun": {
+            "lastRunAt": "2026-09-27T18:00:00.000Z",
+            "processed": 10,
+            "failed": 0,
+            "durationMs": 500,
+            "errors": []
+          }
+        },
+        "matchingRules": {
+          "body": {
+            "$.workerRunning": { "match": "type" },
+            "$.vaultPaused": { "match": "type" },
+            "$.lastRun": { "match": "type" },
+            "$.lastRun.lastRunAt": { "match": "type" },
+            "$.lastRun.processed": { "match": "integer" },
+            "$.lastRun.failed": { "match": "integer" },
+            "$.lastRun.durationMs": { "match": "integer" }
+          }
+        }
+      }
+    },
+    {
+      "description": "a request for vault stats with no run data",
+      "providerState": "yield worker has never run",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/vault/stats",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "workerRunning": false,
+          "lastRun": null
+        },
+        "matchingRules": {
+          "body": {
+            "$.workerRunning": { "match": "type" }
+          }
+        }
+      }
+    },
+    {
+      "description": "a request for vault stats with history",
+      "providerState": "yield worker has run multiple times",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/vault/stats",
+        "query": "history=5",
+        "headers": {
+          "Accept": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "workerRunning": true,
+          "lastRun": {
+            "lastRunAt": "2026-09-27T20:00:00.000Z",
+            "processed": 42,
+            "failed": 0,
+            "durationMs": 1234,
+            "errors": []
+          },
+          "history": [
+            {
+              "lastRunAt": "2026-09-27T20:00:00.000Z",
+              "processed": 42,
+              "failed": 0,
+              "durationMs": 1234,
+              "errors": []
+            }
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.workerRunning": { "match": "type" },
+            "$.lastRun": { "match": "type" },
+            "$.lastRun.lastRunAt": { "match": "type" },
+            "$.lastRun.processed": { "match": "integer" },
+            "$.lastRun.failed": { "match": "integer" },
+            "$.lastRun.durationMs": { "match": "integer" },
+            "$.history": { "match": "type", "min": 1 },
+            "$.history[*].lastRunAt": { "match": "type" },
+            "$.history[*].processed": { "match": "integer" },
+            "$.history[*].failed": { "match": "integer" },
+            "$.history[*].durationMs": { "match": "integer" }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "2.0.0"
+    },
+    "client": {
+      "name": "pact-foundation/pact",
+      "version": "13.x"
+    }
+  }
+}

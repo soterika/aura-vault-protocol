@@ -1,0 +1,48 @@
+{
+  "name": "aura-vault-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "bundle:analyze": "tsc -b && vite build --mode analyze",
+    "test": "vitest run",
+    "test:a11y": "vitest run src/tests/a11y",
+    "test:load": "vitest run src/tests/load.test.ts",
+    "test:load:k6": "k6 run src/tests/load.k6.ts"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@axe-core/react": "4.13.0",
+    "@chromatic-com/storybook": "^5.3.0",
+    "@storybook/addon-a11y": "^10.5.10",
+    "@storybook/addon-docs": "^10.5.10",
+    "@storybook/addon-mcp": "^0.7.0",
+    "@storybook/addon-vitest": "^10.5.10",
+    "@storybook/react-vite": "^10.5.10",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.5",
+    "@types/jest-axe": "3.5.9",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.1.0",
+    "@vitest/browser": "4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
+    "axe-core": "4.13.0",
+    "jest-axe": "11.0.0",
+    "jsdom": "30.0.1",
+    "playwright": "^1.62.1",
+    "rollup-plugin-visualizer": "^7.1.1",
+    "storybook": "^10.5.10",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,0 +1,44 @@
+name: Contract Stress Test
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+  schedule:
+    # Run nightly at 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  stress-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: "Contract stress test (10,000 ops)"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install ts-node
+        run: npm install -g ts-node typescript
+
+      - name: Run stress test script
+        run: npx ts-node --esm scripts/stress-test.ts
+        timeout-minutes: 10
+
+      - name: Upload stress test report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: stress-test-report
+          path: test-report/stress-test-report.json
+          if-no-files-found: warn

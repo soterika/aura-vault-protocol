@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: aura-vault
+  labels:
+    app: backend
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: backend
+  unhealthyPodEvictionPolicy: AlwaysAllow

@@ -1,0 +1,43 @@
+[
+  {
+    "name": "Initial JS bundle",
+    "path": [
+      ".next/static/chunks/main*.js",
+      ".next/static/chunks/webpack*.js",
+      ".next/static/chunks/framework*.js",
+      ".next/static/chunks/app-pages-internals*.js"
+    ],
+    "limit": "200 kB",
+    "gzip": true
+  },
+  {
+    "name": "Per-page chunk (Home)",
+    "path": ".next/static/chunks/app/page*.js",
+    "limit": "50 kB",
+    "gzip": true
+  },
+  {
+    "name": "Per-page chunk (Dashboard)",
+    "path": ".next/static/chunks/app/dashboard/page*.js",
+    "limit": "50 kB",
+    "gzip": true
+  },
+  {
+    "name": "Per-page chunk (FAQ)",
+    "path": ".next/static/chunks/app/faq/page*.js",
+    "limit": "50 kB",
+    "gzip": true
+  },
+  {
+    "name": "Per-page chunk (Settings)",
+    "path": ".next/static/chunks/app/settings/page*.js",
+    "limit": "50 kB",
+    "gzip": true
+  },
+  {
+    "name": "CSS bundle",
+    "path": ".next/static/css/*.css",
+    "limit": "20 kB",
+    "gzip": true
+  }
+]

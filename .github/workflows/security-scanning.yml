@@ -1,0 +1,332 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  issues: write
+
+jobs:
+
+  # ── 1. npm audit — frontend / backend / ui ────────────────────────────────
+  npm-audit:
+    name: npm audit (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [frontend, backend, ui]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+
+      - name: Install dependencies (no scripts)
+        working-directory: ${{ matrix.workspace }}
+        run: npm ci --ignore-scripts
+
+      - name: Run npm audit
+        working-directory: ${{ matrix.workspace }}
+        run: |
+          npm audit --audit-level=critical --json > npm-audit-${{ matrix.workspace }}.json || true
+          # Print human-readable output
+          npm audit --audit-level=critical || EXIT_CODE=$?
+          if [ "${EXIT_CODE:-0}" -ne 0 ]; then
+            echo "::error::Critical vulnerabilities found in ${{ matrix.workspace }}"
+            exit 1
+          fi
+
+      - name: Upload npm audit results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-audit-${{ matrix.workspace }}
+          path: ${{ matrix.workspace }}/npm-audit-${{ matrix.workspace }}.json
+          retention-days: 14
+
+  # ── 2. cargo audit ────────────────────────────────────────────────────────
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.21.0 --locked
+
+      - name: Run cargo audit
+        working-directory: aura-vault
+        run: |
+          cargo audit --json > cargo-audit-results.json || true
+          # Also produce human-readable output and fail on critical/high
+          cargo audit --deny warnings || EXIT_CODE=$?
+          if [ "${EXIT_CODE:-0}" -ne 0 ]; then
+            echo "::error::Cargo audit found vulnerabilities — see artifact for details"
+            exit 1
+          fi
+
+      - name: Upload cargo audit results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-audit-results
+          path: aura-vault/cargo-audit-results.json
+          retention-days: 14
+
+  # ── 3. Trivy container image scanning ─────────────────────────────────────
+  trivy-scan:
+    name: Trivy (${{ matrix.context }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: frontend
+            dockerfile: frontend/Dockerfile
+            image: aura-vault-frontend
+          - context: aura-vault
+            dockerfile: aura-vault/Dockerfile
+            image: aura-vault-contract-builder
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f ${{ matrix.dockerfile }} \
+            -t ${{ matrix.image }}:${{ github.sha }} \
+            ./${{ matrix.context }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.context }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: false
+          vuln-type: os,library
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.context }}.sarif
+          category: trivy-${{ matrix.context }}
+
+      - name: Upload Trivy results artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: trivy-${{ matrix.context }}
+          path: trivy-${{ matrix.context }}.sarif
+          retention-days: 14
+
+  # ── 4. Semgrep SAST ───────────────────────────────────────────────────────
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep:1.86.0
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Semgrep
+        run: |
+          semgrep ci \
+            --config p/typescript \
+            --config p/javascript \
+            --config p/docker \
+            --config p/secrets \
+            --config p/owasp-top-ten \
+            --config p/nodejs \
+            --sarif \
+            --output semgrep.sarif \
+            --error \
+            --include '*.ts' \
+            --include '*.tsx' \
+            --include '*.js' \
+            --include 'Dockerfile*' \
+            --exclude 'node_modules' \
+            --exclude '*.min.js' \
+            --exclude '.next' \
+            --exclude 'target' \
+            --exclude '**/*.test.*' \
+            --exclude '**/*.spec.*' || true
+          # Fail only on findings with severity ERROR or above
+          if grep -q '"level": "error"' semgrep.sarif 2>/dev/null; then
+            echo "::error::Semgrep found high-severity findings"
+            exit 1
+          fi
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload Semgrep SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload Semgrep results artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+          retention-days: 14
+
+  # ── 5. Secret scanning — TruffleHog ──────────────────────────────────────
+  secret-scanning:
+    name: Secret Scanning (TruffleHog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Full history needed for TruffleHog
+
+      - name: Run TruffleHog (PR diff)
+        if: github.event_name == 'pull_request'
+        uses: trufflesecurity/trufflehog-actions-scan@v2.2.16
+        with:
+          path: .
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified --json
+
+      - name: Run TruffleHog (full scan on push)
+        if: github.event_name == 'push'
+        uses: trufflesecurity/trufflehog-actions-scan@v2.2.16
+        with:
+          path: .
+          extra_args: --only-verified --json
+
+  # ── 6. PR comment — scan results summary ─────────────────────────────────
+  pr-security-summary:
+    name: PR Security Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    needs: [npm-audit, cargo-audit, semgrep, secret-scanning]
+    # Run even if some jobs failed so we always post a summary
+    env:
+      NPM_AUDIT_FRONTEND: ${{ needs.npm-audit.result }}
+      CARGO_AUDIT_RESULT: ${{ needs.cargo-audit.result }}
+      SEMGREP_RESULT: ${{ needs.semgrep.result }}
+      SECRET_SCAN_RESULT: ${{ needs.secret-scanning.result }}
+    steps:
+      - name: Download npm-audit artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: npm-audit-*
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download cargo-audit artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: cargo-audit-results
+        continue-on-error: true
+
+      - name: Post PR comment
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const results = {
+              'npm audit (frontend)': process.env.NPM_AUDIT_FRONTEND,
+              'npm audit (backend)': '${{ needs.npm-audit.result }}',
+              'npm audit (ui)':      '${{ needs.npm-audit.result }}',
+              'cargo audit':         process.env.CARGO_AUDIT_RESULT,
+              'Semgrep SAST':        process.env.SEMGREP_RESULT,
+              'Secret Scanning':     process.env.SECRET_SCAN_RESULT,
+            };
+
+            const statusEmoji = (s) => {
+              if (s === 'success')   return '✅';
+              if (s === 'failure')   return '❌';
+              if (s === 'skipped')   return '⏭️';
+              if (s === 'cancelled') return '🚫';
+              return '⚠️';
+            };
+
+            const rows = Object.entries(results)
+              .map(([tool, status]) => `| ${tool} | ${statusEmoji(status)} ${status} |`)
+              .join('\n');
+
+            const anyFailed = Object.values(results).some(s => s === 'failure');
+            const overallStatus = anyFailed
+              ? '❌ **One or more security scans failed — review findings before merging.**'
+              : '✅ **All security scans passed.**';
+
+            const body = [
+              '## 🔒 Security Scan Summary',
+              '',
+              overallStatus,
+              '',
+              '| Tool | Status |',
+              '|------|--------|',
+              rows,
+              '',
+              '> Trivy and CodeQL results are available in the [Security tab](../../security/code-scanning).',
+              '> Detailed artifacts are available in the [Actions run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).',
+            ].join('\n');
+
+            // Find existing comment to update (avoid duplicates)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('🔒 Security Scan Summary')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

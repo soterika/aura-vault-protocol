@@ -1,0 +1,14 @@
+[package]
+name = "aura-vault-formal-verification"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[package.metadata.kani.flags]
+default-unwind = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }

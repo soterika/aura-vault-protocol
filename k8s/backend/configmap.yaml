@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: aura-vault
+data:
+  PORT: "3001"
+  NODE_ENV: "production"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "aura_vault"
+  TRUST_PROXY: "true"

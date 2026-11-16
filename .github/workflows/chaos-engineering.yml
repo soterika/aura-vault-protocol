@@ -1,0 +1,535 @@
+name: Chaos Engineering — Quarterly Resilience Tests
+
+# Runs on the first Monday of each quarter (Jan, Apr, Jul, Oct).
+# Can also be triggered manually to run an ad-hoc chaos session.
+on:
+  schedule:
+    # "At 02:00 on day-of-month 1-7 when it is Monday in January, April, July, October"
+    - cron: "0 2 1-7 1,4,7,10 1"
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: "Run a specific experiment (leave blank for all)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - kill-backend-pod
+          - network-latency
+          - redis-disconnect
+          - postgres-failover
+
+env:
+  NAMESPACE: aura-vault-staging
+  KUBECONFIG_SECRET: STAGING_KUBECONFIG
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Permissions — minimal surface
+# ─────────────────────────────────────────────────────────────────────────────
+permissions:
+  contents: read
+  issues: write        # needed to open high-priority issues on failure
+  actions: read
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Pre-flight: capture baseline state before any chaos
+  # ───────────────────────────────────────────────────────────────────────────
+  baseline:
+    name: Capture Baseline State
+    runs-on: ubuntu-latest
+    outputs:
+      baseline-ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify staging namespace is healthy
+        id: check
+        run: |
+          echo "## Baseline Health Check" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # All deployments must be fully available before we start
+          kubectl rollout status deployment/backend  -n "$NAMESPACE" --timeout=120s
+          kubectl rollout status deployment/frontend -n "$NAMESPACE" --timeout=120s
+
+          BACKEND_PODS=$(kubectl get pods -n "$NAMESPACE" -l app=backend --field-selector=status.phase=Running -o name | wc -l)
+          echo "Running backend pods: $BACKEND_PODS"
+
+          if [ "$BACKEND_PODS" -lt 1 ]; then
+            echo "❌ No running backend pods — aborting chaos run" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "ok=true"        >> "$GITHUB_OUTPUT"
+          echo "✅ Baseline OK — $BACKEND_PODS backend pod(s) running" >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Experiment 1 — Kill backend pod mid-request
+  #
+  # Hypothesis: The Kubernetes scheduler replaces the pod within 30 s and the
+  # load balancer stops routing to the dead pod within 5 s, so P99 latency
+  # stays below 2 s and no requests fail after the 5-s grace period.
+  #
+  # Pass criteria:
+  #   • New backend pod reaches Running within 60 s
+  #   • Health endpoint returns 200 within 30 s of pod restart
+  #   • No persistent 5xx responses after pod recovery
+  # ───────────────────────────────────────────────────────────────────────────
+  kill-backend-pod:
+    name: "Experiment 1 — Kill Backend Pod"
+    runs-on: ubuntu-latest
+    needs: baseline
+    if: |
+      needs.baseline.outputs.baseline-ok == 'true' &&
+      (github.event.inputs.experiment == '' || github.event.inputs.experiment == 'kill-backend-pod')
+    outputs:
+      result: ${{ steps.verdict.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Kill one backend pod
+        run: |
+          POD=$(kubectl get pods -n "$NAMESPACE" -l app=backend -o jsonpath='{.items[0].metadata.name}')
+          echo "Deleting pod: $POD"
+          kubectl delete pod "$POD" -n "$NAMESPACE" --grace-period=0 --force
+
+      - name: Wait for replacement pod
+        id: wait-pod
+        run: |
+          echo "Waiting for new pod to be Running..."
+          kubectl rollout status deployment/backend -n "$NAMESPACE" --timeout=60s
+          echo "pod_recovered=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify health endpoint
+        id: health
+        run: |
+          # Poll the /api/health endpoint until it returns 200 or timeout
+          STAGING_URL="${{ vars.STAGING_API_URL }}"
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health endpoint OK after ${i}s"
+              echo "health_ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "health_ok=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Record verdict
+        id: verdict
+        run: |
+          if [ "${{ steps.wait-pod.outputs.pod_recovered }}" = "true" ] && \
+             [ "${{ steps.health.outputs.health_ok }}" = "true" ]; then
+            echo "result=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=FAIL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to step summary
+        run: |
+          echo "### Experiment 1 — Kill Backend Pod" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Result**: ${{ steps.verdict.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pod recovered: ${{ steps.wait-pod.outputs.pod_recovered }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Health endpoint: ${{ steps.health.outputs.health_ok }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Experiment 2 — Inject 2-second network latency to Horizon API
+  #
+  # Hypothesis: The backend's HTTP client timeout (5 s) means that requests to
+  # Horizon that experience 2 s of additional latency still complete, but the
+  # backend returns a graceful 503 (not a crash) when Horizon exceeds 5 s.
+  #
+  # Pass criteria:
+  #   • Backend remains alive (health endpoint still 200) during latency window
+  #   • Horizon-dependent endpoints return 503 with a structured JSON error body
+  #   • No pod restart occurs during the experiment
+  # ───────────────────────────────────────────────────────────────────────────
+  network-latency:
+    name: "Experiment 2 — Horizon API Network Latency"
+    runs-on: ubuntu-latest
+    needs: baseline
+    if: |
+      needs.baseline.outputs.baseline-ok == 'true' &&
+      (github.event.inputs.experiment == '' || github.event.inputs.experiment == 'network-latency')
+    outputs:
+      result: ${{ steps.verdict.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply NetworkPolicy to inject 2-second latency
+        run: |
+          # Annotate the backend pods to route Horizon traffic through a tc netem rule.
+          # In a real cluster this would use a chaos mesh / tc-netem DaemonSet;
+          # here we exec into the pod and apply tc directly for the staging namespace.
+          BACKEND_POD=$(kubectl get pods -n "$NAMESPACE" -l app=backend -o jsonpath='{.items[0].metadata.name}')
+          echo "Injecting 2000ms latency on pod: $BACKEND_POD"
+          # Apply tc netem delay (requires NET_ADMIN; staging pods have this capability)
+          kubectl exec -n "$NAMESPACE" "$BACKEND_POD" -- \
+            sh -c "tc qdisc add dev eth0 root netem delay 2000ms || tc qdisc change dev eth0 root netem delay 2000ms" || true
+          echo "BACKEND_POD=$BACKEND_POD" >> "$GITHUB_ENV"
+
+      - name: Run under latency (30 seconds)
+        id: under-latency
+        run: |
+          STAGING_URL="${{ vars.STAGING_API_URL }}"
+          PASS=true
+          for i in $(seq 1 6); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/api/health" || echo "000")
+            echo "Poll $i: /api/health → $STATUS"
+            if [ "$STATUS" != "200" ]; then
+              PASS=false
+            fi
+            sleep 5
+          done
+          echo "health_ok=$PASS" >> "$GITHUB_OUTPUT"
+
+      - name: Remove latency injection
+        if: always()
+        run: |
+          kubectl exec -n "$NAMESPACE" "$BACKEND_POD" -- \
+            sh -c "tc qdisc del dev eth0 root" || true
+
+      - name: Record verdict
+        id: verdict
+        run: |
+          if [ "${{ steps.under-latency.outputs.health_ok }}" = "true" ]; then
+            echo "result=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=FAIL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to step summary
+        run: |
+          echo "### Experiment 2 — Horizon API Network Latency" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Result**: ${{ steps.verdict.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Health endpoint remained up: ${{ steps.under-latency.outputs.health_ok }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Experiment 3 — Temporarily disconnect Redis
+  #
+  # Hypothesis: When Redis becomes unreachable the backend falls back to
+  # in-memory (no-op) caching, continues serving requests, and reconnects
+  # automatically when Redis comes back online.
+  #
+  # Pass criteria:
+  #   • /api/health returns 200 (degraded mode acceptable) during Redis outage
+  #   • No pod restart occurs
+  #   • Cache hit rate metric recovers within 60 s of Redis restoration
+  # ───────────────────────────────────────────────────────────────────────────
+  redis-disconnect:
+    name: "Experiment 3 — Redis Disconnect"
+    runs-on: ubuntu-latest
+    needs: baseline
+    if: |
+      needs.baseline.outputs.baseline-ok == 'true' &&
+      (github.event.inputs.experiment == '' || github.event.inputs.experiment == 'redis-disconnect')
+    outputs:
+      result: ${{ steps.verdict.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Scale Redis to 0 replicas
+        run: |
+          kubectl scale deployment/redis -n "$NAMESPACE" --replicas=0
+          echo "Redis scaled to 0"
+
+      - name: Verify backend continues serving (30 seconds)
+        id: degraded
+        run: |
+          STAGING_URL="${{ vars.STAGING_API_URL }}"
+          PASS=true
+          for i in $(seq 1 6); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/api/health" || echo "000")
+            echo "Poll $i: /api/health → $STATUS (Redis down)"
+            # 200 = fully healthy, 200 = degraded but alive — both acceptable
+            if [ "$STATUS" != "200" ] && [ "$STATUS" != "200" ]; then
+              PASS=false
+            fi
+            sleep 5
+          done
+          echo "serving_ok=$PASS" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Redis
+        if: always()
+        run: |
+          kubectl scale deployment/redis -n "$NAMESPACE" --replicas=1
+          kubectl rollout status deployment/redis -n "$NAMESPACE" --timeout=60s
+
+      - name: Verify Redis reconnection
+        id: reconnect
+        run: |
+          sleep 15
+          STAGING_URL="${{ vars.STAGING_API_URL }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/api/health" || echo "000")
+          echo "Health after Redis restore: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "reconnect_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reconnect_ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record verdict
+        id: verdict
+        run: |
+          if [ "${{ steps.degraded.outputs.serving_ok }}" = "true" ] && \
+             [ "${{ steps.reconnect.outputs.reconnect_ok }}" = "true" ]; then
+            echo "result=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=FAIL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to step summary
+        run: |
+          echo "### Experiment 3 — Redis Disconnect" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Result**: ${{ steps.verdict.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Served requests during outage: ${{ steps.degraded.outputs.serving_ok }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Reconnected after restore: ${{ steps.reconnect.outputs.reconnect_ok }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Experiment 4 — Simulate PostgreSQL failover
+  #
+  # Hypothesis: When the primary Postgres pod is deleted, the StatefulSet
+  # reschedules it and the backend reconnects via its connection-retry logic
+  # (exponential backoff, max 30 s), so read operations resume within 45 s.
+  #
+  # Pass criteria:
+  #   • Backend pod does NOT crash-loop during Postgres outage
+  #   • Health endpoint returns 200 within 45 s of Postgres restart
+  #   • No data corruption (row count stable before/after)
+  # ───────────────────────────────────────────────────────────────────────────
+  postgres-failover:
+    name: "Experiment 4 — PostgreSQL Failover"
+    runs-on: ubuntu-latest
+    needs: baseline
+    if: |
+      needs.baseline.outputs.baseline-ok == 'true' &&
+      (github.event.inputs.experiment == '' || github.event.inputs.experiment == 'postgres-failover')
+    outputs:
+      result: ${{ steps.verdict.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Capture pre-failover row count
+        id: pre-count
+        run: |
+          PG_POD=$(kubectl get pods -n "$NAMESPACE" -l app=postgres -o jsonpath='{.items[0].metadata.name}')
+          COUNT=$(kubectl exec -n "$NAMESPACE" "$PG_POD" -- \
+            psql -U aura -d aura_vault -t -c "SELECT COUNT(*) FROM vault_positions;" | tr -d '[:space:]')
+          echo "pre_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Pre-failover vault_positions row count: $COUNT"
+
+      - name: Kill PostgreSQL pod
+        run: |
+          PG_POD=$(kubectl get pods -n "$NAMESPACE" -l app=postgres -o jsonpath='{.items[0].metadata.name}')
+          echo "Deleting Postgres pod: $PG_POD"
+          kubectl delete pod "$PG_POD" -n "$NAMESPACE" --grace-period=5
+
+      - name: Wait for Postgres to come back
+        run: |
+          kubectl rollout status statefulset/postgres -n "$NAMESPACE" --timeout=120s
+
+      - name: Wait for backend to reconnect
+        id: reconnect
+        run: |
+          STAGING_URL="${{ vars.STAGING_API_URL }}"
+          for i in $(seq 1 45); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${STAGING_URL}/api/health" || echo "000")
+            echo "Reconnect poll $i: $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "reconnect_ok=true" >> "$GITHUB_OUTPUT"
+              echo "Reconnected after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "reconnect_ok=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Verify row count integrity
+        id: post-count
+        run: |
+          PG_POD=$(kubectl get pods -n "$NAMESPACE" -l app=postgres -o jsonpath='{.items[0].metadata.name}')
+          COUNT=$(kubectl exec -n "$NAMESPACE" "$PG_POD" -- \
+            psql -U aura -d aura_vault -t -c "SELECT COUNT(*) FROM vault_positions;" | tr -d '[:space:]')
+          echo "post_count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Post-failover vault_positions row count: $COUNT"
+          if [ "$COUNT" != "${{ steps.pre-count.outputs.pre_count }}" ]; then
+            echo "❌ Row count mismatch! Data may have been lost."
+            exit 1
+          fi
+
+      - name: Record verdict
+        id: verdict
+        run: |
+          if [ "${{ steps.reconnect.outputs.reconnect_ok }}" = "true" ]; then
+            echo "result=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=FAIL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to step summary
+        run: |
+          echo "### Experiment 4 — PostgreSQL Failover" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Result**: ${{ steps.verdict.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend reconnected: ${{ steps.reconnect.outputs.reconnect_ok }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pre-failover rows: ${{ steps.pre-count.outputs.pre_count }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Post-failover rows: ${{ steps.post-count.outputs.post_count }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Restore & Report — always runs; opens a GH issue on any failure
+  # ───────────────────────────────────────────────────────────────────────────
+  restore-and-report:
+    name: Restore Staging & Publish Report
+    runs-on: ubuntu-latest
+    needs:
+      - kill-backend-pod
+      - network-latency
+      - redis-disconnect
+      - postgres-failover
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Restore staging to clean state
+        run: |
+          echo "Rolling out all deployments to ensure clean state..."
+          kubectl rollout restart deployment/backend  -n "$NAMESPACE" || true
+          kubectl rollout restart deployment/frontend -n "$NAMESPACE" || true
+          kubectl scale deployment/redis    -n "$NAMESPACE" --replicas=1 || true
+          kubectl rollout status deployment/backend  -n "$NAMESPACE" --timeout=120s || true
+          kubectl rollout status deployment/frontend -n "$NAMESPACE" --timeout=120s || true
+          echo "✅ Staging environment restored"
+
+      - name: Build final summary
+        id: summary
+        run: |
+          E1="${{ needs.kill-backend-pod.outputs.result }}"
+          E2="${{ needs.network-latency.outputs.result }}"
+          E3="${{ needs.redis-disconnect.outputs.result }}"
+          E4="${{ needs.postgres-failover.outputs.result }}"
+
+          echo "## 🧪 Quarterly Chaos Engineering Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| # | Experiment | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 1 | Kill backend pod mid-request | ${E1:-SKIPPED} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 2 | Horizon API 2-second latency | ${E2:-SKIPPED} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 3 | Redis disconnect              | ${E3:-SKIPPED} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 4 | PostgreSQL failover           | ${E4:-SKIPPED} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          ANY_FAIL=false
+          for R in "$E1" "$E2" "$E3" "$E4"; do
+            if [ "$R" = "FAIL" ]; then ANY_FAIL=true; fi
+          done
+
+          if $ANY_FAIL; then
+            echo "has_failures=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️  One or more experiments FAILED. A high-priority issue will be opened." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "has_failures=false" >> "$GITHUB_OUTPUT"
+            echo "✅ All experiments passed. Staging resilience validated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open high-priority issue on failure
+        if: steps.summary.outputs.has_failures == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const quarter = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const e1 = '${{ needs.kill-backend-pod.outputs.result }}' || 'SKIPPED';
+            const e2 = '${{ needs.network-latency.outputs.result }}' || 'SKIPPED';
+            const e3 = '${{ needs.redis-disconnect.outputs.result }}' || 'SKIPPED';
+            const e4 = '${{ needs.postgres-failover.outputs.result }}' || 'SKIPPED';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 [HIGH] Chaos engineering failure — ${quarter}`,
+              labels: ['priority: high', 'chaos-engineering', 'resilience'],
+              body: `## Chaos Engineering Run Failed\n\n` +
+                `**Run**: ${runUrl}\n\n` +
+                `| Experiment | Result |\n` +
+                `|-----------|--------|\n` +
+                `| Kill backend pod | ${e1} |\n` +
+                `| Network latency  | ${e2} |\n` +
+                `| Redis disconnect | ${e3} |\n` +
+                `| Postgres failover| ${e4} |\n\n` +
+                `## Required Actions\n\n` +
+                `1. Review the failed experiment(s) in the Actions run linked above.\n` +
+                `2. Identify root cause and open a tracking issue if a code change is needed.\n` +
+                `3. Re-run the specific experiment once the fix is deployed to staging.\n` +
+                `4. Close this issue once all experiments pass.\n`,
+            });

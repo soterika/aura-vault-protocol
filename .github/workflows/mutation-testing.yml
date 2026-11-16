@@ -1,0 +1,70 @@
+name: Mutation Testing
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run quarterly: first day of Jan, Apr, Jul, Oct at 02:00 UTC
+    - cron: '0 2 1 1,4,7,10 *'
+  push:
+    paths:
+      - 'aura-vault/src/lib.rs'
+      - 'aura-vault/src/storage.rs'
+      - 'aura-vault/src/fee.rs'
+      - 'aura-vault/src/errors.rs'
+
+jobs:
+  mutation-testing:
+    name: cargo-mutants
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aura-vault
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('aura-vault/Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+
+      - name: Run mutation testing
+        run: cargo mutants --output mutants.out --timeout 120 2>&1 | tee mutation-report.txt
+        continue-on-error: true
+
+      - name: Check mutation score
+        run: |
+          if [ -f mutants.out/mutants.out ]; then
+            CAUGHT=$(grep -c 'caught' mutants.out/mutants.out || echo 0)
+            MISSED=$(grep -c 'missed' mutants.out/mutants.out || echo 0)
+            TOTAL=$((CAUGHT + MISSED))
+            if [ $TOTAL -gt 0 ]; then
+              SCORE=$(echo "scale=1; $CAUGHT * 100 / $TOTAL" | bc)
+              echo "Mutation score: $SCORE% ($CAUGHT/$TOTAL)"
+              if (( $(echo "$SCORE < 80" | bc -l) )); then
+                echo "::error::Mutation score $SCORE% is below 80% threshold"
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-report
+          path: |
+            aura-vault/mutation-report.txt
+            aura-vault/mutants.out/
+          retention-days: 30

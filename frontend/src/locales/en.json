@@ -1,0 +1,218 @@
+{
+  "meta": {
+    "title": "Aura Vault Protocol",
+    "description": "A share-based yield vault on Soroban for the Stellar ecosystem."
+  },
+  "nav": {
+    "faq": "FAQ",
+    "settings": "Settings",
+    "dashboard": "Dashboard"
+  },
+  "home": {
+    "get_started": "Manage your Aura Vault position",
+    "instructions": "Deposit, track your shares, and follow vault yield from one dashboard.",
+    "templates": "Vault dashboard",
+    "or_the": "View",
+    "learning_center": "frequently asked questions",
+    "deploy_now": "Open dashboard",
+    "documentation": "Documentation"
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "subtitle": "Everything you need to know about Aura Vault Protocol.",
+    "search_placeholder": "Search questions…",
+    "all_categories": "All",
+    "no_results": "No results found.",
+    "cant_find": "Can’t find your answer?",
+    "open_issue": "Open a GitHub issue",
+    "categories_label": "FAQ categories"
+  },
+  "settings": {
+    "title": "Settings",
+    "saved": "Settings saved",
+    "reset_defaults": "Reset to defaults",
+    "appearance": {
+      "title": "Appearance",
+      "description": "Choose your preferred color theme."
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose your preferred display language. Changes take effect immediately."
+    },
+    "currency": {
+      "title": "Currency display",
+      "description": "Choose how balances and yield are displayed.",
+      "note": "Market prices are for display purposes only."
+    },
+    "wallet": {
+      "title": "Connected wallet",
+      "no_wallet": "No wallet connected",
+      "connect": "Connect wallet"
+    },
+    "slippage": {
+      "title": "Slippage tolerance",
+      "high_warning": "High slippage may result in unfavorable trades."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "deposits": "Deposit confirmations",
+      "withdrawals": "Withdrawal confirmations",
+      "vault_events": "Vault performance alerts",
+      "email": "Email notifications",
+      "email_address": "Email address",
+      "email_placeholder": "you@example.com",
+      "push_title": "Browser push notifications",
+      "push_description": "Receive a notification when a vault harvest occurs.",
+      "push_blocked": "Push notifications are blocked. Update this site’s browser permissions to enable them.",
+      "push_unsupported": "Push notifications are not supported by this browser."
+    },
+    "security": {
+      "title": "Security",
+      "two_factor": "Two-factor authentication",
+      "two_factor_desc": "Add an extra layer of security."
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "Deactivating your account removes its data and cannot be undone.",
+      "deactivate": "Deactivate account",
+      "confirm_message": "Are you sure? This action is irreversible.",
+      "cancel": "Cancel",
+      "confirm": "Confirm deactivation"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "mark_all_read": "Mark all read",
+    "clear": "Clear",
+    "empty": "No notifications",
+    "unread_aria": "Notifications, {count} unread",
+    "read_aria": "Notifications",
+    "dismiss": "Dismiss notification"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "auto": "System",
+    "switchTo": "Switch to {theme} theme"
+  },
+  "vault_errors": {
+    "1": {
+      "title": "Vault error 1",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "2": {
+      "title": "Vault error 2",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "3": {
+      "title": "Vault error 3",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "4": {
+      "title": "Vault error 4",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "5": {
+      "title": "Vault error 5",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "6": {
+      "title": "Vault error 6",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "7": {
+      "title": "Vault error 7",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "8": {
+      "title": "Vault error 8",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "9": {
+      "title": "Vault error 9",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "10": {
+      "title": "Vault error 10",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "11": {
+      "title": "Vault error 11",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "12": {
+      "title": "Vault error 12",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "13": {
+      "title": "Vault error 13",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "14": {
+      "title": "Vault error 14",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "15": {
+      "title": "Vault error 15",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "16": {
+      "title": "Vault error 16",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "17": {
+      "title": "Vault error 17",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "18": {
+      "title": "Vault error 18",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "19": {
+      "title": "Vault error 19",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "20": {
+      "title": "Vault error 20",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "21": {
+      "title": "Vault error 21",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "22": {
+      "title": "Vault error 22",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "23": {
+      "title": "Vault error 23",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    },
+    "24": {
+      "title": "Vault error 24",
+      "message": "The request could not be completed. Check the transaction details and try again."
+    }
+  },
+  "dashboard": {
+    "title": "Vault Dashboard",
+    "connected": "Connected: {address}",
+    "wallet_not_connected": "Wallet not connected",
+    "vault_balance": "Vault Balance",
+    "updated": "Updated: {time}",
+    "apy": "Annual Percentage Yield",
+    "current_yield": "Current yield",
+    "tvl": "Total Value Locked",
+    "total_users": "Total Users",
+    "active_participants": "Active participants",
+    "recent_transactions": "Recent Transactions",
+    "type": "Type",
+    "amount": "Amount",
+    "date": "Date",
+    "status": "Status",
+    "transaction_status": {
+      "completed": "Completed",
+      "pending": "Pending",
+      "failed": "Failed"
+    }
+  }
+}

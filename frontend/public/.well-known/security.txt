@@ -1,0 +1,5 @@
+Contact: mailto:security@auravault.io
+Policy: https://github.com/soterika/aura-vault-protocol/blob/main/SECURITY.md#13-vulnerability-disclosure-policy
+Preferred-Languages: en
+Canonical: https://auravault.io/.well-known/security.txt
+Expires: 2027-10-22T00:00:00.000Z

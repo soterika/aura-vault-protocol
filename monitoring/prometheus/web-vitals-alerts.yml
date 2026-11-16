@@ -1,0 +1,107 @@
+# Web Vitals alerting rules for Aura Vault Protocol
+# Loaded by prometheus.yml via rule_files.
+#
+# Thresholds align with the Google Web Vitals spec:
+#   LCP  good < 2 500 ms  |  alert threshold 3 000 ms (p75)
+#   CLS  good < 0.1       |  alert threshold 0.25     (p75)
+#   FID  good < 100 ms    |  alert threshold 300 ms   (p75)
+#   INP  good < 200 ms    |  alert threshold 500 ms   (p75)
+
+groups:
+  - name: web_vitals
+    interval: 1m
+    rules:
+
+      # ── LCP ──────────────────────────────────────────────────────────────
+      - alert: LCPHigh
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum(rate(web_vital_lcp_bucket[5m])) by (le)
+          ) > 3000
+        for: 5m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "LCP p75 exceeds 3 000 ms"
+          description: >
+            The 75th-percentile Largest Contentful Paint is
+            {{ $value | humanizeDuration }} — above the 3 s alert threshold.
+            Good threshold is < 2.5 s. Check for large hero images,
+            render-blocking resources, or slow server response.
+          runbook_url: "https://web.dev/lcp/"
+
+      - alert: LCPCritical
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum(rate(web_vital_lcp_bucket[5m])) by (le)
+          ) > 4000
+        for: 5m
+        labels:
+          severity: critical
+          team: frontend
+        annotations:
+          summary: "LCP p75 exceeds 4 000 ms (poor)"
+          description: >
+            The 75th-percentile Largest Contentful Paint has entered the "poor"
+            band ({{ $value | humanizeDuration }}).
+            Immediate investigation required — users are experiencing very slow
+            page loads.
+          runbook_url: "https://web.dev/lcp/"
+
+      # ── CLS ──────────────────────────────────────────────────────────────
+      - alert: CLSHigh
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum(rate(web_vital_cls_bucket[5m])) by (le)
+          ) > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "CLS p75 exceeds 0.25 (poor)"
+          description: >
+            Cumulative Layout Shift p75 is {{ $value }} — in the "poor" band.
+            Check for images without dimensions, dynamically injected content,
+            or font loading issues.
+          runbook_url: "https://web.dev/cls/"
+
+      # ── FID ──────────────────────────────────────────────────────────────
+      - alert: FIDHigh
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum(rate(web_vital_fid_bucket[5m])) by (le)
+          ) > 300
+        for: 5m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "FID p75 exceeds 300 ms (poor)"
+          description: >
+            First Input Delay p75 is {{ $value | humanizeDuration }}.
+            Break up long tasks, defer non-critical JavaScript, or use web workers.
+          runbook_url: "https://web.dev/fid/"
+
+      # ── INP ──────────────────────────────────────────────────────────────
+      - alert: INPHigh
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum(rate(web_vital_inp_bucket[5m])) by (le)
+          ) > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: frontend
+        annotations:
+          summary: "INP p75 exceeds 500 ms (poor)"
+          description: >
+            Interaction to Next Paint p75 is {{ $value | humanizeDuration }}.
+            Optimise event handlers and reduce main-thread blocking work.
+          runbook_url: "https://web.dev/inp/"

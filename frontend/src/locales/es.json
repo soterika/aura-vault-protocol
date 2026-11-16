@@ -1,0 +1,218 @@
+{
+  "meta": {
+    "title": "Aura Vault Protocol",
+    "description": "Un vault de rendimiento basado en participaciones en Soroban para el ecosistema Stellar."
+  },
+  "nav": {
+    "faq": "Preguntas frecuentes",
+    "settings": "Configuración",
+    "dashboard": "Panel"
+  },
+  "home": {
+    "get_started": "Administra tu posición en Aura Vault",
+    "instructions": "Deposita, consulta tus participaciones y sigue el rendimiento del vault desde un solo panel.",
+    "templates": "Panel del vault",
+    "or_the": "Consulta",
+    "learning_center": "las preguntas frecuentes",
+    "deploy_now": "Abrir panel",
+    "documentation": "Documentación"
+  },
+  "faq": {
+    "title": "Preguntas frecuentes",
+    "subtitle": "Todo lo que necesitas saber sobre Aura Vault Protocol.",
+    "search_placeholder": "Buscar preguntas…",
+    "all_categories": "Todas",
+    "no_results": "No se encontraron resultados.",
+    "cant_find": "¿No encuentras tu respuesta?",
+    "open_issue": "Abre un issue en GitHub",
+    "categories_label": "Categorías de preguntas"
+  },
+  "settings": {
+    "title": "Configuración",
+    "saved": "Configuración guardada",
+    "reset_defaults": "Restablecer valores predeterminados",
+    "appearance": {
+      "title": "Apariencia",
+      "description": "Elige tu tema de color preferido."
+    },
+    "language": {
+      "title": "Idioma",
+      "description": "Elige tu idioma de visualización. Los cambios se aplican de inmediato."
+    },
+    "currency": {
+      "title": "Moneda",
+      "description": "Elige cómo se muestran los saldos y el rendimiento.",
+      "note": "Los precios de mercado son solo informativos."
+    },
+    "wallet": {
+      "title": "Billetera conectada",
+      "no_wallet": "No hay una billetera conectada",
+      "connect": "Conectar billetera"
+    },
+    "slippage": {
+      "title": "Tolerancia de deslizamiento",
+      "high_warning": "Un deslizamiento alto puede causar operaciones desfavorables."
+    },
+    "notifications": {
+      "title": "Notificaciones",
+      "deposits": "Confirmaciones de depósito",
+      "withdrawals": "Confirmaciones de retiro",
+      "vault_events": "Alertas de rendimiento del vault",
+      "email": "Notificaciones por correo",
+      "email_address": "Dirección de correo",
+      "email_placeholder": "tu@ejemplo.com",
+      "push_title": "Notificaciones push del navegador",
+      "push_description": "Recibe una notificación cuando ocurra una cosecha del vault.",
+      "push_blocked": "Las notificaciones push están bloqueadas. Actualiza los permisos del sitio para activarlas.",
+      "push_unsupported": "Este navegador no admite notificaciones push."
+    },
+    "security": {
+      "title": "Seguridad",
+      "two_factor": "Autenticación de dos factores",
+      "two_factor_desc": "Añade una capa adicional de seguridad."
+    },
+    "danger": {
+      "title": "Zona de peligro",
+      "description": "Desactivar tu cuenta eliminará sus datos y no se puede deshacer.",
+      "deactivate": "Desactivar cuenta",
+      "confirm_message": "¿Estás seguro? Esta acción es irreversible.",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar desactivación"
+    }
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "mark_all_read": "Marcar todo como leído",
+    "clear": "Borrar",
+    "empty": "No hay notificaciones",
+    "unread_aria": "Notificaciones, {count} sin leer",
+    "read_aria": "Notificaciones",
+    "dismiss": "Descartar notificación"
+  },
+  "theme": {
+    "light": "Claro",
+    "dark": "Oscuro",
+    "auto": "Sistema",
+    "switchTo": "Cambiar al tema {theme}"
+  },
+  "vault_errors": {
+    "1": {
+      "title": "Error del vault 1",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "2": {
+      "title": "Error del vault 2",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "3": {
+      "title": "Error del vault 3",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "4": {
+      "title": "Error del vault 4",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "5": {
+      "title": "Error del vault 5",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "6": {
+      "title": "Error del vault 6",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "7": {
+      "title": "Error del vault 7",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "8": {
+      "title": "Error del vault 8",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "9": {
+      "title": "Error del vault 9",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "10": {
+      "title": "Error del vault 10",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "11": {
+      "title": "Error del vault 11",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "12": {
+      "title": "Error del vault 12",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "13": {
+      "title": "Error del vault 13",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "14": {
+      "title": "Error del vault 14",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "15": {
+      "title": "Error del vault 15",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "16": {
+      "title": "Error del vault 16",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "17": {
+      "title": "Error del vault 17",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "18": {
+      "title": "Error del vault 18",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "19": {
+      "title": "Error del vault 19",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "20": {
+      "title": "Error del vault 20",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "21": {
+      "title": "Error del vault 21",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "22": {
+      "title": "Error del vault 22",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "23": {
+      "title": "Error del vault 23",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    },
+    "24": {
+      "title": "Error del vault 24",
+      "message": "No se pudo completar la solicitud. Revisa los detalles de la transacción e inténtalo de nuevo."
+    }
+  },
+  "dashboard": {
+    "title": "Panel de la bóveda",
+    "connected": "Conectado: {address}",
+    "wallet_not_connected": "Billetera no conectada",
+    "vault_balance": "Saldo de la bóveda",
+    "updated": "Actualizado: {time}",
+    "apy": "Rendimiento porcentual anual",
+    "current_yield": "Rendimiento actual",
+    "tvl": "Valor total bloqueado",
+    "total_users": "Usuarios totales",
+    "active_participants": "Participantes activos",
+    "recent_transactions": "Transacciones recientes",
+    "type": "Tipo",
+    "amount": "Importe",
+    "date": "Fecha",
+    "status": "Estado",
+    "transaction_status": {
+      "completed": "Completada",
+      "pending": "Pendiente",
+      "failed": "Fallida"
+    }
+  }
+}

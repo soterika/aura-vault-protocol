@@ -1,0 +1,38 @@
+name: Monthly DR Test
+
+on:
+  schedule:
+    - cron: "0 4 1 * *" # 1st of month 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  dr-test:
+    name: Trigger Restore Test Lambda
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Invoke restore-test Lambda
+        id: invoke
+        run: |
+          RESULT=$(aws lambda invoke \
+            --function-name aura-vault-restore-test-prod \
+            --log-type Tail \
+            --query 'Payload' \
+            --output text \
+            /tmp/response.json)
+          cat /tmp/response.json
+          SUCCESS=$(jq -r '.success' /tmp/response.json)
+          echo "success=$SUCCESS" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if restore test failed
+        if: steps.invoke.outputs.success != 'true'
+        run: |
+          echo "::error::DR restore test FAILED. Check SNS notification for details."
+          exit 1

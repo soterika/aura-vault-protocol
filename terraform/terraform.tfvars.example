@@ -1,0 +1,51 @@
+# AWS Configuration
+aws_region  = "us-east-1"
+environment = "dev"
+
+# Project Configuration
+project_name = "aura-vault"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# Domain Configuration (optional, leave empty if not using custom domain)
+domain_name = "example.com"
+
+# DNS Configuration
+create_subdomain_zone = false
+subdomain_name = "app"
+verification_token = ""
+enable_dns_failover = true
+
+# Email Forwarding Configuration
+enable_email_forwarding = false
+email_forwarding_recipients = ["info@example.com", "support@example.com"]
+email_forwarding_destinations = ["your-email@gmail.com"]
+
+# Auto Scaling Configuration
+backend_instance_type = "t3.medium"
+asg_min_size          = 2
+asg_max_size          = 10
+asg_desired_capacity  = 2
+
+# Database Configuration
+db_instance_class   = "db.t3.medium"
+db_allocated_storage = 20
+db_name             = "auravault"
+db_username         = "admin"
+
+# Optional: Lambda ARN that implements Secrets Manager rotation for application
+# API keys. Database/app rotation resources are enabled when this is set.
+secrets_rotation_lambda_arn = ""
+
+# SSH Key (generate with: ssh-keygen -t rsa -f ~/.ssh/aura-vault-key)
+# Then paste the public key content here
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC..."
+
+# Monitoring Configuration
+alert_email          = "alerts@example.com"
+monthly_budget_limit = 500
+
+# CloudFront Configuration
+enable_cloudfront = true

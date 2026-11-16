@@ -1,0 +1,32 @@
+# proptest configuration for Aura Vault fuzzing
+
+[profile.default]
+# Number of test cases to generate per property
+cases = 1000
+
+# Maximum number of shrink iterations
+max_shrink_iters = 100000
+
+# Timeout in milliseconds (5 minutes per test)
+timeout = 300000
+
+# Rng algorithm seed (None = random)
+seed = null
+
+# Save failing inputs for regression testing
+persistence = "Verbose"
+
+# Directory to store shrunk failures
+regressions_dir = ".proptest-regressions"
+
+[profile.ci]
+# More aggressive testing in CI
+cases = 10000
+max_shrink_iters = 500000
+timeout = 600000
+
+[profile.quick]
+# Quick smoke test
+cases = 100
+max_shrink_iters = 10000
+timeout = 60000

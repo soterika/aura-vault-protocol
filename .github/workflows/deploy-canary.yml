@@ -1,0 +1,125 @@
+name: Canary Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        required: true
+        default: staging
+      canary_ami_id:
+        description: Immutable AMI ID containing the release to deploy
+        type: string
+        required: true
+
+concurrency:
+  group: canary-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Canary rollout (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      TF_VAR_canary_ami_id: ${{ inputs.canary_ami_id }}
+      ENVIRONMENT: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TF_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: canary-${{ inputs.environment }}-${{ github.run_id }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Initialize infrastructure state
+        run: terraform -chdir=terraform init -input=false
+
+      - name: Prepare deployment inputs
+        env:
+          TERRAFORM_TFVARS: ${{ secrets.TERRAFORM_TFVARS }}
+        run: |
+          test -n "$TERRAFORM_TFVARS" || { echo "TERRAFORM_TFVARS environment secret is required" >&2; exit 1; }
+          umask 077
+          printf '%s\n' "$TERRAFORM_TFVARS" > terraform/canary-ci.tfvars
+          echo "TFVARS_FILE=$GITHUB_WORKSPACE/terraform/canary-ci.tfvars" >> "$GITHUB_ENV"
+          trap 'rm -f terraform/canary-ci.tfvars' EXIT
+
+      - name: Deploy canary and promote by measured health
+        env:
+          TFVARS_FILE: ${{ github.workspace }}/terraform/canary-ci.tfvars
+        run: |
+          set -euo pipefail
+          tf_apply() {
+            terraform -chdir=terraform apply -input=false -auto-approve \
+              -var-file="$TFVARS_FILE" \
+              -var="environment=$ENVIRONMENT" \
+              -var="canary_enabled=true" \
+              -var="canary_ami_id=$TF_VAR_canary_ami_id" \
+              -var="canary_weight=$1"
+          }
+          rollback() {
+            echo "Canary health threshold breached; routing all traffic back to stable."
+            terraform -chdir=terraform apply -input=false -auto-approve \
+              -var-file="$TFVARS_FILE" \
+              -var="environment=$ENVIRONMENT" \
+              -var="canary_enabled=true" \
+              -var="canary_ami_id=$TF_VAR_canary_ami_id" \
+              -var="canary_weight=0"
+          }
+          monitor() {
+            minutes="$1"
+            for ((minute=0; minute<minutes; minute++)); do
+              state=$(aws cloudwatch describe-alarms \
+                --alarm-names "$canary_alarm" \
+                --query 'MetricAlarms[0].StateValue' --output text)
+              echo "Canary error-rate alarm: ${state:-missing} ($((minute + 1))/$minutes minutes)"
+              if [[ "$state" == "ALARM" ]]; then return 1; fi
+              sleep 60
+            done
+          }
+          on_failure() {
+            status=$?
+            if [[ $status -ne 0 ]]; then rollback || echo "::error::Automatic rollback failed; restore canary_weight=0 with Terraform immediately."; fi
+            exit "$status"
+          }
+          trap on_failure ERR
+
+          tf_apply 0
+          canary_tg=$(terraform -chdir=terraform output -raw canary_target_group_arn)
+          for attempt in {1..30}; do
+            healthy=$(aws elbv2 describe-target-health --target-group-arn "$canary_tg" \
+              --query 'length(TargetHealthDescriptions[?TargetHealth.State==`healthy`])' --output text)
+            if [[ "$healthy" -ge 2 ]]; then break; fi
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "Canary ASG did not register two healthy targets within five minutes." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          tf_apply 5
+          canary_alarm=$(terraform -chdir=terraform output -raw canary_error_rate_alarm_name)
+          monitor 10
+          tf_apply 20
+          monitor 20
+          tf_apply 100
+
+          echo "## Canary rollout complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Environment: $ENVIRONMENT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AMI: $TF_VAR_canary_ami_id" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Traffic promoted 5% → 20% → 100% after 30 minutes of healthy metrics." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary Terraform inputs
+        if: always()
+        run: rm -f terraform/canary-ci.tfvars

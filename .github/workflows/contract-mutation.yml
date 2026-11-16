@@ -1,0 +1,57 @@
+name: Contract mutation testing
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: aura-vault
+      - name: Install cargo-mutants
+        run: cargo install --locked cargo-mutants
+      - name: Run contract mutants
+        working-directory: aura-vault
+        continue-on-error: true
+        run: cargo mutants --jobs 2 --output mutants.out
+      - name: Enforce minimum mutation score and report survivors
+        working-directory: aura-vault
+        run: |
+          caught=$(grep -c . mutants.out/caught.txt 2>/dev/null || true)
+          missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
+          timed_out=$(grep -c . mutants.out/timeout.txt 2>/dev/null || true)
+          tested=$((caught + missed + timed_out))
+          if (( tested == 0 )); then
+            echo "No viable mutants were tested; inspect the cargo-mutants artifact." >&2
+            exit 1
+          fi
+          python3 - "$caught" "$tested" <<'PY'
+          import sys
+          caught, tested = map(int, sys.argv[1:])
+          score = caught / tested
+          print(f"Mutation score: {score:.1%} ({caught}/{tested})")
+          if score < 0.85:
+              print("Missed mutants:")
+              try:
+                  print(open("mutants.out/missed.txt", encoding="utf-8").read())
+              except FileNotFoundError:
+                  pass
+              raise SystemExit(1)
+          PY
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-mutation-report
+          path: aura-vault/mutants.out
+          if-no-files-found: warn

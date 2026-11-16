@@ -1,0 +1,120 @@
+name: Cypress E2E
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "feat/**"
+  pull_request:
+
+jobs:
+  cypress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox, edge]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps (includes cypress-axe)
+        run: npm ci
+
+      - name: Install frontend deps and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npx next build
+
+      - name: Start frontend server
+        working-directory: frontend
+        run: npx next start &
+
+      - name: Run Cypress (${{ matrix.browser }})
+        uses: cypress-io/github-action@v7
+        with:
+          browser: ${{ matrix.browser }}
+          wait-on: "http://localhost:3000"
+          wait-on-timeout: 60
+          install: false
+        env:
+          CYPRESS_screenshotOnRunFailure: "true"
+
+      - name: Upload screenshots on failure
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: cypress-screenshots-${{ matrix.browser }}
+          path: cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Verify screenshots directory exists on failure
+        if: failure()
+        run: |
+          if [ -d "cypress/screenshots" ]; then
+            echo "Screenshots captured:"
+            find cypress/screenshots -name "*.png" | head -20
+          else
+            echo "No screenshots directory found (no test failures produced screenshots)"
+          fi
+
+  a11y:
+    name: Accessibility Audit (WCAG 2.1 AA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps (includes cypress-axe)
+        run: npm ci
+
+      - name: Install frontend deps and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npx next build
+
+      - name: Start frontend server
+        working-directory: frontend
+        run: npx next start &
+
+      - name: Run Accessibility Audit Tests
+        uses: cypress-io/github-action@v6
+        with:
+          browser: chrome
+          spec: "cypress/e2e/a11y.cy.ts"
+          wait-on: "http://localhost:3000"
+          wait-on-timeout: 60
+          install: false
+        env:
+          CYPRESS_screenshotOnRunFailure: "true"
+
+      - name: Upload a11y screenshots on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-a11y-screenshots
+          path: cypress/screenshots
+          if-no-files-found: ignore
+
+      - name: Fail CI on new accessibility violations
+        if: failure()
+        run: |
+          echo "Accessibility audit FAILED. New WCAG 2.1 AA violations were detected."
+          echo "Review cypress/e2e/a11y.cy.ts for documented known violations."
+          echo "Any violation not documented with an issue link must be fixed before merging."
+          exit 1

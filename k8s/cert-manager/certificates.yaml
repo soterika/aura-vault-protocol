@@ -1,0 +1,89 @@
+# =============================================================================
+# cert-manager — Certificate Resources
+#
+# Creates managed TLS certificates for the frontend and backend ingresses.
+# cert-manager automatically:
+#   - Requests a certificate from Let's Encrypt via HTTP-01 challenge
+#   - Stores the certificate and private key in the referenced Secret
+#   - Renews the certificate 30 days before expiry (default: 2/3 of lifetime)
+#
+# The Secrets named here (frontend-tls, backend-tls) are referenced by the
+# corresponding Ingress resources in:
+#   k8s/frontend/ingress.yaml  (tls.secretName: frontend-tls)
+#   k8s/backend/ingress.yaml   (tls.secretName: backend-tls)
+#
+# Closes #951
+# =============================================================================
+
+---
+# ── Frontend TLS Certificate (app.aura-vault.xyz) ────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: frontend-tls-cert
+  namespace: aura-vault
+  labels:
+    app: frontend
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: certificate
+  annotations:
+    description: "Let's Encrypt certificate for the frontend Next.js application"
+spec:
+  # Name of the Secret that will store the certificate + private key.
+  # This must match the tls[].secretName in the frontend Ingress resource.
+  secretName: frontend-tls
+
+  # Certificate lifetime: Let's Encrypt issues 90-day certificates.
+  # cert-manager will begin renewal attempts 30 days before expiry (at day 60).
+  duration: 2160h       # 90 days
+  renewBefore: 720h     # 30 days before expiry
+
+  # Subject alternative names
+  dnsNames:
+    - app.aura-vault.xyz
+    - www.aura-vault.xyz
+
+  # Use the production ClusterIssuer
+  # Switch to letsencrypt-staging for initial testing to avoid rate limits
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+  # Key algorithm and size (RSA-2048 is the Let's Encrypt default)
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always  # generate a new key on every renewal
+
+---
+# ── Backend API TLS Certificate (api.aura-vault.xyz) ─────────────────────────
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: backend-tls-cert
+  namespace: aura-vault
+  labels:
+    app: backend
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/component: certificate
+  annotations:
+    description: "Let's Encrypt certificate for the backend Express API"
+spec:
+  secretName: backend-tls
+
+  duration: 2160h   # 90 days
+  renewBefore: 720h # 30 days before expiry — satisfies the issue requirement
+
+  dnsNames:
+    - api.aura-vault.xyz
+
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io
+
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always

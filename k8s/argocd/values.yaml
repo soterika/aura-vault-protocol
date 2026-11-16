@@ -1,0 +1,30 @@
+argo-cd:
+  server:
+    # Keep the UI private to the cluster/VPN network. Do not add a public ingress.
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: false
+  configs:
+    params:
+      server.insecure: false
+
+repository:
+  url: https://github.com/soterika/aura-vault-protocol.git
+  revision: main
+
+environments:
+  staging:
+    namespace: aura-vault-staging
+    monitoringNamespace: monitoring-staging
+    automatedSync: true
+  production:
+    namespace: aura-vault
+    monitoringNamespace: monitoring
+    automatedSync: false
+
+applications:
+  - backend
+  - frontend
+  - monitoring
+  - database

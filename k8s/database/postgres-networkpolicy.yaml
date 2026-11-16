@@ -1,0 +1,67 @@
+# =============================================================================
+# NetworkPolicy — PostgreSQL Database Isolation
+#
+# Denies all ingress and egress by default, then permits only:
+#   Ingress  port 5432  ← pods with app: backend (backend API pods)
+#   Ingress  port 5432  ← pods with app: postgres-backup (backup CronJob)
+#   Egress               → kube-dns (UDP/TCP 53) for name resolution only
+#
+# The backup CronJob (app: postgres-backup) must be able to connect to
+# postgres to run pg_dump, so its label is explicitly allowed here.
+#
+# All other ingress — including from frontend, monitoring, or external
+# sources — is denied by the implicit default-deny created when a
+# NetworkPolicy selects a pod.
+#
+# Closes #952
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-network-policy
+  namespace: aura-vault
+  labels:
+    app: postgres
+    managed-by: kustomize
+  annotations:
+    description: "Restricts PostgreSQL to backend and backup pods only — Issue #952"
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # ── Allow backend API pods to connect on 5432 ────────────────────────────
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # ── Allow the postgres-backup CronJob to connect on 5432 ────────────────
+    # The backup pod (see k8s/database/backup-job.yaml) carries label
+    # app: postgres-backup. Without this rule pg_dump would be blocked.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgres-backup
+      ports:
+        - protocol: TCP
+          port: 5432
+
+  egress:
+    # ── Allow DNS resolution only ────────────────────────────────────────────
+    # PostgreSQL pods need DNS to resolve service names (e.g. for extensions
+    # that call back to the cluster). No other outbound traffic is permitted.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

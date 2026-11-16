@@ -1,0 +1,163 @@
+# .github/dependabot.yml
+#
+# Automated dependency update configuration.
+# Closes #948
+#
+# Update strategy:
+#   - Patch updates   → auto-merged via dependabot-auto-merge.yml after CI passes
+#   - Minor updates   → PR opened for manual review
+#   - Major updates   → PR opened for manual review (potential breaking changes)
+#
+# PR title format follows Conventional Commits:
+#   chore(deps): bump <package> from <old> to <new>
+
+version: 2
+
+updates:
+  # ── Rust crates — aura-vault ───────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-vault
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    # Minor and major require manual review; patch updates are auto-merged
+    # by the dependabot-auto-merge.yml workflow once CI is green.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      # Batch non-breaking Soroban SDK updates together
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+      # Group proptest + proptest-derive together
+      proptest:
+        patterns:
+          - "proptest"
+          - "proptest-derive"
+
+  # ── Rust crates — aura-factory ────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-factory
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+
+  # ── Rust crates — aura-migration ──────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-migration
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+
+  # ── npm — backend ─────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      express-ecosystem:
+        patterns:
+          - "express"
+          - "@types/express"
+      testing:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+
+  # ── npm — frontend ────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope

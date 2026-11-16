@@ -1,0 +1,298 @@
+name: Frontend Deploy + CDN Invalidation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      full_invalidation:
+        description: Force full /* invalidation regardless of changed files
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+concurrency:
+  group: frontend-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Incremental invalidation threshold: if more paths changed, fall back to /*
+  INCREMENTAL_THRESHOLD: "50"
+
+jobs:
+  build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      changed-files-count: ${{ steps.changed.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Next.js app
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Count changed frontend files (for incremental invalidation)
+        id: changed
+        run: |
+          COUNT=$(git diff --name-only HEAD~1 HEAD -- frontend/ | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Changed frontend files: $COUNT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: frontend/out
+          retention-days: 1
+          if-no-files-found: warn
+
+  deploy-staging:
+    name: Deploy to Staging S3 + Invalidate CDN
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.aura-vault.xyz
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: ./out
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      # ── S3 Sync ───────────────────────────────────────────────────────────
+      - name: Sync build to S3
+        id: s3-sync
+        run: |
+          # Sync with cache-busting: hashed assets get long TTL, HTML gets short TTL
+          # Static hashed assets (JS/CSS/_next/)
+          aws s3 sync ./out/ "s3://${{ secrets.STAGING_S3_BUCKET }}/" \
+            --exclude "*.html" \
+            --exclude "*.txt" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+
+          # HTML and text files: short TTL so users get fresh content
+          aws s3 sync ./out/ "s3://${{ secrets.STAGING_S3_BUCKET }}/" \
+            --exclude "*" \
+            --include "*.html" \
+            --include "*.txt" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --delete
+
+          echo "S3 sync complete"
+
+      # ── CDN Invalidation ──────────────────────────────────────────────────
+      - name: Determine invalidation paths
+        id: paths
+        run: |
+          CHANGED_COUNT="${{ needs.build.outputs.changed-files-count }}"
+          FORCE_FULL="${{ github.event.inputs.full_invalidation }}"
+
+          if [[ "$FORCE_FULL" == "true" || "$CHANGED_COUNT" -gt "$INCREMENTAL_THRESHOLD" ]]; then
+            echo "Using full invalidation (changed=$CHANGED_COUNT, threshold=$INCREMENTAL_THRESHOLD)"
+            echo "paths=[\"/*\"]" >> "$GITHUB_OUTPUT"
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            echo "Using incremental invalidation ($CHANGED_COUNT files changed)"
+            # Build path list from changed files, strip 'frontend/' prefix and add leading /
+            PATHS=$(git diff --name-only HEAD~1 HEAD -- frontend/ \
+              | sed 's|^frontend/||' \
+              | sed 's|^|/|' \
+              | jq -R . | jq -sc .)
+            # Always include /index.html and common entry points
+            PATHS=$(echo "$PATHS" | jq '. + ["/", "/index.html"] | unique')
+            echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+            echo "mode=incremental" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create CloudFront invalidation
+        id: invalidation
+        run: |
+          PATHS='${{ steps.paths.outputs.paths }}'
+          QUANTITY=$(echo "$PATHS" | jq 'length')
+
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.STAGING_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "$(echo "$PATHS" | jq -r 'join(" ")')" \
+            --query 'Invalidation.Id' \
+            --output text)
+
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+          echo "Invalidation created: $INVALIDATION_ID (mode: ${{ steps.paths.outputs.mode }}, paths: $QUANTITY)"
+
+      - name: Wait for invalidation to complete
+        run: |
+          echo "Waiting for CloudFront invalidation ${{ steps.invalidation.outputs.invalidation_id }} to complete..."
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ secrets.STAGING_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --id "${{ steps.invalidation.outputs.invalidation_id }}"
+          echo "Invalidation complete ✅"
+
+      - name: Check monthly invalidation cost
+        run: |
+          # CloudFront provides 1000 free invalidation paths/month; alert if approaching
+          MONTH_START=$(date -u +"%Y-%m-01T00:00:00Z")
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          COUNT=$(aws cloudfront list-invalidations \
+            --distribution-id "${{ secrets.STAGING_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --query "InvalidationList.Items[?CreateTime>='$MONTH_START'] | length(@)" \
+            --output text 2>/dev/null || echo "0")
+
+          echo "Invalidations this month (staging): $COUNT"
+          if [[ "$COUNT" -gt "800" ]]; then
+            echo "::warning::CloudFront invalidation count ($COUNT) is approaching the 1000/month free tier limit"
+          fi
+
+      - name: Write deployment summary
+        run: |
+          echo "## Frontend Deploy — Staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Invalidation ID | \`${{ steps.invalidation.outputs.invalidation_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Invalidation mode | ${{ steps.paths.outputs.mode }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Changed files | ${{ needs.build.outputs.changed-files-count }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deployed at | $(date -u) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ✅ Complete |" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-production:
+    name: Deploy to Production S3 + Invalidate CDN
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://app.aura-vault.xyz
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: ./out
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync build to S3
+        run: |
+          aws s3 sync ./out/ "s3://${{ secrets.PROD_S3_BUCKET }}/" \
+            --exclude "*.html" \
+            --exclude "*.txt" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+
+          aws s3 sync ./out/ "s3://${{ secrets.PROD_S3_BUCKET }}/" \
+            --exclude "*" \
+            --include "*.html" \
+            --include "*.txt" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --delete
+
+      - name: Determine invalidation paths
+        id: paths
+        run: |
+          CHANGED_COUNT="${{ needs.build.outputs.changed-files-count }}"
+          FORCE_FULL="${{ github.event.inputs.full_invalidation }}"
+
+          if [[ "$FORCE_FULL" == "true" || "$CHANGED_COUNT" -gt "$INCREMENTAL_THRESHOLD" ]]; then
+            echo "paths=[\"/*\"]" >> "$GITHUB_OUTPUT"
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            PATHS=$(git diff --name-only HEAD~1 HEAD -- frontend/ \
+              | sed 's|^frontend/||' \
+              | sed 's|^|/|' \
+              | jq -R . | jq -sc .)
+            PATHS=$(echo "$PATHS" | jq '. + ["/", "/index.html"] | unique')
+            echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+            echo "mode=incremental" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create CloudFront invalidation
+        id: invalidation
+        run: |
+          PATHS='${{ steps.paths.outputs.paths }}'
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.PROD_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "$(echo "$PATHS" | jq -r 'join(" ")')" \
+            --query 'Invalidation.Id' \
+            --output text)
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for invalidation to complete
+        run: |
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ secrets.PROD_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --id "${{ steps.invalidation.outputs.invalidation_id }}"
+          echo "Production invalidation complete ✅"
+
+      - name: Check monthly invalidation cost
+        run: |
+          MONTH_START=$(date -u +"%Y-%m-01T00:00:00Z")
+          COUNT=$(aws cloudfront list-invalidations \
+            --distribution-id "${{ secrets.PROD_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --query "InvalidationList.Items[?CreateTime>='$MONTH_START'] | length(@)" \
+            --output text 2>/dev/null || echo "0")
+
+          echo "Invalidations this month (production): $COUNT"
+          if [[ "$COUNT" -gt "800" ]]; then
+            echo "::warning::CloudFront invalidation count ($COUNT) is approaching the 1000/month free tier limit"
+          fi
+
+      - name: Write deployment summary
+        run: |
+          echo "## Frontend Deploy — Production" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Invalidation ID | \`${{ steps.invalidation.outputs.invalidation_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Invalidation mode | ${{ steps.paths.outputs.mode }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deployed at | $(date -u) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ✅ Complete |" >> "$GITHUB_STEP_SUMMARY"

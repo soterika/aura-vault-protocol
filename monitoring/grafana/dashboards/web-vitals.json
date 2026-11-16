@@ -1,0 +1,253 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "aura-web-vitals",
+    "title": "Aura Vault — Web Vitals",
+    "tags": ["aura-vault", "web-vitals", "frontend"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "time": { "from": "now-24h", "to": "now" },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deploys",
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": false,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "LCP — p75 (target < 2.5 s)",
+        "description": "Largest Contentful Paint p75. Alert fires when this exceeds 3 s.",
+        "type": "gauge",
+        "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_lcp_bucket[5m])) by (le))",
+            "legendFormat": "LCP p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "min": 0,
+            "max": 6000,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green",  "value": 0    },
+                { "color": "yellow", "value": 2500 },
+                { "color": "red",    "value": 4000 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "FID — p75 (target < 100 ms)",
+        "description": "First Input Delay p75.",
+        "type": "gauge",
+        "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_fid_bucket[5m])) by (le))",
+            "legendFormat": "FID p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "min": 0,
+            "max": 500,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green",  "value": 0   },
+                { "color": "yellow", "value": 100 },
+                { "color": "red",    "value": 300 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "CLS — p75 (target < 0.1)",
+        "description": "Cumulative Layout Shift p75.",
+        "type": "gauge",
+        "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_cls_bucket[5m])) by (le))",
+            "legendFormat": "CLS p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "max": 0.5,
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green",  "value": 0    },
+                { "color": "yellow", "value": 0.1  },
+                { "color": "red",    "value": 0.25 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "INP — p75 (target < 200 ms)",
+        "description": "Interaction to Next Paint p75 (replaces FID in 2024 CWV spec).",
+        "type": "gauge",
+        "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_inp_bucket[5m])) by (le))",
+            "legendFormat": "INP p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "min": 0,
+            "max": 800,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green",  "value": 0   },
+                { "color": "yellow", "value": 200 },
+                { "color": "red",    "value": 500 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "LCP over time — p50 / p75 / p95",
+        "description": "Time-series view of LCP percentiles. Alert threshold at 3 000 ms.",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(web_vital_lcp_bucket[5m])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_lcp_bucket[5m])) by (le))",
+            "legendFormat": "p75"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(web_vital_lcp_bucket[5m])) by (le))",
+            "legendFormat": "p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "p75" },
+              "properties": [
+                { "id": "custom.lineWidth", "value": 2 },
+                { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "thresholds": {
+            "steps": [
+              { "color": "transparent", "value": 0    },
+              { "color": "red",         "value": 3000 }
+            ]
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "CLS over time — p75",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_cls_bucket[5m])) by (le))",
+            "legendFormat": "CLS p75"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "short", "decimals": 3 }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Vitals rating distribution",
+        "description": "Percentage of metric reports classified as good / needs-improvement / poor.",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+        "targets": [
+          {
+            "expr": "sum(increase(web_vital_reports_total{rating=\"good\"}[1h]))",
+            "legendFormat": "Good"
+          },
+          {
+            "expr": "sum(increase(web_vital_reports_total{rating=\"needs-improvement\"}[1h]))",
+            "legendFormat": "Needs improvement"
+          },
+          {
+            "expr": "sum(increase(web_vital_reports_total{rating=\"poor\"}[1h]))",
+            "legendFormat": "Poor"
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "Good"             }, "properties": [{ "id": "color", "value": { "fixedColor": "green",  "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "Needs improvement"}, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "Poor"             }, "properties": [{ "id": "color", "value": { "fixedColor": "red",    "mode": "fixed" } }] }
+          ]
+        }
+      },
+      {
+        "id": 8,
+        "title": "FCP & TTFB over time — p75",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 16, "x": 8, "y": 13 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_fcp_bucket[5m])) by (le))",
+            "legendFormat": "FCP p75"
+          },
+          {
+            "expr": "histogram_quantile(0.75, sum(rate(web_vital_ttfb_bucket[5m])) by (le))",
+            "legendFormat": "TTFB p75"
+          }
+        ],
+        "fieldConfig": { "defaults": { "unit": "ms" } }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "page",
+          "type": "query",
+          "label": "Page path",
+          "query": "label_values(web_vital_lcp_bucket, path)",
+          "current": { "text": "All", "value": "$__all" },
+          "multi": true,
+          "includeAll": true
+        }
+      ]
+    }
+  }
+}

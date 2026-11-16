@@ -1,0 +1,8 @@
+{
+  "Initial JS bundle": 158720,
+  "Per-page chunk (Home)": 28672,
+  "Per-page chunk (Dashboard)": 32768,
+  "Per-page chunk (FAQ)": 18432,
+  "Per-page chunk (Settings)": 22528,
+  "CSS bundle": 14336
+}

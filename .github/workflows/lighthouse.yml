@@ -1,0 +1,292 @@
+name: Lighthouse CI — Core Web Vitals
+
+on:
+  pull_request:
+    branches: ["main", "develop", "**"]
+  push:
+    branches: ["main", "develop"]
+
+concurrency:
+  group: lighthouse-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# What this workflow does
+# ---------------------------------------------------------------------------
+# 1. Builds the Next.js frontend and starts a preview server.
+# 2. Runs Lighthouse CI (3 runs, desktop preset) against the local server.
+# 3. Asserts performance thresholds:
+#      - Performance score  > 85
+#      - LCP               < 2.5 s
+#      - CLS               < 0.1
+#      - FID (max-potential) < 100 ms
+# 4. Uploads the LHCI report as an artifact so the full audit is available.
+# 5. Posts the summary as a PR comment via the official LHCI Action.
+# 6. On PRs, compares against the baseline stored on the main branch
+#    (temporary-public-storage baseline approach).
+# ---------------------------------------------------------------------------
+
+jobs:
+  # ─── Build ────────────────────────────────────────────────────────────────
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Build production bundle
+        run: npm run build
+        working-directory: frontend
+        env:
+          # Disable telemetry in CI.
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Upload Next.js build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nextjs-build
+          path: |
+            frontend/.next/
+            frontend/public/
+            frontend/package.json
+            frontend/package-lock.json
+            frontend/next.config.ts
+          retention-days: 1
+
+  # ─── Lighthouse CI ────────────────────────────────────────────────────────
+  lighthouse:
+    name: Lighthouse CI — Core Web Vitals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-frontend]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Restore Next.js build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: nextjs-build
+          path: frontend/
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Install @lhci/cli
+        run: npm install -g @lhci/cli@0.14.x
+
+      - name: Start Next.js server
+        run: |
+          npm start &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+        working-directory: frontend
+        env:
+          PORT: "3000"
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c '
+            until curl -sf http://localhost:3000 > /dev/null; do
+              echo "Waiting for http://localhost:3000 ..."
+              sleep 2
+            done
+          '
+          echo "Server is ready."
+
+      - name: Run Lighthouse CI
+        run: |
+          lhci autorun \
+            --config=lighthouserc.json \
+            --collect.url="http://localhost:3000" \
+            --collect.url="http://localhost:3000/dashboard" \
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+          # Optional: store results on LHCI server for baseline comparison.
+          # LHCI_SERVER_BASE_URL: ${{ secrets.LHCI_SERVER_BASE_URL }}
+          # LHCI_TOKEN: ${{ secrets.LHCI_TOKEN }}
+
+      - name: Kill preview server
+        if: always()
+        run: kill "$SERVER_PID" 2>/dev/null || true
+
+      # ── Upload full LHCI report ───────────────────────────────────────────
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-report-${{ github.sha }}
+          path: .lighthouseci/
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ── Post PR comment with summary ─────────────────────────────────────
+      - name: Format Lighthouse results as PR comment
+        if: github.event_name == 'pull_request' && always()
+        id: lhci-summary
+        run: |
+          REPORT_DIR=".lighthouseci"
+
+          if [ ! -d "$REPORT_DIR" ]; then
+            echo "LIGHTHOUSE_COMMENT=⚠️ Lighthouse report not found." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Parse the manifest JSON for scores.
+          MANIFEST="$REPORT_DIR/manifest.json"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "LIGHTHOUSE_COMMENT=⚠️ Lighthouse manifest.json not found." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Use node to extract scores from the JSON manifest.
+          node -e "
+          const fs = require('fs');
+          const manifest = JSON.parse(fs.readFileSync('$MANIFEST', 'utf8'));
+          const runs = Array.isArray(manifest) ? manifest : [manifest];
+
+          // Average scores across runs and URLs.
+          const totals = { performance: 0, accessibility: 0, 'best-practices': 0, seo: 0 };
+          const metrics = { lcp: 0, cls: 0, fid: 0, tbt: 0 };
+          let count = 0;
+
+          for (const run of runs) {
+            const summary = run.summary;
+            if (!summary) continue;
+            totals.performance    += summary.performance    || 0;
+            totals.accessibility  += summary.accessibility  || 0;
+            totals['best-practices'] += summary['best-practices'] || 0;
+            totals.seo            += summary.seo            || 0;
+            count++;
+          }
+
+          const avg = (v) => count > 0 ? Math.round((v / count) * 100) : 'N/A';
+          const score = (v) => {
+            const n = avg(v);
+            if (n === 'N/A') return '⚪ N/A';
+            if (n >= 90) return \`🟢 \${n}\`;
+            if (n >= 50) return \`🟡 \${n}\`;
+            return \`🔴 \${n}\`;
+          };
+
+          const comment = [
+            '## 🔦 Lighthouse CI Results',
+            '',
+            '| Category       | Score |',
+            '|----------------|-------|',
+            \`| Performance    | \${score(totals.performance)} |\\n| Accessibility  | \${score(totals.accessibility)} |\\n| Best Practices | \${score(totals['best-practices'])} |\\n| SEO            | \${score(totals.seo)} |\`,
+            '',
+            '**Thresholds:** Performance ≥ 85 · LCP < 2.5 s · CLS < 0.1 · FID < 100 ms',
+            '',
+            \`_Commit: \${process.env.GITHUB_SHA?.slice(0, 7) || 'unknown'} · [Full report artifact](https://github.com/\${process.env.GITHUB_REPOSITORY}/actions/runs/\${process.env.GITHUB_RUN_ID})_\`,
+          ].join('\n');
+
+          fs.writeFileSync('/tmp/lhci_comment.txt', comment);
+          console.log('Comment written to /tmp/lhci_comment.txt');
+          " || echo "## 🔦 Lighthouse CI — results parsing error" > /tmp/lhci_comment.txt
+
+          {
+            echo 'LIGHTHOUSE_COMMENT<<EOF'
+            cat /tmp/lhci_comment.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: lighthouse-ci
+          message: ${{ steps.lhci-summary.outputs.LIGHTHOUSE_COMMENT }}
+        continue-on-error: true
+
+  # ─── Baseline comparison (push to main only) ──────────────────────────────
+  lighthouse-baseline:
+    name: Update Lighthouse Baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lighthouse]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Restore Next.js build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: nextjs-build
+          path: frontend/
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Install @lhci/cli
+        run: npm install -g @lhci/cli@0.14.x
+
+      - name: Start Next.js server
+        run: |
+          npm start &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+        working-directory: frontend
+        env:
+          PORT: "3000"
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c '
+            until curl -sf http://localhost:3000 > /dev/null; do
+              sleep 2
+            done
+          '
+
+      - name: Run Lighthouse and upload to temporary storage (baseline)
+        run: |
+          lhci autorun \
+            --config=lighthouserc.json \
+            --collect.url="http://localhost:3000" \
+            --upload.target=temporary-public-storage
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Kill preview server
+        if: always()
+        run: kill "$SERVER_PID" 2>/dev/null || true
+
+      - name: Upload baseline Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-baseline-${{ github.sha }}
+          path: .lighthouseci/
+          retention-days: 90

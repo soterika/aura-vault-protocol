@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: monitoring
+  labels:
+    app: loki
+data:
+  loki-config.yaml: |
+    auth_enabled: false
+
+    ingester:
+      chunk_idle_period: 3m
+      chunk_retain_period: 1m
+      max_chunk_age: 1h
+      chunk_encoding: gzip
+      chunk_retain_period: 5m
+      lifecycler:
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
+
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      ingestion_rate_mb: 10
+      ingestion_burst_size_mb: 20
+
+    schema_config:
+      configs:
+        - from: 2023-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v12
+          index:
+            prefix: index_
+            period: 24h
+
+    ruler:
+      enable_api: true
+      enable_alertmanager_v2: true
+      alertmanager_url: http://alertmanager:9093
+      rule_path: /tmp/loki/rules-temp
+      storage:
+        type: local
+        local:
+          directory: /etc/loki/rules
+      ring:
+        kvstore:
+          store: inmemory
+
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+
+    storage_config:
+      filesystem:
+        directory: /loki/chunks
+      index_cache_validity: 5m
+      cache_config:
+        enable_fifocache: true
+        default_validity: 10m
+        memcached:
+          batch_size: 256
+          parallelism: 100
+
+    chunk_store_config:
+      max_look_back_period: 0s
+
+    table_manager:
+      enabled: false
+
+    querier:
+      engine: prometheus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app: loki
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: loki
+          image: grafana/loki:2.9.3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3100
+              protocol: TCP
+            - name: grpc
+              containerPort: 9096
+              protocol: TCP
+          args:
+            - '-config.file=/etc/loki/loki-config.yaml'
+          volumeMounts:
+            - name: loki-config
+              mountPath: /etc/loki
+            - name: loki-alert-rules
+              mountPath: /etc/loki/rules/fake
+            - name: loki-storage
+              mountPath: /loki
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /loki/api/v1/status/buildinfo
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /loki/api/v1/status/buildinfo
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: loki-config
+          configMap:
+            name: loki-config
+        - name: loki-alert-rules
+          configMap:
+            name: loki-alert-rules
+        - name: loki-storage
+          emptyDir:
+            sizeLimit: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app: loki
+spec:
+  type: ClusterIP
+  selector:
+    app: loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+      protocol: TCP
+    - name: grpc
+      port: 9096
+      targetPort: grpc
+      protocol: TCP

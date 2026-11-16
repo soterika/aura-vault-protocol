@@ -1,0 +1,108 @@
+name: Rustdoc
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'aura-vault/src/**'
+      - 'aura-vault/Cargo.toml'
+      - '.github/workflows/rustdoc.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'aura-vault/src/**'
+      - 'aura-vault/Cargo.toml'
+
+# Allow one concurrent deployment to gh-pages
+concurrency:
+  group: rustdoc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Build docs and check for warnings ─────────────────────────────────────
+  build-docs:
+    name: Build rustdoc (warn = error)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-doc-
+
+      # RUSTDOCFLAGS=-D warnings turns any rustdoc warning into a build error,
+      # satisfying the "generates HTML docs without warnings" acceptance criterion.
+      - name: Build docs (deny warnings)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc \
+            --manifest-path aura-vault/Cargo.toml \
+            --no-deps \
+            2>&1 | tee rustdoc-output.txt
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rustdoc-html-${{ github.sha }}
+          path: aura-vault/target/doc/
+          retention-days: 7
+
+  # ── Publish to GitHub Pages (main branch only) ────────────────────────────
+  publish-docs:
+    name: Publish to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-doc-
+
+      - name: Build docs for deployment
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc \
+            --manifest-path aura-vault/Cargo.toml \
+            --no-deps
+
+          # Add a redirect from the root to the crate docs
+          echo '<meta http-equiv="refresh" content="0; url=aura_vault/index.html">' \
+            > aura-vault/target/doc/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: aura-vault/target/doc/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

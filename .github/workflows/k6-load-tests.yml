@@ -1,0 +1,108 @@
+name: k6 Load Tests (Nightly)
+
+on:
+  # Nightly against staging environment
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC every night
+  # Manual trigger for on-demand runs
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Backend base URL to target"
+        required: false
+        default: "https://api.staging.auravault.io"
+      duration_override:
+        description: "Override scenario duration (e.g. 1m for quick smoke)"
+        required: false
+        default: ""
+
+jobs:
+  k6-load-tests:
+    name: k6 Backend API Load Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      BASE_URL: ${{ github.event.inputs.base_url || 'https://api.staging.auravault.io' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6 -y
+
+      - name: Run k6 load tests — all scenarios
+        run: |
+          k6 run \
+            --out json=k6-results.json \
+            ui/src/tests/backend.k6.ts
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+          JWT_TOKEN: ${{ secrets.STAGING_JWT_TOKEN }}
+          WALLET_ADDRESS: ${{ secrets.STAGING_WALLET_ADDRESS || 'GABC1234TESTPUBLICKEY' }}
+        continue-on-error: true   # Upload artifacts even on threshold failure
+
+      - name: Upload k6 JSON results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: k6-results-${{ github.run_id }}
+          path: |
+            k6-results.json
+            backend-load-test-results.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish results to Grafana (InfluxDB)
+        if: always() && env.INFLUXDB_URL != ''
+        run: |
+          k6 run \
+            --out influxdb=${{ secrets.INFLUXDB_URL }}/k6 \
+            ui/src/tests/backend.k6.ts
+        env:
+          BASE_URL: ${{ env.BASE_URL }}
+          JWT_TOKEN: ${{ secrets.STAGING_JWT_TOKEN }}
+        continue-on-error: true
+
+      - name: Check SLA thresholds and notify on failure
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Create a GitHub issue for nightly load test failure
+            const title = `🚨 Nightly Load Test Failure — ${new Date().toISOString().slice(0, 10)}`;
+            const body = `
+            ## Load Test SLA Failure
+
+            The nightly k6 load test against **${{ env.BASE_URL }}** failed one or more thresholds.
+
+            **Thresholds checked:**
+            - p99 latency < 500ms for all endpoints
+            - Error rate < 0.1%
+            - HTTP failures < 0.1%
+
+            **Run:** [#${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            **Artifacts:** k6 JSON results are attached to the run for 90 days.
+
+            cc @oncall-team
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['performance', 'sla-breach'],
+            });

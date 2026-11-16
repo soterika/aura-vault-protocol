@@ -1,0 +1,196 @@
+[
+  {
+    "code": 1,
+    "name": "NotInitialized",
+    "enum_variant": "VaultError::NotInitialized",
+    "http_analog": 503,
+    "severity": "fatal",
+    "description": "The vault contract has been deployed but initialize() has never been called. No operations are possible.",
+    "common_triggers": [
+      "Calling deposit, withdraw, or harvest before initialize is invoked",
+      "Client configured with the wrong contract ID",
+      "The initialize transaction failed silently and was not retried"
+    ],
+    "resolution": "Call initialize(admin, underlying_token, signers) as the deployer. If you are a user, contact the protocol admin — the vault is not yet live.",
+    "affects": ["deposit", "withdraw", "harvest", "upgrade", "set_fees", "set_treasury"],
+    "docs_url": "/docs/error-reference.md#error-1--notinitialized"
+  },
+  {
+    "code": 2,
+    "name": "AlreadyInitialized",
+    "enum_variant": "VaultError::AlreadyInitialized",
+    "http_analog": 409,
+    "severity": "error",
+    "description": "initialize() was called on a vault that has already been set up. This is a one-time operation.",
+    "common_triggers": [
+      "Running an initialization script twice",
+      "Deployment automation that does not guard against double-init",
+      "Attempting to re-initialize after a Wasm upgrade"
+    ],
+    "resolution": "Guard deployment scripts with a pre-check (e.g., verify total_assets() returns without error). To change admin or token, use governance proposals instead.",
+    "affects": ["initialize"],
+    "docs_url": "/docs/error-reference.md#error-2--alreadyinitialized"
+  },
+  {
+    "code": 3,
+    "name": "InsufficientShares",
+    "enum_variant": "VaultError::InsufficientShares",
+    "http_analog": 400,
+    "severity": "error",
+    "description": "The caller tried to withdraw more shares than their account currently holds.",
+    "common_triggers": [
+      "Entering a raw token amount instead of a share count",
+      "Shares already redeemed in a previous transaction",
+      "Race condition in automated withdrawal logic",
+      "Querying balance_of for the wrong address"
+    ],
+    "resolution": "Call balance_of(<your_address>) to confirm your actual share balance before withdrawing. Do not confuse shares with underlying token amounts.",
+    "affects": ["withdraw"],
+    "docs_url": "/docs/error-reference.md#error-3--insufficientshares"
+  },
+  {
+    "code": 4,
+    "name": "InsufficientUnderlying",
+    "enum_variant": "VaultError::InsufficientUnderlying",
+    "http_analog": 503,
+    "severity": "critical",
+    "description": "The vault does not hold enough underlying tokens to pay out the redemption amount. This should be extremely rare under normal operation.",
+    "common_triggers": [
+      "Underlying token contract exploit draining vault funds",
+      "Misconfigured fee withdrawal removing more tokens than intended",
+      "State drift between total_deposited and actual token balance (typically preceded by BalanceMismatch)"
+    ],
+    "resolution": "Compare total_assets() with the on-chain token balance. If there is a significant discrepancy, stop interacting and alert the protocol admin immediately.",
+    "affects": ["withdraw"],
+    "docs_url": "/docs/error-reference.md#error-4--insufficientunderlying"
+  },
+  {
+    "code": 5,
+    "name": "ZeroAmount",
+    "enum_variant": "VaultError::ZeroAmount",
+    "http_analog": 400,
+    "severity": "error",
+    "description": "A zero or negative amount was passed to a function that requires a strictly positive value. Also fires when a deposit is so small the share formula rounds to zero.",
+    "common_triggers": [
+      "Submitting a form without a valid amount",
+      "Passing 0 to deposit(), withdraw(), or harvest()",
+      "Deposit amount too small relative to current vault size (share formula floors to zero)"
+    ],
+    "resolution": "Ensure the amount is strictly positive. For very small deposits, increase the amount to guarantee at least 1 share: minimum_deposit = ceil(total_assets / total_shares).",
+    "affects": ["deposit", "withdraw", "harvest"],
+    "docs_url": "/docs/error-reference.md#error-5--zeroamount"
+  },
+  {
+    "code": 6,
+    "name": "MathOverflow",
+    "enum_variant": "VaultError::MathOverflow",
+    "http_analog": 400,
+    "severity": "error",
+    "description": "An intermediate arithmetic value exceeded the i128 maximum (2^127 - 1). The contract uses checked arithmetic throughout to detect this safely.",
+    "common_triggers": [
+      "Passing an astronomically large amount value",
+      "Large total_assets combined with a large new deposit causing intermediate overflow",
+      "Automation passing raw floating-point values instead of scaled integers"
+    ],
+    "resolution": "Use i128-safe arithmetic in your client. Cap amount values at a reasonable maximum. All token amounts should be in the smallest indivisible unit (e.g., stroops).",
+    "affects": ["deposit", "withdraw", "harvest"],
+    "docs_url": "/docs/error-reference.md#error-6--mathoverflow"
+  },
+  {
+    "code": 7,
+    "name": "InvalidAddress",
+    "enum_variant": "VaultError::InvalidAddress",
+    "http_analog": 400,
+    "severity": "error",
+    "description": "An address argument is invalid or a fee parameter is outside the permitted range. Used as a combined sentinel for address validation and fee bounds checks.",
+    "common_triggers": [
+      "perf_fee_bps > 2000 (more than 20%) passed to set_fees",
+      "mgmt_fee_bps > 100 (more than 1%) passed to set_fees",
+      "Alternate yield token not registered by admin via register_yield_token",
+      "Malformed Stellar address string"
+    ],
+    "resolution": "Ensure perf_fee_bps is 0–2000 and mgmt_fee_bps is 0–100. For alternate yield tokens, verify the address has been whitelisted by the admin.",
+    "affects": ["set_fees", "harvest_token"],
+    "docs_url": "/docs/error-reference.md#error-7--invalidaddress"
+  },
+  {
+    "code": 8,
+    "name": "ZeroShares",
+    "enum_variant": "VaultError::ZeroShares",
+    "http_analog": 422,
+    "severity": "error",
+    "description": "harvest() was called when total_shares is zero — no depositors exist. Yield cannot be distributed when the depositor pool is empty.",
+    "common_triggers": [
+      "Keeper bot calling harvest before any deposits have been made",
+      "All depositors withdrew and the keeper continued harvesting",
+      "Harvesting against a newly initialized vault with no deposits yet"
+    ],
+    "resolution": "Check total_assets() before calling harvest. Only harvest when total_assets() > 0. Add this guard to automated keeper scripts.",
+    "affects": ["harvest", "harvest_token"],
+    "docs_url": "/docs/error-reference.md#error-8--zeroshares"
+  },
+  {
+    "code": 9,
+    "name": "UpgradeUnauthorized",
+    "enum_variant": "VaultError::UpgradeUnauthorized",
+    "http_analog": 403,
+    "severity": "error",
+    "description": "A non-admin address attempted to call upgrade(). Wasm upgrades are restricted to the configured admin address.",
+    "common_triggers": [
+      "Signing the upgrade transaction with a user keypair instead of the admin keypair",
+      "Admin key rotated via governance but upgrade scripts not updated",
+      "Old admin key used after a successful propose_update_admin execution"
+    ],
+    "resolution": "Sign the upgrade transaction with the current admin keypair. If the admin key has changed, retrieve the new admin address from governance proposal history.",
+    "affects": ["upgrade"],
+    "docs_url": "/docs/error-reference.md#error-9--upgradeunauthorized"
+  },
+  {
+    "code": 10,
+    "name": "StorageLayoutMismatch",
+    "enum_variant": "VaultError::StorageLayoutMismatch",
+    "http_analog": 409,
+    "severity": "error",
+    "description": "The new Wasm being uploaded has a different CURRENT_LAYOUT_VERSION than what is recorded on-chain. This prevents silent state corruption when a migration is required.",
+    "common_triggers": [
+      "Deploying a version that added storage keys without running the migration script first",
+      "Building from a branch that bumped CURRENT_LAYOUT_VERSION without reading the release notes",
+      "Uploading the wrong .wasm file"
+    ],
+    "resolution": "Check CURRENT_LAYOUT_VERSION in aura-vault/src/storage.rs for both the current on-chain version and the new Wasm. Follow the migration guide in the release notes. Rebuild from the correct source if needed.",
+    "affects": ["upgrade"],
+    "docs_url": "/docs/error-reference.md#error-10--storagelayoutmismatch"
+  },
+  {
+    "code": 11,
+    "name": "VaultPaused",
+    "enum_variant": "VaultError::VaultPaused",
+    "http_analog": 503,
+    "severity": "info",
+    "description": "The admin has activated the emergency pause. All state-changing operations are blocked. Read-only queries (total_assets, balance_of, is_paused) remain available.",
+    "common_triggers": [
+      "Admin detected suspicious activity and manually paused the vault",
+      "Scheduled maintenance",
+      "Automated circuit breaker triggered"
+    ],
+    "resolution": "Call is_paused() to confirm. Your funds are safe. Monitor official channels for a resumption announcement. Admin: call unpause() once the issue is resolved.",
+    "affects": ["deposit", "withdraw", "harvest"],
+    "docs_url": "/docs/error-reference.md#error-11--vaultpaused"
+  },
+  {
+    "code": 12,
+    "name": "BalanceMismatch",
+    "enum_variant": "VaultError::BalanceMismatch",
+    "http_analog": 409,
+    "severity": "critical",
+    "description": "The vault's recorded total_deposited does not match the actual on-chain token balance. This is the flash-loan guard. A suspicious event is emitted alongside this error.",
+    "common_triggers": [
+      "Flash-loan attack attempting to inflate or deflate vault balance",
+      "Tokens sent directly to the vault contract address outside of deposit()",
+      "Bug in a wrapper contract that interacts with vault token accounts incorrectly"
+    ],
+    "resolution": "Regular users: retry once; if it persists, stop interacting and check the protocol status page. Developers: never send tokens directly to the vault address — always use deposit(). Admins: inspect the suspicious event for observed vs. expected amounts and consider pausing.",
+    "affects": ["deposit", "withdraw", "harvest"],
+    "docs_url": "/docs/error-reference.md#error-12--balancemismatch"
+  }
+]

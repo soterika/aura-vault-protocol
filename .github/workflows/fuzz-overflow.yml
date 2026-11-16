@@ -1,0 +1,130 @@
+name: Fuzz / Property Tests (Overflow)
+
+# AC: Run in CI nightly (slow) and sampled in PR checks (fast)
+on:
+  push:
+    branches: [main, develop, "feat/**", "fuzz-tests"]
+    paths:
+      - "aura-vault/src/overflow_fuzz.rs"
+      - "aura-vault/src/proptest_strategies.rs"
+      - "aura-vault/proptest.toml"
+      - ".github/workflows/fuzz-overflow.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "aura-vault/**"
+
+  # Nightly full run
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC every night
+
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Number of test cases per property (default: 10000)"
+        required: false
+        default: "10000"
+
+jobs:
+  # ── Fast sample run on every PR ──────────────────────────────────────────
+  fuzz-fast:
+    name: Property tests (fast — PR sample)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run overflow property tests (fast — 200 cases)
+        working-directory: aura-vault
+        env:
+          PROPTEST_CASES: 200
+          RUST_BACKTRACE: 1
+        run: |
+          cargo test --lib overflow_fuzz -- --nocapture 2>&1 | tee /tmp/fuzz-fast.log
+          echo "Fast fuzz run complete"
+
+      - name: Upload fast fuzz log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-fast-log
+          path: /tmp/fuzz-fast.log
+
+  # ── Full nightly run (10,000 iterations per property) ────────────────────
+  fuzz-nightly:
+    name: Property tests (nightly — 10k iterations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch')
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            aura-vault/target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run overflow property tests (10,000 cases — CI profile)
+        working-directory: aura-vault
+        env:
+          # proptest.toml [profile.ci] sets cases=10000; PROPTEST_CASES overrides
+          PROPTEST_CASES: ${{ github.event.inputs.cases || '10000' }}
+          RUST_BACKTRACE: 1
+        run: |
+          cargo test --lib overflow_fuzz -- --nocapture 2>&1 | tee /tmp/fuzz-nightly.log
+          echo "Nightly fuzz run complete"
+
+      - name: Run all proptest suites (nightly)
+        working-directory: aura-vault
+        env:
+          PROPTEST_CASES: ${{ github.event.inputs.cases || '10000' }}
+          RUST_BACKTRACE: 1
+        run: |
+          cargo test -- --nocapture 2>&1 | tee /tmp/all-tests-nightly.log
+          echo "Full test suite complete"
+
+      - name: Upload nightly fuzz artefacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-nightly-log
+          path: |
+            /tmp/fuzz-nightly.log
+            /tmp/all-tests-nightly.log
+            aura-vault/.proptest-regressions/
+
+      - name: Fail loudly on regressions
+        if: failure()
+        run: |
+          echo "::error::Nightly fuzz run found failures. Check the uploaded artefacts for shrunk counter-examples."
+          exit 1
