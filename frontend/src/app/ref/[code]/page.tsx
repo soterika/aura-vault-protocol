@@ -15,8 +15,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { referralCodeToAddress, storeReferralCode } from "@/lib/referral";
+import { extractLocaleFromPath, resolveLocalizedDestination } from "@/lib/useDeepLink";
 
 interface Props {
   params: { code: string };
@@ -28,6 +29,7 @@ const REDIRECT_DELAY_MS = 2500;
 
 export default function ReferralPage({ params }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const [state, setState] = useState<State>("loading");
   const [referrerAddress, setReferrerAddress] = useState<string | null>(null);
 
@@ -45,12 +47,16 @@ export default function ReferralPage({ params }: Props) {
     setReferrerAddress(address);
     setState("valid");
 
+    const locale = extractLocaleFromPath(pathname);
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const destination = resolveLocalizedDestination("/dashboard", search, locale);
+
     const timer = setTimeout(() => {
-      router.push("/dashboard");
+      router.push(destination);
     }, REDIRECT_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [params, router]);
+  }, [params, pathname, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-black px-4">
