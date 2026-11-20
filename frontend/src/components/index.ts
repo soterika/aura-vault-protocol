@@ -1,5 +1,7 @@
 // Default exports
 export { default as SharePriceChart } from "./SharePriceChart";
+export { SharePriceTicker } from "./SharePriceTicker";
+export type { SharePriceTickerProps, TickerDirection } from "./SharePriceTicker";
 export { default as NavHeader } from "./NavHeader";
 export { default as WalletConnect } from "./WalletConnect";
 

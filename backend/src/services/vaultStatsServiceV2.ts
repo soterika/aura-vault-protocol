@@ -51,6 +51,8 @@ export interface VaultStats {
   apy7d: number;
   /** 30-day annualised percentage yield */
   apy30d: number;
+  /** 24-hour share price percentage change derived from apy_snapshots */
+  sharePriceChange24h: number;
   /** ISO-8601 timestamp of the most recent harvest, or null if never harvested */
   lastHarvest: string | null;
 }
@@ -105,8 +107,8 @@ export async function fetchLiveVaultStats(contractId?: string): Promise<VaultSta
        ${contractFilter}`,
       params,
     ),
-    // APY from rolling snapshots (7d and 30d)
-    pool.query<{ apy7d: string; apy30d: string }>(
+    // APY from rolling snapshots (7d and 30d) + 24h share price baseline
+    pool.query<{ apy7d: string; apy30d: string; share_price_24h: string | null }>(
       `SELECT
          COALESCE(
            AVG(apy) FILTER (
@@ -119,7 +121,15 @@ export async function fetchLiveVaultStats(contractId?: string): Promise<VaultSta
              WHERE snapshot_time >= NOW() - INTERVAL '30 days'
              ${contractId ? `AND contract_id = $1` : ""}
            ), 0
-         )::TEXT AS apy30d
+         )::TEXT AS apy30d,
+         (
+           SELECT share_price::TEXT
+           FROM apy_snapshots
+           WHERE snapshot_time <= NOW() - INTERVAL '24 hours'
+           ${contractId ? `AND contract_id = $1` : ""}
+           ORDER BY snapshot_time DESC
+           LIMIT 1
+         ) AS share_price_24h
        FROM apy_snapshots
        ${contractId ? "WHERE contract_id = $1" : ""}`,
       params,
@@ -137,12 +147,21 @@ export async function fetchLiveVaultStats(contractId?: string): Promise<VaultSta
       ? Number(totalAssets) / Number(totalShares)
       : 1;
 
+  const sharePrice24hAgo = apyRow?.share_price_24h
+    ? parseFloat(apyRow.share_price_24h)
+    : null;
+  const sharePriceChange24h =
+    sharePrice24hAgo !== null && sharePrice24hAgo > 0
+      ? ((sharePriceNum - sharePrice24hAgo) / sharePrice24hAgo) * 100
+      : 0;
+
   return {
     totalAssets,
     sharePrice: sharePriceNum.toFixed(7),
     depositorCount: parseInt(row?.depositor_count ?? "0", 10),
     apy7d: parseFloat(apyRow?.apy7d ?? "0"),
     apy30d: parseFloat(apyRow?.apy30d ?? "0"),
+    sharePriceChange24h,
     lastHarvest: row?.last_harvest
       ? new Date(row.last_harvest).toISOString()
       : null,
