@@ -16,16 +16,54 @@ interface BeforeInstallPromptEvent extends Event {
   readonly userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+export function getReleaseVersion(): string {
+  return (
+    process.env.NEXT_PUBLIC_RELEASE_VERSION ||
+    process.env.NEXT_PUBLIC_APP_VERSION ||
+    "v1"
+  );
+}
+
+export function buildServiceWorkerUrl(
+  releaseVersion: string = getReleaseVersion()
+): string {
+  return `/sw.js?v=${encodeURIComponent(releaseVersion)}`;
+}
+
+export async function registerServiceWorker(
+  swContainer: Pick<ServiceWorkerContainer, "register" | "controller">,
+  releaseVersion: string = getReleaseVersion()
+): Promise<ServiceWorkerRegistration> {
+  const swUrl = buildServiceWorkerUrl(releaseVersion);
+  const registration = await swContainer.register(swUrl, { scope: "/" });
+
+  if (typeof registration.addEventListener === "function") {
+    registration.addEventListener("updatefound", () => {
+      const installing = registration.installing;
+      if (!installing) return;
+      installing.addEventListener("statechange", () => {
+        if (installing.state === "installed" && swContainer.controller) {
+          console.debug(
+            "[PWA] New release service worker installed",
+            releaseVersion
+          );
+        }
+      });
+    });
+  }
+
+  return registration;
+}
+
 export function ServiceWorkerRegistration() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
-    // Register the service worker
+    // Register the service worker scoped to the current release version
     if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js", { scope: "/" })
+      registerServiceWorker(navigator.serviceWorker)
         .then((registration) => {
           console.debug("[PWA] Service worker registered", registration.scope);
         })
@@ -40,16 +78,17 @@ export function ServiceWorkerRegistration() {
       setInstallPrompt(e as BeforeInstallPromptEvent);
     };
 
-    window.addEventListener("beforeinstallprompt", handler);
-
-    // Detect when the app was successfully installed
-    window.addEventListener("appinstalled", () => {
+    const handleInstalled = () => {
       setInstalled(true);
       setInstallPrompt(null);
-    });
+    };
+
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", handleInstalled);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", handleInstalled);
     };
   }, []);
 
