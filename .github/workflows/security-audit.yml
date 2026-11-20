@@ -96,5 +96,10 @@ jobs:
               if (prs.data[0]) await github.rest.issues.createComment({ owner, repo, issue_number: prs.data[0].number, body: summary });
             }
             if (context.eventName === 'schedule' && failed) {
-              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Nightly dependency audit found vulnerabilities', body: `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
+              const { owner, repo } = context.repo;
+              const openIssues = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 50 });
+              const existing = openIssues.data.find(i => i.title === 'Nightly dependency audit found vulnerabilities');
+              if (!existing) {
+                await github.rest.issues.create({ owner, repo, title: 'Nightly dependency audit found vulnerabilities', body: `${summary}\n\nRun: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}` });
+              }
             }
