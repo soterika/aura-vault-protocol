@@ -21,6 +21,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            aura-vault
+            aura-migration
       - name: Build backend image
         run: docker build -f Dockerfile.backend -t aura-vault-backend:nightly .
       - name: Build frontend image

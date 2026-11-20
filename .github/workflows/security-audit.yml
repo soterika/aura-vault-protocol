@@ -30,7 +30,16 @@ jobs:
       - name: Audit dependencies
         id: audit
         continue-on-error: true
-        run: npm audit --audit-level=high --json > "${{ runner.temp }}/${{ matrix.package }}-npm-audit.json"
+        run: |
+          npm audit --audit-level=high --json > "${{ runner.temp }}/${{ matrix.package }}-npm-audit.json"
+          EXIT_CODE=$?
+          node -e '
+            const fs = require("fs");
+            const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const v = data.metadata?.vulnerabilities || {};
+            console.log(`### npm audit (${process.argv[2]}): critical=${v.critical || 0}, high=${v.high || 0}, moderate=${v.moderate || 0}, low=${v.low || 0}`);
+          ' "${{ runner.temp }}/${{ matrix.package }}-npm-audit.json" "${{ matrix.package }}" >> "$GITHUB_STEP_SUMMARY" || true
+          exit $EXIT_CODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -63,7 +72,20 @@ jobs:
       - name: Audit Rust dependencies
         id: audit
         continue-on-error: true
-        run: cargo audit --json > "${{ runner.temp }}/${{ matrix.crate }}-cargo-audit.json"
+        run: |
+          cargo audit --json > "${{ runner.temp }}/${{ matrix.crate }}-cargo-audit.json"
+          EXIT_CODE=$?
+          python3 -c '
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          vulns = data.get("vulnerabilities", {}).get("list", [])
+          print(f"### cargo audit ({sys.argv[2]}): {len(vulns)} vulnerability(ies) found")
+          for v in vulns[:20]:
+              adv = v.get("advisory", {})
+              pkg = v.get("package", {})
+              print(f"- {adv.get(\"id\", \"unknown\")} ({pkg.get(\"name\", \"unknown\")} {pkg.get(\"version\", \"\")}): {adv.get(\"title\", \"\")}")
+          ' "${{ runner.temp }}/${{ matrix.crate }}-cargo-audit.json" "${{ matrix.crate }}" >> "$GITHUB_STEP_SUMMARY" || true
+          exit $EXIT_CODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -96,5 +118,18 @@ jobs:
               if (prs.data[0]) await github.rest.issues.createComment({ owner, repo, issue_number: prs.data[0].number, body: summary });
             }
             if (context.eventName === 'schedule' && failed) {
-              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Nightly dependency audit found vulnerabilities', body: `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
+              const title = 'Nightly dependency audit found vulnerabilities';
+              const { data: openIssues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                per_page: 100
+              });
+              const existing = openIssues.find((issue) => issue.title === title);
+              const body = `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              if (existing) {
+                await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number, body });
+              } else {
+                await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body });
+              }
             }
