@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,6 +22,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            aura-vault
+            aura-migration
       - name: Build backend image
         run: docker build -f Dockerfile.backend -t aura-vault-backend:nightly .
       - name: Build frontend image
@@ -36,7 +41,6 @@ jobs:
           name: deployable-nightly-${{ github.run_number }}
           path: |
             nightly-images.tar
-            target/wasm32-unknown-unknown/release/*.wasm
             aura-vault/target/wasm32-unknown-unknown/release/*.wasm
             aura-migration/target/wasm32-unknown-unknown/release/*.wasm
           if-no-files-found: error
