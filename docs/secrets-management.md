@@ -157,14 +157,25 @@ Webhook signing keys are stored as a JSON array to support key rollover (the bac
 3. Wait until all in-flight webhooks have been delivered (typically < 5 minutes).
 4. Remove the old key from the array and update the secret again.
 
-### Rotation for `JWT_SECRET`
+### Rotation for `JWT_SECRET` (Zero-Downtime Dual-Secret Rotation)
 
-JWT rotation invalidates all active sessions. Coordinate with the team before rotating in production:
+`JWT_SECRET` uses dual-secret verification so active user sessions are **never invalidated** during rotation:
 
-1. Announce a maintenance window (sessions will be invalidated).
-2. Rotate the secret.
-3. All users will be logged out and must re-authenticate.
-4. Monitor for any abnormal session error rates in Grafana.
+1. The rotation Lambda (`infrastructure/lambda/secrets-rotation/src/rotate.ts`) copies the current `JWT_SECRET` into `JWT_SECRET_PREVIOUS` and generates a new `JWT_SECRET`.
+2. During the **15-minute overlap window** (matching `ACCESS_TOKEN_TTL = 900s`), `backend/src/auth.ts` signs new tokens with `JWT_SECRET` and verifies incoming access/refresh tokens against `JWT_SECRET` first, falling back to `JWT_SECRET_PREVIOUS`.
+3. Once all pre-rotation access tokens have expired (15 minutes), `JWT_SECRET_PREVIOUS` can be cleared or left until the next rotation cycle.
+4. Monitor `auth` error rates in Grafana; no user re-authentication is required.
+
+### Rotation for Database Passwords (`aura-vault/{env}/database/master`)
+
+Database master passwords are rotated automatically every 30 days via `aws_secretsmanager_secret_rotation.db_master` in `terraform/secrets.tf`:
+
+1. **Automated**: Secrets Manager invokes `aura-vault-secrets-rotation-{env}` (`createSecret` → `setSecret` → `testSecret` → `finishSecret`).
+2. **Manual**: Trigger `aws secretsmanager rotate-secret --secret-id aura-vault/prod/database/master --rotate-immediately` and verify backend connection pool recovery in logs.
+
+### Automated Secret Age Monitoring
+
+`.github/workflows/secret-rotation-check.yml` runs monthly (1st of each month at 09:00 UTC) and on manual dispatch. It checks `LastRotatedDate` for all `aura-vault/{env}/app` and `aura-vault/{env}/database/master` secrets and posts a Slack alert to `SLACK_WEBHOOK_URL` if any secret is older than 90 days.
 
 ---
 

@@ -1038,13 +1038,15 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: aura-backend-hpa
+  name: backend-hpa
   namespace: aura-vault
+  labels:
+    app: backend
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: aura-backend
+    name: backend
   minReplicas: 2
   maxReplicas: 10
   metrics:
@@ -1059,33 +1061,64 @@ spec:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 75
+          averageUtilization: 70
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 15
+      stabilizationWindowSeconds: 60
       policies:
         - type: Pods
-          value: 3
-          periodSeconds: 60
+          value: 2
+          periodSeconds: 30
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+      selectPolicy: Max
     scaleDown:
       stabilizationWindowSeconds: 300
       policies:
-        - type: Pods
-          value: 1
-          periodSeconds: 120
+        - type: Percent
+          value: 50
+          periodSeconds: 60
 ```
+
+### BullMQ Worker Autoscaling (KEDA)
+
+The BullMQ worker deployment (`backend-worker`) scales based on Redis queue depth (`bull:harvest-events:wait`) using KEDA (`k8s/backend/worker-hpa.yaml`), with `minReplicaCount: 1`, `maxReplicaCount: 5`, and a queue depth threshold of `100`.
+
+Install KEDA via the Helm chart in `k8s/keda/`:
+
+```bash
+helm dependency build k8s/keda
+helm upgrade --install keda k8s/keda \
+  --namespace keda --create-namespace \
+  --values k8s/keda/values.yaml
+```
+
+Verify KEDA and the `ScaledObject`:
+
+```bash
+kubectl get pods -n keda
+kubectl get scaledobject -n aura-vault
+kubectl describe scaledobject backend-worker-scaledobject -n aura-vault
+```
+
+### Staging Load Verification
+
+1. Apply the updated manifests to staging: `kubectl apply -k k8s/backend`.
+2. Generate API load (e.g., `k6` or `hey`) and watch `kubectl get hpa backend-hpa -n aura-vault -w` to confirm scale-up when CPU > 60% or memory > 70% for 60s and scale-down stabilization of 300s.
+3. Enqueue >100 jobs into `bull:harvest-events:wait` in Redis and watch `kubectl get scaledobject,hpa -n aura-vault -w` to confirm `backend-worker` scales from 1 up to 5 replicas.
 
 ### HPA Scaling Behaviour Explained
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `minReplicas` | 2 | Always run at least 2 pods per deployment (HA) |
-| `maxReplicas` | 10 | Hard cap to prevent cost runaway |
-| CPU scale-up threshold | 70% | Scale up when average CPU exceeds 70% |
-| Memory scale-up threshold | 80% | Scale up when average memory exceeds 80% |
-| Scale-up window | 30–60s | Reacts quickly to traffic spikes |
-| Scale-down window | 300s | Waits 5 minutes before removing pods to absorb burst tail |
-| Scale-down increment | 1 pod per 2 min | Gradual scale-down avoids yo-yo behaviour |
+| `minReplicas` (API / Worker) | 2 / 1 | Always run at least 2 API pods (HA) and 1 worker pod |
+| `maxReplicas` (API / Worker) | 10 / 5 | Hard cap to prevent cost runaway |
+| CPU scale-up threshold (API) | 60% | Scale up when average CPU exceeds 60% for 60s |
+| Memory scale-up threshold (API) | 70% | Scale up when average memory exceeds 70% for 60s |
+| Queue depth threshold (Worker) | 100 | Scale up when BullMQ Redis list length exceeds 100 |
+| Scale-up window | 60s | Reacts quickly to traffic and harvest-event spikes |
+| Scale-down window | 300s | Waits 5 minutes before removing pods to prevent flapping |
 
 Inspect current HPA status:
 ```bash
