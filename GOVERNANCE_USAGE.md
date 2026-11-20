@@ -337,3 +337,32 @@ setInterval(async () => {
 3. **Always test on testnet** — Verify timelock duration and voting flow
 4. **Document changes** — Keep audit log of all governance actions
 5. **Multi-sig wallet best practices** — Secure storage, key rotation, backup procedures
+
+---
+
+## Dashboard Proposal State Transitions (Voter Guide)
+
+`GovernanceDashboard` (`frontend/src/components/GovernanceDashboard.tsx`) maps on-chain governance states to five UI status badges and controls **Vote** / **Execute** button eligibility:
+
+### Status & Action Mapping
+
+| Dashboard Status | Underlying Contract State | Vote Button (`canVote`) | Execute Button | What Changes |
+|---|---|---|---|---|
+| `Pending` | `Pending` (votes `< 3`) | Enabled for connected signers who have not yet voted (`!hasVoted && !thresholdMet`) | Disabled | Signers cast approvals; once the 3rd approval arrives, `thresholdMet` becomes `true` and the 24h timelock starts |
+| `TimelockActive` | `Approved` (votes `>= 3`, timelock not expired) | Disabled (`"Threshold already reached"`) | Disabled until `executableAt` | Voting is closed; proposal waits for the 24-hour timelock delay to elapse |
+| `Executable` | `Approved` (votes `>= 3`, timelock expired) | Disabled (`"Threshold already reached"`) | **Enabled** for any authenticated wallet | Any caller can submit `execute(proposalId)` |
+| `Executed` | `Executed` | Hidden | Hidden | Proposal payload applied on-chain; terminal state |
+| `Rejected` | `Rejected` | Hidden | Hidden | Proposal rejected/expired without execution; terminal state |
+
+### Walkthrough 1: Approved Proposal
+
+1. **Created (`Pending`)**: Signer 1 proposes an admin update (`votesFor: 1 / 3`, `thresholdMet: false`). Other signers see **Vote** enabled; **Execute** is disabled.
+2. **Threshold Met (`TimelockActive`)**: Signers 2 and 3 vote to approve (`votesFor: 3 / 3`, `thresholdMet: true`, `timelockStartedAt` set). **Vote** becomes disabled for all signers; **Execute** remains disabled until `executableAt` (+24 hours).
+3. **Timelock Expired (`Executable`)**: Once `now >= executableAt`, status transitions to `Executable`. Any connected user can click **Execute**.
+4. **Finalized (`Executed`)**: `execute()` succeeds on-chain; status becomes `Executed` and action buttons are hidden.
+
+### Walkthrough 2: Unsuccessful (`Rejected`) Proposal
+
+1. **Created (`Pending`)**: Signer 1 submits a parameter update (`votesFor: 1 / 3`, `thresholdMet: false`).
+2. **Voting Closes Without Quorum / Rejected (`Rejected`)**: Quorum is not reached or the proposal is rejected before meeting the 3-of-5 threshold. Status transitions to `Rejected`.
+3. **Terminal State**: Neither **Vote** nor **Execute** is rendered; the proposal never enters `TimelockActive` or `Executable`.

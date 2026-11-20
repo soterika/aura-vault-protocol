@@ -1,5 +1,21 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+import { validatePublicConfig } from "./src/lib/publicConfig";
+
+const configCheck = validatePublicConfig(process.env, {
+  requireApiUrl: process.env.STRICT_PUBLIC_CONFIG === "true",
+});
+for (const diag of configCheck.diagnostics) {
+  const prefix = `[publicConfig:${diag.level}]`;
+  if (diag.level === "error") {
+    console.error(`${prefix} ${diag.message}`);
+  } else {
+    console.warn(`${prefix} ${diag.message}`);
+  }
+}
+if (!configCheck.valid && process.env.STRICT_PUBLIC_CONFIG === "true") {
+  throw new Error("Frontend build aborted due to invalid public configuration.");
+}
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const withBundleAnalyzer = process.env.ANALYZE === "true"
