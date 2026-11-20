@@ -22,6 +22,7 @@ import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import PreSignBreakdown from "./PreSignBreakdown";
 import { ExplorerMenu } from "./ExplorerMenu";
 import { useToast } from "./toast";
+import { getHumanReadableError } from "@/lib/errorMessages";
 
 import {
   useState,
@@ -348,7 +349,7 @@ export default function TransactionModal({
       setTxError(err instanceof Error ? err.message : "Transaction failed");
       if (retrying) setRetryCount((c) => c + 1);
       // Toast: transaction failed — error variant persists until dismissed
-      toastError(`${label} failed`, errorMsg);
+      toastError(`${label} failed`, getHumanReadableError(errorMsg));
     }
   }
 
