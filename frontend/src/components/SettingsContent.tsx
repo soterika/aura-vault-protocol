@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useWidgetLayout } from "@/lib/useWidgetLayout";
 import { AppearanceSettings } from "@/components/AppearanceSettings";
+import { PreferencesPanel } from "@/components/PreferencesPanel";
 
 interface Settings {
   slippageTolerance: number;
@@ -105,6 +106,8 @@ export default function SettingsContent() {
     <div className="min-h-screen bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-100">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <h1 className="text-2xl font-semibold mb-8">{t("settings.title")}</h1>
+
+        <PreferencesPanel />
 
         {saved && (
           <div role="status" className="mb-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-sm text-emerald-600 dark:text-emerald-400">
