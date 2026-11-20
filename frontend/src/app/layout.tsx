@@ -17,6 +17,7 @@ import { HeaderWidgets } from "@/components/HeaderWidgets";
 import { ToastProvider } from "@/components/toast";
 import { NotificationCenter, NotificationProvider } from "@/components/notifications";
 import NavHeader from "@/components/NavHeader";
+import MobileBottomNav from "@/components/MobileBottomNav";
 import { FreighterNetworkBanner, FreighterNetworkProvider } from "@/components/FreighterNetworkBanner";
 import { NetworkStatusBanner } from "@/components/NetworkStatusBanner";
 import "./globals.css";
@@ -62,7 +63,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       <ThemeToggle />
                     </div>
                   </header>
-                  <main className="flex flex-1 flex-col">{children}</main>
+                  <main className="flex flex-1 flex-col pb-16 md:pb-0">{children}</main>
+                  <MobileBottomNav />
                   <ServiceWorkerRegistration />
                 </FreighterNetworkProvider>
               </NotificationProvider>

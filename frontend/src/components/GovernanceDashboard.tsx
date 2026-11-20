@@ -15,6 +15,7 @@
  */
 
 import { useState, useCallback } from "react";
+import DataTable, { type ColumnDef } from "./DataTable";
 import {
   useGovernanceProposals,
   useGovernanceSSE,
@@ -623,6 +624,66 @@ export function GovernanceDashboard({ token }: GovernanceDashboardProps) {
             Showing {proposals.length} of {total} proposal
             {total !== 1 ? "s" : ""}
           </p>
+          <DataTable
+            columns={[
+              {
+                id: "id",
+                header: "ID",
+                accessorKey: "id",
+                sortable: true,
+                hideable: false,
+                cell: (proposal) => `#${proposal.id}`,
+              },
+              {
+                id: "title",
+                header: "Proposal",
+                accessorKey: "title",
+                sortable: true,
+                filterable: true,
+              },
+              {
+                id: "status",
+                header: "Status",
+                accessorKey: "status",
+                sortable: true,
+                cell: (proposal) => <StatusBadge status={proposal.status} />,
+              },
+              {
+                id: "votes",
+                header: "Signatures",
+                accessorFn: (proposal) => proposal.votesFor,
+                sortable: true,
+                align: "right",
+                cell: (proposal) => `${proposal.votesFor} / ${proposal.requiredSignatures}`,
+              },
+              {
+                id: "proposer",
+                header: "Proposer",
+                accessorKey: "proposer",
+                cell: (proposal) => (
+                  <span className="font-mono text-xs">
+                    {proposal.proposer.slice(0, 8)}…{proposal.proposer.slice(-4)}
+                  </span>
+                ),
+              },
+              {
+                id: "createdAt",
+                header: "Created",
+                accessorKey: "createdAt",
+                sortable: true,
+                cell: (proposal) =>
+                  new Date(proposal.createdAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  }),
+              },
+            ] satisfies ColumnDef<GovernanceProposal>[]}
+            data={proposals}
+            getRowKey={(proposal) => proposal.id}
+            caption="Governance proposals"
+            className="mb-6"
+          />
           <div className="space-y-4" role="list" aria-label="Governance proposals">
             {proposals.map((proposal) => (
               <ProposalCard
