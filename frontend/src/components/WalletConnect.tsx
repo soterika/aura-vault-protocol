@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCw, Wallet as WalletIcon } from "lucide-react";
 import { WalletSelectionModal, type SupportedWalletId, type WalletInfo } from "./WalletSelectionModal";
+import { WalletLogo } from "./WalletLogo";
 import { useWalletStore } from "@/lib/walletStore";
 import { WalletDisconnectControl } from "@/components/WalletDisconnectControl";
 
@@ -177,7 +178,7 @@ export default function WalletConnect({ onConnected, onDisconnected }: { onConne
   if (connected && address) {
     return (
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm" title={`${network ?? "Stellar"} ${wallet?.type ?? "wallet"}`}><WalletIcon size={16} aria-hidden="true" />{truncateAddress(address)}</span>
+        <span className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm" data-testid="active-wallet-indicator" title={`${network ?? "Stellar"} ${wallet?.type ?? "wallet"}`}><WalletLogo walletId={wallet?.type} size={16} />{truncateAddress(address)}</span>
         <WalletDisconnectControl address={address} onConfirm={disconnect} />
       </div>
     );
