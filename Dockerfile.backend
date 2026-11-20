@@ -40,7 +40,7 @@ COPY --from=builder --chown=backend:nodejs /app/backend/package*.json ./backend/
 
 # Install only production dependencies
 WORKDIR /app/backend
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # Switch to non-root user
 USER backend
