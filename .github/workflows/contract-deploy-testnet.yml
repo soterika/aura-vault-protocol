@@ -1,0 +1,172 @@
+name: Deploy Soroban Contract to Testnet
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'aura-vault/**/*.rs'
+      - 'aura-vault/Cargo.toml'
+      - 'aura-vault/Cargo.lock'
+      - 'contracts/**'
+  pull_request:
+    paths:
+      - 'aura-vault/**/*.rs'
+      - 'aura-vault/Cargo.toml'
+      - 'aura-vault/Cargo.lock'
+      - 'contracts/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: contract-deploy-testnet-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NETWORK: testnet
+  WASM_PATH: aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm
+
+jobs:
+  deploy-and-smoke-test:
+    name: Build, Deploy to Testnet & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust & wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            aura-vault/target/
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('aura-vault/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      - name: Install Stellar CLI
+        run: |
+          cargo install --locked stellar-cli --features opt
+          stellar --version
+
+      - name: Build contract Wasm
+        working-directory: aura-vault
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          ls -lh target/wasm32-unknown-unknown/release/aura_vault.wasm
+          sha256sum target/wasm32-unknown-unknown/release/aura_vault.wasm
+
+      - name: Configure Stellar CLI & CI keypair
+        env:
+          STELLAR_DEPLOYER_SECRET_KEY: ${{ secrets.STELLAR_DEPLOYER_SECRET_KEY }}
+        run: |
+          if [ -z "$STELLAR_DEPLOYER_SECRET_KEY" ]; then
+            echo "::error::STELLAR_DEPLOYER_SECRET_KEY secret is not set"
+            exit 1
+          fi
+          stellar network add testnet \
+            --rpc-url https://soroban-testnet.stellar.org \
+            --network-passphrase "Test SDF Network ; September 2015"
+          stellar keys add ci-deployer --secret-key "$STELLAR_DEPLOYER_SECRET_KEY"
+          DEPLOYER_ADDR=$(stellar keys address ci-deployer)
+          echo "DEPLOYER_ADDR=$DEPLOYER_ADDR" >> "$GITHUB_ENV"
+          curl -fsS "https://friendbot.stellar.org?addr=${DEPLOYER_ADDR}" > /dev/null || true
+
+      - name: Upload Wasm to Testnet
+        id: upload
+        run: |
+          WASM_HASH=$(stellar contract upload \
+            --wasm "$WASM_PATH" \
+            --source ci-deployer \
+            --network "$NETWORK" \
+            --output json | jq -r '.wasm_id // .hash')
+          echo "wasm_hash=$WASM_HASH" >> "$GITHUB_OUTPUT"
+          echo "Uploaded Wasm hash: $WASM_HASH"
+
+      - name: Deploy contract instance to Testnet
+        id: deploy
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm-hash "${{ steps.upload.outputs.wasm_hash }}" \
+            --source ci-deployer \
+            --network "$NETWORK" \
+            --output json | jq -r '.contract_id')
+          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          echo "Deployed Contract ID: $CONTRACT_ID"
+
+      - name: Initialize Vault contract
+        env:
+          TEST_TOKEN_CONTRACT_ID: ${{ secrets.TESTNET_TOKEN_CONTRACT_ID }}
+        run: |
+          ADMIN_ADDR="$DEPLOYER_ADDR"
+          TOKEN_ID="${TEST_TOKEN_CONTRACT_ID:-CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC}"
+          stellar contract invoke \
+            --id "${{ steps.deploy.outputs.contract_id }}" \
+            --source ci-deployer \
+            --network "$NETWORK" \
+            -- initialize \
+            --admin "$ADMIN_ADDR" \
+            --underlying_token "$TOKEN_ID" \
+            --signers "[\"$ADMIN_ADDR\",\"$ADMIN_ADDR\",\"$ADMIN_ADDR\",\"$ADMIN_ADDR\",\"$ADMIN_ADDR\"]"
+
+      - name: Run CLI smoke tests (deposit / withdraw / harvest)
+        id: cli_smoke
+        run: |
+          CONTRACT_ID="${{ steps.deploy.outputs.contract_id }}"
+          echo "Running CLI smoke checks against $CONTRACT_ID..."
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source ci-deployer \
+            --network "$NETWORK" \
+            -- total_assets
+          echo "cli_smoke_status=passed" >> "$GITHUB_OUTPUT"
+
+      - name: Run smoke-test.sh
+        id: smoke_script
+        env:
+          CONTRACT_ID: ${{ steps.deploy.outputs.contract_id }}
+          BASE_URL: ${{ secrets.TESTNET_BACKEND_URL || 'http://localhost:3001' }}
+          TEST_WALLET: ${{ env.DEPLOYER_ADDR }}
+        run: |
+          bash scripts/smoke-test.sh
+          echo "smoke_script_status=passed" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR with deployment & smoke test results
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const contractId = '${{ steps.deploy.outputs.contract_id }}' || 'N/A';
+            const wasmHash = '${{ steps.upload.outputs.wasm_hash }}' || 'N/A';
+            const cliStatus = '${{ steps.cli_smoke.outputs.cli_smoke_status }}' || 'failed';
+            const scriptStatus = '${{ steps.smoke_script.outputs.smoke_script_status }}' || 'failed';
+            const body = [
+              '### Soroban Testnet Deployment',
+              '',
+              `- **Network:** \`testnet\``,
+              `- **Contract ID:** \`${contractId}\``,
+              `- **Wasm Hash:** \`${wasmHash}\``,
+              `- **CLI Smoke Test:** ${cliStatus}`,
+              `- **\`scripts/smoke-test.sh\`:** ${scriptStatus}`,
+              '',
+              contractId !== 'N/A'
+                ? `[View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/${contractId})`
+                : ''
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import DataTable, { type ColumnDef } from "./DataTable";
 
 type Period = "all" | "30d" | "7d" | "24h";
 
@@ -80,12 +81,134 @@ export function Leaderboard() {
   useEffect(() => {
     const controller = new AbortController();
     void load(period, page, controller.signal);
-    return () => controller.abort();
+    const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
+
+  return () => controller.abort();
   }, [load, period, page]);
 
   useEffect(() => {
     const interval = window.setInterval(() => void load(period, page), 60_000);
-    return () => window.clearInterval(interval);
+    const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
+
+  return () => window.clearInterval(interval);
   }, [load, period, page]);
 
   useEffect(() => {
@@ -106,8 +229,130 @@ export function Leaderboard() {
       if (progress < 1) frame = requestAnimationFrame(animate);
     };
     frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
+    const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
+
+  return () => cancelAnimationFrame(frame);
   }, [data]);
+
+  const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
 
   return (
     <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6" aria-labelledby="leaderboard-title">
@@ -153,7 +398,68 @@ export function Leaderboard() {
                 {data.leaderboard.map((entry) => {
                   const award = medal(entry.rank);
                   const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
-                  return (
+                  const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
+
+  return (
                     <tr key={entry.userId} className={`animate-[leaderboard-enter_350ms_ease-out_both] border-t border-zinc-100 dark:border-zinc-800 ${entry.isCurrentUser ? "bg-indigo-50 dark:bg-indigo-950/40" : ""}`}>
                       <th scope="row" className="whitespace-nowrap px-5 py-4 font-semibold tabular-nums">
                         <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>

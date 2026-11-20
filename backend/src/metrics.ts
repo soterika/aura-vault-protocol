@@ -14,6 +14,10 @@
  */
 
 import { Router, Request, Response, NextFunction } from "express";
+import { Registry, collectDefaultMetrics } from "prom-client";
+
+export const metricsRegistry = new Registry();
+collectDefaultMetrics({ register: metricsRegistry });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,6 +221,11 @@ export function renderPrometheusText(): string {
   return lines.join("\n");
 }
 
+export async function renderAllPrometheusMetrics(): Promise<string> {
+  const defaultMetrics = await metricsRegistry.metrics();
+  return `${defaultMetrics}\n${renderPrometheusText()}`;
+}
+
 // ─── Express middleware ───────────────────────────────────────────────────────
 
 /**
@@ -249,7 +258,7 @@ export const metricsRouter = Router();
  * Responds 401 when the token is missing/wrong.
  * Responds 503 when METRICS_TOKEN is not configured (secure-fail-closed).
  */
-metricsRouter.get("/", (req: Request, res: Response): void => {
+metricsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   // Fail closed: if METRICS_TOKEN is not set in env, refuse all requests.
   if (!METRICS_TOKEN) {
     res.status(503).send("# metrics endpoint not configured\n");
