@@ -78,6 +78,48 @@ export function stellarExpertAccountUrl(
   return `${STELLAR_EXPERT_BASE}/${network}/account/${address}`;
 }
 
+/**
+ * Returns the Stellar Expert URL for a smart contract ID.
+ */
+export function stellarExpertContractUrl(
+  contractId: string,
+  network: StellarNetwork = "testnet"
+): string {
+  return `${STELLAR_EXPERT_BASE}/${network}/contract/${contractId}`;
+}
+
+/**
+ * Returns the Stellar Expert URL for a ledger sequence number.
+ */
+export function stellarExpertLedgerUrl(
+  ledger: string | number,
+  network: StellarNetwork = "testnet"
+): string {
+  return `${STELLAR_EXPERT_BASE}/${network}/ledger/${ledger}`;
+}
+
+export type StellarExplorerType = "tx" | "contract" | "account" | "ledger";
+
+/**
+ * Returns the Stellar Expert URL for any supported entity type.
+ */
+export function stellarExpertUrl(
+  type: StellarExplorerType,
+  id: string | number,
+  network: StellarNetwork = resolveNetwork()
+): string {
+  switch (type) {
+    case "tx":
+      return stellarExpertTxUrl(String(id), network);
+    case "contract":
+      return stellarExpertContractUrl(String(id), network);
+    case "account":
+      return stellarExpertAccountUrl(String(id), network);
+    case "ledger":
+      return stellarExpertLedgerUrl(id, network);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // URL builders — Stellarchain.io
 // ---------------------------------------------------------------------------

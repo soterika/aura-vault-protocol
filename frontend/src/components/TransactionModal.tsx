@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveNetwork, stellarExpertTxUrl } from "@/lib/explorerLinks";
+
 /**
  * TransactionModal — Issue #259: Mobile-optimised deposit/withdraw flows
  *
@@ -333,7 +335,7 @@ export default function TransactionModal({
       const hash: string = data.hash || `tx-${Date.now()}`;
       setTxHash(hash);
       // Toast: transaction confirmed — includes "View on Explorer" link
-      const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${hash}`;
+      const explorerUrl = stellarExpertTxUrl(hash, resolveNetwork());
       txSuccess(`${label} confirmed!`, explorerUrl, `Amount: ${amount} XLM`);
     } catch (err: unknown) {
       const errorMsg = (err instanceof Error ? err.message : "Transaction failed") ?? "Transaction failed";

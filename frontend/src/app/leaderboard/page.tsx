@@ -1,4 +1,5 @@
 import { Leaderboard } from "@/components/Leaderboard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export const metadata = {
   title: "Leaderboard — Aura Vault",
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function LeaderboardPage() {
-  return <Leaderboard />;
+  return (
+    <ErrorBoundary section="leaderboard">
+      <Leaderboard />
+    </ErrorBoundary>
+  );
 }
