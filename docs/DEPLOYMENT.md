@@ -99,13 +99,30 @@ stellar contract invoke \
 
 ### 4. Configure Frontend
 
-Set in `.env.local`:
+Create `frontend/.env.local` to point the frontend to your backend and target Stellar network:
 
 ```env
-NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
-NEXT_PUBLIC_CONTRACT_ID=YOUR_CONTRACT_ID
+# Target Stellar Network (testnet, mainnet, or futurenet)
+NEXT_PUBLIC_STELLAR_NETWORK=testnet
+
+# Backend REST API and WebSocket services
+NEXT_PUBLIC_API_URL=https://<api-testnet-host>
+NEXT_PUBLIC_WS_URL=wss://<api-testnet-host>/api/ws/vault
+
+# Stellar Explorer link configuration (optional override)
+NEXT_PUBLIC_STELLAR_EXPLORER_URL=https://stellar.expert/explorer/testnet/tx
+
+# Admin pause controls authorization (optional)
+NEXT_PUBLIC_ADMIN_ADDRESS=<TESTNET_ADMIN_PUBLIC_KEY_G...>
+
+# Application canonical origin (for referral links)
+NEXT_PUBLIC_APP_URL=https://<app-testnet-host>
+
+# Sentry error monitoring (optional)
+NEXT_PUBLIC_SENTRY_DSN=https://<public_key>@<org>.ingest.sentry.io/<project_id>
 ```
+
+> **Note on Build-Time vs. Runtime Inlining:** Frontend settings prefixed with `NEXT_PUBLIC_` are statically inlined into client JavaScript bundles at build time (`npm run build`). When deploying across staging or production environments, the frontend must be compiled with the environment's specific configuration. For full details, see the [Frontend Public Configuration Reference](#frontend-public-configuration-reference) and [`frontend/CLAUDE.md`](../frontend/CLAUDE.md).
 
 ### 5. Deploy Frontend
 
@@ -136,17 +153,84 @@ npm run build
 
 ## Environment Configuration
 
+Configuration is split between backend services / contracts and the public web frontend.
+
+### Backend & Infrastructure Services
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `NEXT_PUBLIC_SOROBAN_RPC_URL` | Soroban RPC endpoint | `https://soroban-testnet.stellar.org` |
-| `NEXT_PUBLIC_NETWORK_PASSPHRASE` | Stellar network passphrase | `Test SDF Network ; September 2015` |
-| `NEXT_PUBLIC_CONTRACT_ID` | Deployed contract address | — |
-| `NODE_ENV` | Runtime environment | `development` |
+| `SOROBAN_RPC_URL` | Soroban RPC endpoint | `https://soroban-testnet.stellar.org` |
+| `NETWORK_PASSPHRASE` | Stellar network passphrase | `Test SDF Network ; September 2015` |
+| `CONTRACT_ID` | Deployed vault contract address | — |
+| `NODE_ENV` | Runtime environment (`development`, `production`, `test`) | `development` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://aura:aura@localhost:5432/aura_vault` |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `JWT_SECRET` | Secret key for signing authentication tokens | — |
 | `GF_SECURITY_ADMIN_PASSWORD` | Grafana admin password | `aura-vault-admin` |
+
+---
+
+### Frontend Public Configuration Reference
+
+The web application (`frontend/`) reads configuration via Next.js environment variables. Public variables must be prefixed with `NEXT_PUBLIC_` to be accessible in the browser.
+
+> **Build-Time vs. Runtime Behavior:**
+> - In all client components (`"use client"`), hooks, and utilities, `NEXT_PUBLIC_*` values are statically replaced and inlined at **build time** (`npm run build`). Modifying environment files after building will not update client behavior without recompilation.
+> - In server components (`src/app/layout.tsx`), route handlers, and server-side configs, values are evaluated from the active Node.js/Edge process environment at runtime.
+> - Authoritative frontend reference: [`frontend/CLAUDE.md`](../frontend/CLAUDE.md) and [`frontend/.env.example`](../frontend/.env.example).
+
+#### Public Variable Inventory & Active Code Mappings
+
+| Setting | Required | Default Value | Active Code References | Build vs. Runtime | Purpose & Allowed Values |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | Recommended | `"testnet"` | `frontend/src/app/layout.tsx#L31`<br>`frontend/src/components/FreighterNetworkBanner.tsx#L73`<br>`frontend/src/lib/explorerLinks.ts#L40`<br>`frontend/src/components/ExplorerMenu.tsx#L14`<br>`frontend/src/app/status/page.tsx#L92` | Build & Runtime | Selects target Stellar network (`testnet`, `mainnet`, `futurenet`). Drives the network status banner, Freighter wallet network mismatch check, and block explorer links. |
+| `NEXT_PUBLIC_API_URL` | Optional | `""` (relative root) / `"http://localhost:3001"` in hooks | `frontend/src/app/status/page.tsx#L18`<br>`frontend/src/app/tx/[hash]/page.tsx#L49`<br>`frontend/src/app/transactions/page.tsx#L7`<br>`frontend/src/lib/useVaultQueries.ts#L35`<br>`frontend/src/lib/useContractEvents.ts#L157`<br>`frontend/src/lib/useVaultEventInvalidation.ts#L29`<br>`frontend/src/components/AdminPauseControls.tsx#L68` | Build & Runtime | Base URL for backend HTTP REST API calls and SSE event streaming. Local: `http://localhost:3001`; Staging/Testnet: `https://<api-testnet-host>`. |
+| `NEXT_PUBLIC_WS_URL` | Optional | `ws://${window.location.host}/api/ws/vault` | `frontend/src/lib/useVaultPause.ts#L134`<br>`frontend/src/components/VaultDashboard.tsx#L275`<br>`frontend/src/components/dashboard/SortableDashboardGrid.tsx#L370`<br>`frontend/src/components/dashboard/DashboardGrid.tsx#L125`<br>`frontend/src/components/SharePriceTicker.tsx#L81` | Build-time | WebSocket endpoint for real-time vault pause toggles, share prices, and dashboard metrics. Local: `ws://localhost:3001/api/ws/vault`; Non-production: `wss://<api-testnet-host>/api/ws/vault`. |
+| `NEXT_PUBLIC_STELLAR_EXPLORER_URL` | Optional | `'https://stellar.expert/explorer/testnet/tx'` | `frontend/src/app/tx/[hash]/page.tsx#L46` | Build-time | Custom base URL override for external Stellar transaction links on transaction details pages (`/tx/[hash]`). Testnet: `https://stellar.expert/explorer/testnet/tx`; Mainnet: `https://stellar.expert/explorer/public/tx`. |
+| `NEXT_PUBLIC_ADMIN_ADDRESS` | Optional | `undefined` | `frontend/src/components/AdminPauseControls.tsx#L58`<br>`frontend/src/components/dashboard/SortableDashboardGrid.tsx#L424` | Build-time | Stellar public G-address of the authorized vault admin. When connected wallet matches this address, emergency pause/unpause controls render in the UI. |
+| `NEXT_PUBLIC_APP_URL` | Optional | `""` (falls back to `window.location.origin`) | `frontend/src/lib/referral.ts#L148` | Build & Runtime | Canonical origin URL of the web frontend, used when generating shareable referral URLs during SSR. Non-production: `https://<app-testnet-host>`. |
+| `NEXT_PUBLIC_SENTRY_DSN` | Optional | `undefined` (telemetry disabled) | `frontend/src/lib/sentry.ts#L17`<br>`frontend/sentry.client.config.ts#L9`<br>`frontend/sentry.server.config.ts#L7`<br>`frontend/sentry.edge.config.ts#L7` | Build & Runtime | Sentry DSN for error reporting and performance tracing. Unset disables tracking without errors. |
+
+#### Non-Production Network Configuration Example
+
+To deploy or run the frontend against Stellar Testnet, create `frontend/.env.local`:
+
+```env
+# Target Stellar Network (testnet, mainnet, or futurenet)
+NEXT_PUBLIC_STELLAR_NETWORK=testnet
+
+# Backend REST API and WebSocket services
+NEXT_PUBLIC_API_URL=https://<api-testnet-host>
+NEXT_PUBLIC_WS_URL=wss://<api-testnet-host>/api/ws/vault
+
+# Stellar Explorer link configuration (optional override)
+NEXT_PUBLIC_STELLAR_EXPLORER_URL=https://stellar.expert/explorer/testnet/tx
+
+# Admin pause controls authorization (optional)
+NEXT_PUBLIC_ADMIN_ADDRESS=<TESTNET_ADMIN_PUBLIC_KEY_G...>
+
+# Application canonical origin (for referral links)
+NEXT_PUBLIC_APP_URL=https://<app-testnet-host>
+
+# Sentry error monitoring (optional)
+NEXT_PUBLIC_SENTRY_DSN=https://<public_key>@<org>.ingest.sentry.io/<project_id>
+```
+
+#### How to Render and Verify Against Testnet
+
+1. Write `frontend/.env.local` using the template above with your non-production endpoint placeholders.
+2. Run `npm run dev` (or `npm run build && npm run start`).
+3. Verify the non-production behavior:
+   - **Network Warning Banner:** An amber banner displays across the top: *"You are on Stellar Testnet. Tokens have no real value."* (`NetworkStatusBanner.tsx`).
+   - **Wallet Mismatch Protection:** If Freighter is set to Mainnet, a banner prompts to switch networks and disables transaction submission (`FreighterNetworkBanner.tsx`).
+   - **Explorer Redirection:** Explorer links on `/tx/[hash]` and via `ExplorerMenu.tsx` route to `https://stellar.expert/explorer/testnet/...`.
+   - **Admin Controls:** If `NEXT_PUBLIC_ADMIN_ADDRESS` is set and matches your wallet address, emergency pause controls render on the dashboard (`AdminPauseControls.tsx`).
 
 ### Environment Files
 
-- `.env.development` — Local development defaults
+- `backend/.env.example` — Backend local defaults
+- `frontend/.env.example` — Frontend configuration template
+- `.env.development` / `frontend/.env.local` — Local development overrides
 - `.env.staging` — Testnet configuration
 - `.env.production` — Mainnet configuration (never commit secrets)
 
