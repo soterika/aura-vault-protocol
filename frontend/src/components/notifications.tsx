@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { useFormatter, useTranslations } from "next-intl";
+import { EmptyState } from "./EmptyState";
 
 export type NotificationType = "success" | "error" | "info" | "warning";
 
@@ -149,7 +150,7 @@ export function NotificationCenter() {
               <button onClick={clearAll} className="text-xs text-red-500 hover:underline">{t("clear")}</button>
             </div>
           </div>
-          {notifications.length === 0 ? <p className="p-6 text-center text-sm text-zinc-400">{t("empty")}</p> : (
+          {notifications.length === 0 ? <EmptyState variant="no-notifications" className="py-6" /> : (
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {[...notifications].reverse().slice(0, 20).map((item) => (
                 <button key={item.id} onClick={() => markRead(item.id)} className={`w-full p-3 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${!item.read ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""}`}>
