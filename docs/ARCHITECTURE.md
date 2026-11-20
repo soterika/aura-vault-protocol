@@ -521,3 +521,35 @@ cd ../frontend && npm ci && npm test
 - **Why `i128` everywhere?** SEP-41 uses `i128`; matching the type avoids implicit conversions and overflow edge cases.
 - **Why mock data in PerformanceCharts?** The `/api/vault/performance` endpoint falls back to deterministic mock data when unavailable, enabling frontend development without a live backend.
 - **Why cargo-deny in SAST?** `cargo-audit` catches CVEs in the dependency tree; `cargo-deny` enforces license compatibility and blocks newly-introduced advisories before they reach main.
+
+---
+
+## Localized Routes & Shared URLs
+
+The Next.js frontend uses `next-intl` (`frontend/src/i18n/routing.ts` and `frontend/middleware.ts`) to serve localized routes alongside unprefixed fallback routes.
+
+### Routing Configuration
+
+- **Supported locales**: `en`, `es`, `fr`, `de`, `zh`, `ar` (`defaultLocale: "en"`, `localeDetection: true`).
+- **Middleware matcher**: `/((?!_next|_vercel|.*\\..*).*)` intercepts page requests, detects the user's preferred locale, and applies locale routing headers/redirects.
+- **Strict `[locale]` segment validation**: `frontend/src/app/[locale]/layout.tsx` sets `export const dynamicParams = false;` and calls `notFound()` if `params.locale` is not in `routing.locales`.
+
+### Localized Entry Points
+
+| Route | Localized Entry Point (`frontend/src/app/[locale]/...`) | Unprefixed Equivalent | Query Params & Segment Handling |
+|---|---|---|---|
+| Home / Vault | `[locale]/page.tsx` | `app/page.tsx` | Preserves `?action=deposit\|withdraw` and `?amount=<n>` via `useDeepLink()` |
+| Dashboard | `[locale]/dashboard/page.tsx` | `app/dashboard/page.tsx` | Renders `VaultDashboard` under the active locale |
+| Transaction status | `[locale]/tx/[hash]/page.tsx` | `app/tx/[hash]/page.tsx` | Validates 64-char hex `hash` segment; "Share" copies `window.location.href` (preserving locale & query params); "Back to dashboard" retains locale & search params |
+| Referral landing | `[locale]/ref/[code]/page.tsx` | `app/ref/[code]/page.tsx` | Decodes base58 `code` segment, persists `aura_referral_code` in `localStorage`, and redirects to `/<locale>/dashboard` while retaining query params |
+| Settings | `[locale]/settings/page.tsx` | `app/settings/page.tsx` | Preserves locale and query params across `LanguageSwitcher` updates |
+| FAQ | `[locale]/faq/page.tsx` | `app/faq/page.tsx` | Renders localized FAQ content |
+
+### Fallback Behavior Examples
+
+- **Supported non-default locale** (e.g. `/es/tx/<64-hex-hash>?ref=abc`):
+  - `[locale]/layout.tsx` validates `"es"` against `routing.locales`, renders the Spanish locale context (`lang="es"`, `dir="ltr"`), and `[locale]/tx/[hash]/page.tsx` loads the transaction while keeping `/es` and `?ref=abc` intact on navigation.
+  - Similarly, `/es/ref/<code >?action=deposit&amount=100` stores the referral code and redirects to `/es/dashboard?action=deposit&amount=100`.
+- **Unsupported locale** (e.g. `/ja/tx/<64-hex-hash>` or `/xx/dashboard`):
+  - Because `dynamicParams = false` in `frontend/src/app/[locale]/layout.tsx`, Next.js rejects any `[locale]` segment not listed in `routing.locales` and renders the 404 `notFound()` response rather than serving broken translations.
+  - Unprefixed routes (e.g. `/dashboard`) without a valid locale prefix fall back to `defaultLocale` (`"en"`) via `next-intl` middleware (`localeDetection: true` may negotiate from `Accept-Language`).

@@ -22,15 +22,32 @@ jobs:
         working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check lockfile existence
+        id: lockfile
+        run: |
+          if [ -f "${{ matrix.package }}/package-lock.json" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.lockfile.outputs.exists == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - uses: actions/setup-node@v4
+        if: steps.lockfile.outputs.exists != 'true'
+        with:
+          node-version: 22
       - name: Audit dependencies
         id: audit
         continue-on-error: true
-        run: npm audit --audit-level=high --json > "${{ runner.temp }}/${{ matrix.package }}-npm-audit.json"
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm i --package-lock-only --ignore-scripts
+          fi
+          npm audit --audit-level=high --json > "${{ runner.temp }}/${{ matrix.package }}-npm-audit.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -60,6 +77,11 @@ jobs:
           key: cargo-audit-${{ runner.os }}
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --root "$HOME/.cargo"
+      - name: Ensure Cargo.lock exists
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            cargo generate-lockfile
+          fi
       - name: Audit Rust dependencies
         id: audit
         continue-on-error: true

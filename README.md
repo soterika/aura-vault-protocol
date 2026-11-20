@@ -36,6 +36,7 @@ Aura solves fragmented liquidity and manual yield compounding in Soroban DeFi. I
 
 The contract-to-frontend event pipeline, including retry and cache failure
 paths, is documented in [the event-driven architecture diagram](docs/ARCHITECTURE.md#event-driven-data-flow).
+Localized frontend routes, fallback rules, and shared URL parameter handling are documented in [Localized Routes & Shared URLs](docs/ARCHITECTURE.md#localized-routes--shared-urls).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

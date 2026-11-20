@@ -42,6 +42,8 @@ Pending → (2 votes accumulate)
        → Rejected (if rejected outright or deadline passes)
 ```
 
+For CLI invocation examples and the dashboard voter state-transition guide, see [GOVERNANCE_USAGE.md](GOVERNANCE_USAGE.md#dashboard-proposal-state-transitions-voter-guide).
+
 ## Storage Model
 
 All governance state stored in instance storage:
