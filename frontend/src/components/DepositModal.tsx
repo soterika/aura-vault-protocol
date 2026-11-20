@@ -24,6 +24,7 @@ import { useState, useEffect, useCallback } from "react";
 import { AccessibleModal, AmountInput, FormField, FormErrorMessage } from "./AccessibleFormComponents";
 import { UsdAmountConverter } from "./UsdAmountConverter";
 import TransactionProgress from "./TransactionProgress";
+import ShareMathConfirmationModal, { shouldSkipShareMathConfirmation } from "./ShareMathConfirmationModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -266,13 +267,23 @@ export function DepositModal({
     }
   }, []);
 
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  function requestConfirmOrSubmit() {
+    if (shouldSkipShareMathConfirmation()) {
+      void handleSubmit();
+    } else {
+      setShowConfirmation(true);
+    }
+  }
+
   async function handleNext() {
     if (step === 1) {
       if (!validate()) return;
       // Step 2 is now PreSignBreakdown which fetches its own fee data (#885)
       setStep(2);
     } else if (step === 2) {
-      await handleSubmit();
+      requestConfirmOrSubmit();
     }
   }
 
@@ -312,6 +323,7 @@ export function DepositModal({
   };
 
   return (
+    <>
     <AccessibleModal
       isOpen={isOpen}
       onClose={requestClose}
@@ -432,7 +444,7 @@ export function DepositModal({
           type="deposit"
           amount={amount}
           onCancel={() => setStep(1)}
-          onProceed={() => { void handleSubmit(); }}
+          onProceed={requestConfirmOrSubmit}
         />
       )}
 
@@ -553,7 +565,20 @@ export function DepositModal({
           )}
         </div>
       )}
-    </AccessibleModal>
+      </AccessibleModal>
+      <ShareMathConfirmationModal
+        isOpen={showConfirmation}
+        mode="deposit"
+        amount={amount}
+        totalShares={totalShares}
+        totalAssets={totalAssets}
+        onConfirm={() => {
+          setShowConfirmation(false);
+          void handleSubmit();
+        }}
+        onCancel={() => setShowConfirmation(false)}
+      />
+    </>
   );
 }
 

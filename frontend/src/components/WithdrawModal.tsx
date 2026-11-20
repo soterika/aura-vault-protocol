@@ -27,6 +27,7 @@ import {
 import { UsdAmountConverter } from "./UsdAmountConverter";
 import TransactionProgress from "./TransactionProgress";
 import StellarBaseFee from "./StellarBaseFee";
+import ShareMathConfirmationModal, { shouldSkipShareMathConfirmation } from "./ShareMathConfirmationModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -314,6 +315,16 @@ export function WithdrawModal({
     }
   }, []);
 
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  function requestConfirmOrSubmit() {
+    if (shouldSkipShareMathConfirmation()) {
+      void handleSubmit();
+    } else {
+      setShowConfirmation(true);
+    }
+  }
+
   async function handleNext() {
     if (step === 1) {
       if (!validate()) return;
@@ -328,7 +339,7 @@ export function WithdrawModal({
       }
       setStep(2);
     } else if (step === 2) {
-      await handleSubmit();
+      requestConfirmOrSubmit();
     }
   }
 
@@ -386,6 +397,7 @@ export function WithdrawModal({
   };
 
   return (
+    <>
     <AccessibleModal
       isOpen={isOpen}
       onClose={requestClose}
@@ -679,7 +691,21 @@ export function WithdrawModal({
           )}
         </div>
       )}
-    </AccessibleModal>
+      </AccessibleModal>
+      <ShareMathConfirmationModal
+        isOpen={showConfirmation}
+        mode="withdraw"
+        amount={shares}
+        totalShares={totalShares}
+        totalAssets={totalAssets}
+        shareSymbol={shareSymbol}
+        onConfirm={() => {
+          setShowConfirmation(false);
+          void handleSubmit();
+        }}
+        onCancel={() => setShowConfirmation(false)}
+      />
+    </>
   );
 }
 

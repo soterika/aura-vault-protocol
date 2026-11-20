@@ -187,6 +187,36 @@ body {
   to   { background-position: -200% 0; }
 }
 
+/* VaultStatsCard skeleton — 3 metric placeholders */
+.skeleton-stats-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.skeleton-stats-card__metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+  border-radius: var(--radius);
+  background: var(--color-surface, transparent);
+}
+
+/* APY sparkline rectangle placeholder */
+.skeleton-sparkline {
+  width: 100%;
+  border-radius: var(--radius);
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton-base) 25%,
+    var(--color-skeleton-shimmer) 50%,
+    var(--color-skeleton-base) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+
 /* Card skeleton grid */
 .skeleton-card-grid {
   display: grid;
