@@ -1,29 +1,24 @@
 # syntax=docker/dockerfile:1
 
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
-# Copy workspace files
-COPY package*.json ./
-COPY frontend/package*.json ./frontend/
-
-# Install dependencies
-RUN npm install --legacy-peer-deps
-
-# Copy source code
-COPY frontend ./frontend
-
-# Build application
+# Install the frontend dependencies from its own lockfile
 WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY frontend ./
+# Build application
 RUN npm run build
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -38,10 +33,12 @@ RUN adduser -S nextjs -u 1001
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next ./frontend/.next
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/public ./frontend/public
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/package*.json ./frontend/
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/next.config.ts ./frontend/
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/src/i18n ./frontend/src/i18n
 
 # Install only production dependencies
 WORKDIR /app/frontend
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # Switch to non-root user
 USER nextjs
