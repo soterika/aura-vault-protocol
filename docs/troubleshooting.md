@@ -96,6 +96,52 @@ or correct the fixture's value. Do not disable overflow checks as a workaround;
 the contract must remain safe under checked arithmetic. Include the failing
 operation and input when reporting an unresolved case.
 
+## Vault state: paused, capacity, or unknown capacity
+
+Use this section when the dashboard banner, the capacity bar, or a deposit
+error suggests that a vault is unavailable. The three states have different
+causes and different next steps.
+
+### Paused
+
+**Dashboard:** amber banner "⚠️ Vault operations are currently paused.
+Withdrawals remain available." and a disabled **Vault Paused** button.
+**Contract:** `is_paused()` returns `true`; mutating calls fail with error 11
+(`VaultPaused`).
+
+While paused, deposits, harvests, normal withdrawals, and queued-withdrawal
+claims revert. Read-only views still work, and `emergency_withdraw(caller,
+shares)` remains callable as the exit path (no fee, no queue, only while
+paused). Wait for an admin/GUARDIAN to call `unpause`; do not keep retrying
+deposits. The normal Withdraw button is disabled during a pause — the exit
+path is `emergency_withdraw` or an admin `unpause`.
+
+### Capacity limit reached
+
+**Dashboard:** red capacity bar reading `Vault Capacity: 100.0% full` with
+`Remaining 0.00`; deposits fail with error 16 (`TvlCapExceeded`). At 80–95%
+the bar is amber and deposits still work.
+
+Check `get_tvl_caps()` / `get_tvl_cap()`, then deposit only up to the
+remaining capacity or withdraw to free capacity. Only an admin can raise or
+remove the cap.
+
+### Capacity information unavailable
+
+**Dashboard:** the capacity section is missing entirely, or the dashboard
+shows `Failed to load vault data` with a `Retry` button. This means the stats
+request failed or returned no `tvl_cap`; note that `tvl_cap: null` can also
+mean that no cap is configured.
+
+Check `GET /api/v1/vault/stats` (including the `X-Cache` header), then query
+`get_tvl_caps()` directly. Deposits and withdrawals still follow the on-chain
+state, so the dashboard being unavailable does not by itself mean the vault is
+paused or full.
+
+See [SUPPORT_FAQ.md](../SUPPORT_FAQ.md#vault-states-paused-capacity-limited-and-unknown-capacity)
+for example dashboard messages, the actions that remain available in each
+state, and the information to include when escalating.
+
 ## Still stuck?
 
 Capture the exact command, package directory, toolchain versions, and the
