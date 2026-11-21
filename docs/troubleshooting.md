@@ -3,6 +3,14 @@
 Use the command from the repository root unless a step says otherwise. After
 changing environment variables, restart the affected service.
 
+For an app transaction that is pending or failed, follow the
+[transaction support checklist](support-escalation.md#transaction-support-checklist).
+Include the selected network, approximate time, exact on-screen error/reference,
+and transaction hash if one was created. If there is no hash, note whether the
+flow stopped before approval, during signing, or during submission. Never share
+seed phrases, private keys, wallet passwords, access tokens, or signed
+transaction envelopes.
+
 ## `Error: EADDRINUSE: address already in use :::3001`
 
 **Cause:** Another process owns port 3001 (often a previous backend dev server).
