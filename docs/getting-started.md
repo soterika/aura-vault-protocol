@@ -1,6 +1,8 @@
 # Getting Started with Aura Vault
 
 For local setup failures, see the [troubleshooting guide](troubleshooting.md).
+For what Settings saves on this device versus to your account, see
+[Settings persistence](ARCHITECTURE.md#settings-persistence).
 
 Aura Vault is a yield-generating vault on the Stellar network. You deposit tokens, receive vault shares, and your shares automatically grow in value as the vault earns yield — no manual compounding required.
 
