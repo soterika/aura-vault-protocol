@@ -108,7 +108,11 @@ Reviewers must verify the changelog entry as part of the PR review.
 - **Versioning policy** (this section) — MAJOR/MINOR/PATCH criteria for contract, API, and frontend; PR merge requirements; git tagging convention. Closes #399.
 
 ### Changed
+- Updated Next.js and frontend tooling, removed unused wallet packages, and adopted Node.js 22 in CI.
 - **Stellar deployment instructions** — require Stellar CLI v21.3.0+, use the `stellar` command and `--source` identity syntax, and reject older CLI versions in deployment scripts.
+
+### Security
+- Updated the backend Stellar SDK and compression dependencies to address nightly audit findings.
 
 ---
 
