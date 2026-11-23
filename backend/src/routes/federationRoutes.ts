@@ -4,7 +4,7 @@ import { ipRateLimiter } from '../middleware/rateLimitMiddleware.js';
 
 export const federationRouter = Router();
 const addressSchema = z.string().regex(/^G[A-Z2-7]{55}$/);
-const resolveRateLimiter = ipRateLimiter({ bucketKey: 'rl:federation:ip', limit: 30, windowMs: 60_000 });
+const resolveRateLimiter = ipRateLimiter({ capacity: 30, refillRate: 0.5 }, 'rl:federation:ip');
 const aliasCache = new Map<string, { alias: string | null; expiresAt: number }>();
 
 federationRouter.get('/resolve', resolveRateLimiter, async (req: Request, res: Response): Promise<void> => {

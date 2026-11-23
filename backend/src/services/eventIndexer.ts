@@ -213,7 +213,7 @@ export class EventBuffer {
       totalBatchesFlushed += 1;
     } catch (err) {
       errors.push(String(err));
-      logger.error(`[event-indexer] batch insert failed:`, err);
+      logger.error({ err }, "[event-indexer] batch insert failed");
     }
 
     // Record average lag for this batch

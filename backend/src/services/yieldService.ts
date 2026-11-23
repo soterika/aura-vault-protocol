@@ -90,7 +90,7 @@ export function totalCompoundYield(
 
 export function createYieldService(opts: YieldServiceOptions = {}) {
   const batchSize = opts.batchSize ?? 500;
-  const alert = opts.onAlert ?? ((msg, meta) => logger.error(`[YieldService] ALERT: ${msg}`, meta ?? ""));
+  const alert = opts.onAlert ?? ((msg, meta) => logger.error({ err: meta ?? "" }, `[YieldService] ALERT: ${msg}`));
 
   /**
    * Calculate yield for a single position at the given date.

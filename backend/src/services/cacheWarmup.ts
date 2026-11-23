@@ -99,7 +99,7 @@ async function warmVaultStats(): Promise<number> {
     { data: stats, cached_at: Date.now() },
     TTL.VAULT_STATS
   );
-  logger.info("[cache-warm] vault stats cached", { apy: stats.apy, total_assets: stats.total_assets });
+  logger.info({ apy: stats.apy, total_assets: stats.total_assets }, "[cache-warm] vault stats cached");
   return 1;
 }
 
@@ -135,7 +135,7 @@ async function warmSharePrice(): Promise<number> {
   };
 
   await cacheSet(WARM_NS.SHARE_PRICE, SHARE_PRICE_KEY, payload, TTL.SHARE_PRICE);
-  logger.info("[cache-warm] share price cached", { price });
+  logger.info({ price }, "[cache-warm] share price cached");
   return 1;
 }
 
@@ -198,7 +198,7 @@ async function warmTopDepositors(): Promise<number> {
     TTL.TOP_DEPOSITORS
   );
 
-  logger.info("[cache-warm] top depositors cached", { count: depositors.length });
+  logger.info({ count: depositors.length }, "[cache-warm] top depositors cached");
   return depositors.length > 0 ? 1 : 0;
 }
 
@@ -257,15 +257,15 @@ export async function runCacheWarmup(): Promise<void> {
   const warmupWork = async (): Promise<void> => {
     const tasks = [
       warmVaultStats().catch((err) => {
-        logger.warn("[cache-warm] vault stats failed", { error: String(err) });
+        logger.warn({ error: String(err) }, "[cache-warm] vault stats failed");
         return 0;
       }),
       warmSharePrice().catch((err) => {
-        logger.warn("[cache-warm] share price failed", { error: String(err) });
+        logger.warn({ error: String(err) }, "[cache-warm] share price failed");
         return 0;
       }),
       warmTopDepositors().catch((err) => {
-        logger.warn("[cache-warm] top depositors failed", { error: String(err) });
+        logger.warn({ error: String(err) }, "[cache-warm] top depositors failed");
         return 0;
       }),
     ];
@@ -288,20 +288,20 @@ export async function runCacheWarmup(): Promise<void> {
     const durationMs = _warmupFinishedAt - _warmupStartedAt;
     _warmupStatus = "ready";
 
-    logger.info("[cache-warm] warm-up complete", {
+    logger.info({
       durationMs,
       itemsCached: _itemsCached,
-    });
+    }, "[cache-warm] warm-up complete");
 
     await recordMetrics(durationMs, _itemsCached);
   } catch (err) {
     _warmupFinishedAt = Date.now();
     _warmupStatus = "failed";
 
-    logger.error("[cache-warm] warm-up failed — startup will continue", {
+    logger.error({
       error: String(err),
       durationMs: _warmupFinishedAt - _warmupStartedAt,
-    });
+    }, "[cache-warm] warm-up failed — startup will continue");
 
     // Record failure metrics (best-effort)
     await recordMetrics(

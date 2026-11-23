@@ -36,7 +36,7 @@ v1Router.use('/queue', queueRouter);
 v1Router.use('/vault', vaultRouter);
 v1Router.use('/users/preferences', authenticate, userPreferencesRouter);
 // Issue #934: Public per-user transaction volume aggregation — no auth required
-v1Router.use('/users', volumeRouter);
+v1Router.use('/users', analyticsRouter);
 v1Router.use('/analytics', analyticsRouter);
 // Issue #946: Alert subscription CRUD — auth applied inside the router
 v1Router.use('/alerts', alertsRouter);

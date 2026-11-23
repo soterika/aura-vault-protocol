@@ -321,7 +321,7 @@ export async function syncVaultStats(
   horizonUrl: string = process.env.HORIZON_URL ?? "https://horizon-testnet.stellar.org"
 ): Promise<void> {
   try {
-    const { SorobanRpc, Contract } = await import("@stellar/stellar-sdk");
+    const { rpc: SorobanRpc, Contract } = await import("@stellar/stellar-sdk");
     const server = new SorobanRpc.Server(horizonUrl, {
       allowHttp: horizonUrl.startsWith("http://"),
     });
@@ -354,14 +354,12 @@ export async function syncVaultStats(
 
         const simResult = await server.simulateTransaction(txForSim);
         if (SorobanRpc.Api.isSimulationSuccess(simResult) && simResult.result) {
-          // result.retval is an xdr.ScVal — extract the i128/u64 value
-          const xdrVal = simResult.result.retval;
-          const { xdr } = await import("@stellar/stellar-sdk");
-          const scVal = xdr.ScVal.fromXDR(
-            Buffer.from(xdrVal.toXDR("base64"), "base64")
-          );
-          if (scVal.switch().name === "scvI128" || scVal.switch().name === "scvU64") {
-            tvl = scVal.i128?.lo()?.toString() ?? scVal.u64()?.toString() ?? "0";
+          const value = simResult.result.retval;
+          if (value.type === "scvI128") {
+            const { hi, lo } = value.i128;
+            tvl = ((hi << 64n) | lo).toString();
+          } else if (value.type === "scvU64") {
+            tvl = value.u64.toString();
           }
         }
       }
@@ -379,17 +377,17 @@ export async function syncVaultStats(
       last_synced_at: new Date().toISOString(),
     });
 
-    logger.info("[VaultRegistryService] Vault stats synced", {
+    logger.info({
       vaultId: vault.id,
       contractId: vault.contract_id,
       tvl,
-    });
+    }, "[VaultRegistryService] Vault stats synced");
   } catch (err) {
-    logger.error("[VaultRegistryService] Failed to sync vault stats", {
+    logger.error({
       vaultId: vault.id,
       contractId: vault.contract_id,
       err,
-    });
+    }, "[VaultRegistryService] Failed to sync vault stats");
   }
 }
 
@@ -415,7 +413,7 @@ export function startVaultSyncJob(
         page.vaults.map((v) => syncVaultStats(v, horizonUrl))
       );
     } catch (err) {
-      logger.error("[VaultSyncJob] Unexpected error during sync run", { err });
+      logger.error({ err }, "[VaultSyncJob] Unexpected error during sync run");
     }
   };
 
@@ -423,9 +421,9 @@ export function startVaultSyncJob(
   void run();
   syncTimer = setInterval(() => void run(), VAULT_SYNC_INTERVAL_MS);
 
-  logger.info("[VaultSyncJob] Background vault sync started", {
+  logger.info({
     intervalMs: VAULT_SYNC_INTERVAL_MS,
-  });
+  }, "[VaultSyncJob] Background vault sync started");
 }
 
 /** Stop the background sync job. */

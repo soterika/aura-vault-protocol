@@ -57,7 +57,7 @@ gasRouter.get('/prices', async (req: Request, res: Response): Promise<void> => {
     const estimate = await gasService.estimate(chainId, gasLimit, forceRefresh);
     res.success(estimate);
   } catch (err) {
-    logger.error('[gas]', err);
+    logger.error({ err: err }, '[gas]');
     res.failure(INTERNAL_ERROR, 'Unable to estimate gas prices', 500);
   }
 });
@@ -79,7 +79,7 @@ gasRouter.get('/history', async (req: Request, res: Response): Promise<void> => 
     );
     res.success({ chainId, data, nextCursor });
   } catch (err) {
-    logger.error('[gas-history]', err);
+    logger.error({ err: err }, '[gas-history]');
     res.failure(INTERNAL_ERROR, 'Unable to load gas history', 500);
   }
 });
@@ -89,7 +89,7 @@ gasRouter.get('/metrics', async (_req: Request, res: Response): Promise<void> =>
     const metrics = gasService.getMetrics();
     res.success(metrics);
   } catch (err) {
-    logger.error('[gas-metrics]', err);
+    logger.error({ err: err }, '[gas-metrics]');
     res.failure(INTERNAL_ERROR, 'Unable to load metrics', 500);
   }
 });

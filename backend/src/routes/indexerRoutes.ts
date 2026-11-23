@@ -19,7 +19,7 @@ import {
   type VaultEvent,
 } from "../services/eventIndexer.js";
 import { logger } from "../logger.js";
-import { dispatchEvent } from "../webhook.js";
+import { dispatchWebhookEvent } from "../webhook.js";
 import { invalidateAnalyticsCaches } from "../services/analyticsCache.js";
 
 export const indexerRouter = Router();
@@ -86,13 +86,14 @@ indexerRouter.post(
             ? undefined
             : String(rawPayload.reason);
 
-        dispatchEvent(
-          event.type === "pause" ? "vault.paused" : "vault.unpaused",
+        await dispatchWebhookEvent(
+          event.type,
           {
             timestamp: new Date(event.ledgerTimestamp * 1000).toISOString(),
             admin_address: event.callerAddress,
             ...(reason ? { reason } : {}),
-          }
+          },
+          event.id
         );
       }
 
@@ -109,7 +110,7 @@ indexerRouter.post(
         ),
       });
     } catch (err) {
-      logger.error("[indexer-route]", err);
+      logger.error({ err: err }, "[indexer-route]");
       res.status(500).json({ error: "Failed to process events" });
     }
   }

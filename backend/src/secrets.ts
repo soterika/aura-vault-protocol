@@ -87,27 +87,27 @@ async function fetchFromAws(secretId: string): Promise<SecretMap> {
     cache.set(secretId, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 
     // Log safe metadata only — never log the values themselves
-    logger.info('[secrets] fetched from AWS Secrets Manager', {
+    logger.info({
       secretId,
       keyCount: Object.keys(value).length,
       keys: Object.keys(value),
-    });
+    }, '[secrets] fetched from AWS Secrets Manager');
 
     return value;
   } catch (err) {
     if (err instanceof SecretsManagerServiceException) {
       // Sanitise: log only the error code — never any secret payload
       const smErr = err as { name: string };
-      logger.error('[secrets] AWS Secrets Manager error', {
+      logger.error({
         errorCode: smErr.name,
         secretId,
         // Do not include err.message — it may contain partial secret data
-      });
+      }, '[secrets] AWS Secrets Manager error');
     } else {
-      logger.error('[secrets] unexpected error fetching secret', {
+      logger.error({
         secretId,
         // Omit err details for safety
-      });
+      }, '[secrets] unexpected error fetching secret');
     }
     throw err as Error;
   }
@@ -171,13 +171,13 @@ export async function loadSecretsAtStartup(): Promise<void> {
   }
   try {
     await fetchFromAws(APP_SECRETS_ID);
-    logger.info('[secrets] startup load complete', { secretId: APP_SECRETS_ID });
+    logger.info({ secretId: APP_SECRETS_ID }, '[secrets] startup load complete');
   } catch {
     // Do not rethrow — let the app start so health probes pass.
     // The app will fail on the first request that needs the secret.
-    logger.error('[secrets] startup load failed — check IAM permissions and APP_SECRETS_ID', {
+    logger.error({
       secretId: APP_SECRETS_ID,
-    });
+    }, '[secrets] startup load failed — check IAM permissions and APP_SECRETS_ID');
   }
 }
 
@@ -197,10 +197,10 @@ export function startSecretsRefresh(): void {
     });
   }, REFRESH_INTERVAL_MS);
 
-  logger.info('[secrets] background refresh started', {
+  logger.info({
     intervalMs: REFRESH_INTERVAL_MS,
     secretId: APP_SECRETS_ID,
-  });
+  }, '[secrets] background refresh started');
 }
 
 /**

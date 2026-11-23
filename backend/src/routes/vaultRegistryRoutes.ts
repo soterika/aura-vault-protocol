@@ -100,7 +100,7 @@ vaultRegistryRouter.get("/", async (req: Request, res: Response): Promise<void> 
     const { vaults, total } = await listVaults(page, pageSize, network);
     res.json(paginatedResponse(vaults, page, pageSize, total));
   } catch (err) {
-    logger.error("[vaults/list]", { err });
+    logger.error({ err }, "[vaults/list]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to list vaults"));
   }
 });
@@ -109,7 +109,7 @@ vaultRegistryRouter.get("/", async (req: Request, res: Response): Promise<void> 
  * GET /api/v1/vaults/:id
  * Returns a single vault by ID (including inactive, for admin visibility).
  */
-vaultRegistryRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
+vaultRegistryRouter.get("/:id", async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     res.status(400).json(errorResponse("INVALID_PARAM", "Invalid vault ID"));
@@ -124,7 +124,7 @@ vaultRegistryRouter.get("/:id", async (req: Request, res: Response): Promise<voi
     }
     res.json(successResponse(vault));
   } catch (err) {
-    logger.error("[vaults/get]", { err });
+    logger.error({ err }, "[vaults/get]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve vault"));
   }
 });
@@ -152,7 +152,7 @@ vaultRegistryRouter.post("/", authenticateAdmin, async (req: Request, res: Respo
       res.status(409).json(errorResponse("CONFLICT", "A vault with this contract_id already exists"));
       return;
     }
-    logger.error("[vaults/create]", { err });
+    logger.error({ err }, "[vaults/create]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to register vault"));
   }
 });
@@ -164,7 +164,7 @@ vaultRegistryRouter.post("/", authenticateAdmin, async (req: Request, res: Respo
  * Semantically the same as PATCH in this context: fields not included in the
  * body are left unchanged (partial updates are supported by both verbs here).
  */
-vaultRegistryRouter.put("/:id", authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
+vaultRegistryRouter.put("/:id", authenticateAdmin, async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     res.status(400).json(errorResponse("INVALID_PARAM", "Invalid vault ID"));
@@ -185,7 +185,7 @@ vaultRegistryRouter.put("/:id", authenticateAdmin, async (req: Request, res: Res
     }
     res.json(successResponse(vault));
   } catch (err) {
-    logger.error("[vaults/put]", { err });
+    logger.error({ err }, "[vaults/put]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to update vault"));
   }
 });
@@ -194,7 +194,7 @@ vaultRegistryRouter.put("/:id", authenticateAdmin, async (req: Request, res: Res
  * PATCH /api/v1/vaults/:id
  * Partial update of vault metadata.
  */
-vaultRegistryRouter.patch("/:id", authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
+vaultRegistryRouter.patch("/:id", authenticateAdmin, async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     res.status(400).json(errorResponse("INVALID_PARAM", "Invalid vault ID"));
@@ -215,7 +215,7 @@ vaultRegistryRouter.patch("/:id", authenticateAdmin, async (req: Request, res: R
     }
     res.json(successResponse(vault));
   } catch (err) {
-    logger.error("[vaults/update]", { err });
+    logger.error({ err }, "[vaults/update]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to update vault"));
   }
 });
@@ -224,7 +224,7 @@ vaultRegistryRouter.patch("/:id", authenticateAdmin, async (req: Request, res: R
  * DELETE /api/v1/vaults/:id
  * Soft-deactivate a vault. Historical data is preserved.
  */
-vaultRegistryRouter.delete("/:id", authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
+vaultRegistryRouter.delete("/:id", authenticateAdmin, async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     res.status(400).json(errorResponse("INVALID_PARAM", "Invalid vault ID"));
@@ -239,7 +239,7 @@ vaultRegistryRouter.delete("/:id", authenticateAdmin, async (req: Request, res: 
     }
     res.json(successResponse({ message: "Vault deactivated", vault }));
   } catch (err) {
-    logger.error("[vaults/deactivate]", { err });
+    logger.error({ err }, "[vaults/deactivate]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to deactivate vault"));
   }
 });

@@ -66,11 +66,11 @@ function handleReferralError(err: unknown, res: Response): void {
   if (err instanceof z.ZodError) {
     res.status(400).json({
       error: "Validation failed",
-      details: err.errors.map((e) => ({ field: e.path.join("."), message: e.message })),
+      details: err.issues.map((e) => ({ field: e.path.join("."), message: e.message })),
     });
     return;
   }
-  logger.error("[referral-route]", err);
+  logger.error({ err: err }, "[referral-route]");
   res.status(500).json({ error: "Internal server error" });
 }
 

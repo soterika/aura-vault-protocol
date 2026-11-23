@@ -28,7 +28,7 @@ yieldRouter.get('/history', async (req: Request, res: Response): Promise<void> =
     );
     res.success({ history: rows });
   } catch (error) {
-    logger.error('[yield/history]', error);
+    logger.error({ err: error }, '[yield/history]');
     res.failure(INTERNAL_ERROR, 'Yield history is temporarily unavailable', 503);
   }
 });
@@ -50,7 +50,7 @@ yieldRouter.post('/calculate', async (req: Request, res: Response): Promise<void
     const result = await yieldService.processBatch(positions, sources, date);
     res.success(result);
   } catch (err) {
-    logger.error('[yield/calculate]', err);
+    logger.error({ err: err }, '[yield/calculate]');
     res.failure(INTERNAL_ERROR, 'Yield calculation failed', 500);
   }
 });
@@ -79,7 +79,7 @@ yieldRouter.post('/backfill', async (req: Request, res: Response): Promise<void>
     const results = await yieldService.backfill(positions, sources, start, end);
     res.success({ slots: results.length, results });
   } catch (err) {
-    logger.error('[yield/backfill]', err);
+    logger.error({ err: err }, '[yield/backfill]');
     res.failure(INTERNAL_ERROR, 'Backfill failed', 500);
   }
 });
@@ -110,7 +110,7 @@ yieldRouter.get('/stats', async (req: Request, res: Response): Promise<void> => 
       nextCursor,
     });
   } catch (err) {
-    logger.error('[yield/stats]', err);
+    logger.error({ err: err }, '[yield/stats]');
     res.failure(INTERNAL_ERROR, 'Failed to retrieve yield stats', 500);
   }
 });

@@ -242,7 +242,7 @@ governanceRouter.get("/proposals", authenticate, (req: Request, res: Response): 
       })
     );
   } catch (err) {
-    logger.error("[governance/proposals]", err);
+    logger.error({ err: err }, "[governance/proposals]");
     res
       .status(500)
       .json(errorResponse("INTERNAL_ERROR", "Failed to fetch proposals"));
@@ -252,7 +252,7 @@ governanceRouter.get("/proposals", authenticate, (req: Request, res: Response): 
 /**
  * GET /api/v1/governance/proposals/:id
  */
-governanceRouter.get("/proposals/:id", authenticate, (req: Request, res: Response): void => {
+governanceRouter.get("/proposals/:id", authenticate, (req: Request<{ id: string }>, res: Response): void => {
   const proposal = proposals.get(req.params.id);
   if (!proposal) {
     res
@@ -275,7 +275,7 @@ governanceRouter.get("/proposals/:id", authenticate, (req: Request, res: Respons
 governanceRouter.post(
   "/proposals/:id/vote",
   authenticate,
-  (req: Request, res: Response): void => {
+  (req: Request<{ id: string }>, res: Response): void => {
     const proposal = proposals.get(req.params.id);
     if (!proposal) {
       res
@@ -348,12 +348,12 @@ governanceRouter.post(
     // Broadcast SSE update
     broadcastProposalUpdate(proposal);
 
-    logger.info("[governance/vote]", {
+    logger.info({
       proposalId: proposal.id,
       signer,
       votesFor: proposal.votesFor,
       status: proposal.status,
-    });
+    }, "[governance/vote]");
 
     res.json(
       successResponse({
@@ -376,7 +376,7 @@ governanceRouter.post(
 governanceRouter.post(
   "/proposals/:id/execute",
   authenticate,
-  (req: Request, res: Response): void => {
+  (req: Request<{ id: string }>, res: Response): void => {
     const proposal = proposals.get(req.params.id);
     if (!proposal) {
       res
@@ -416,10 +416,10 @@ governanceRouter.post(
 
     broadcastProposalUpdate(proposal);
 
-    logger.info("[governance/execute]", {
+    logger.info({
       proposalId: proposal.id,
       executedAt: new Date().toISOString(),
-    });
+    }, "[governance/execute]");
 
     res.json(
       successResponse({

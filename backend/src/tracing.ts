@@ -130,7 +130,7 @@ export async function shutdownTracing(): Promise<void> {
     await sdk.shutdown();
     logger.info('[OTel] Tracing shut down');
   } catch (err) {
-    logger.error('[OTel] Shutdown error:', err);
+    logger.error({ err: err }, '[OTel] Shutdown error:');
   }
 }
 

@@ -138,7 +138,7 @@ router.get(
       res.setHeader("X-Cache", "MISS");
       res.json(data);
     } catch (err) {
-      logger.error("[portfolio]", err);
+      logger.error({ err: err }, "[portfolio]");
 
       res.status(500).json({
         error: "Internal server error",

@@ -19,6 +19,7 @@
  *  - XDR structure validated before network submission
  */
 
+import { idempotency } from "../middleware/idempotencyMiddleware.js";
 import { Router, Request, Response } from "express";
 import { authenticate } from "../middleware/authMiddleware.js";
 import { userRateLimiter, transactionRateLimiter } from "../middleware/rateLimitMiddleware.js";
@@ -66,7 +67,7 @@ function handleVaultError(err: unknown, res: Response): void {
     return;
   }
 
-  logger.error("[vault]", err);
+  logger.error({ err: err }, "[vault]");
   res.status(500).json({
     success: false,
     error: {

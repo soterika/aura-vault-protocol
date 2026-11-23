@@ -1,3 +1,4 @@
+import { getVaultPaused, setVaultPaused } from "../services/vaultPauseState.js";
 /**
  * Admin API Routes — Issue #854 / #263
  *
@@ -28,7 +29,6 @@ export const adminRouter = Router();
 
 // In-memory pause state.
 // In production, persist this to DB or the on-chain contract.
-let vaultPaused = false;
 
 // ---------------------------------------------------------------------------
 // Audit helper
@@ -50,7 +50,7 @@ async function auditLog(
     );
   } catch (err) {
     // Never crash on audit failure — log and continue
-    logger.error('[admin audit] Failed to write audit log', { action, err: String(err) });
+    logger.error({ action, err: String(err) }, '[admin audit] Failed to write audit log');
   }
 }
 
@@ -75,7 +75,7 @@ adminRouter.get('/status', async (req: Request, res: Response): Promise<void> =>
 
     res.json({
       vault: {
-        paused: vaultPaused,
+        paused: getVaultPaused(),
         total_assets: vaultStats.total_assets,
         total_shares: vaultStats.total_shares,
         apy: vaultStats.apy,
@@ -85,7 +85,7 @@ adminRouter.get('/status', async (req: Request, res: Response): Promise<void> =>
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error('[admin/status] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/status] error');
     res.status(500).json({ error: 'Failed to fetch vault status' });
   }
 });
@@ -99,13 +99,13 @@ adminRouter.post('/pause', async (req: Request, res: Response): Promise<void> =>
   const performedBy = user?.sub ?? 'unknown';
 
   try {
-    if (vaultPaused) {
+    if (getVaultPaused()) {
       res.status(409).json({ error: 'Vault is already paused' });
       return;
     }
 
-    vaultPaused = true;
-    logger.warn('[admin] Vault PAUSED', { by: performedBy });
+    setVaultPaused(true);
+    logger.warn({ by: performedBy }, '[admin] Vault PAUSED');
 
     await auditLog(
       'vault.pause',
@@ -117,7 +117,7 @@ adminRouter.post('/pause', async (req: Request, res: Response): Promise<void> =>
     res.json({ paused: true, timestamp: new Date().toISOString() });
   } catch (err) {
     await auditLog('vault.pause', performedBy, req.ip, {}, 'failure');
-    logger.error('[admin/pause] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/pause] error');
     res.status(500).json({ error: 'Failed to pause vault' });
   }
 });
@@ -131,13 +131,13 @@ adminRouter.post('/unpause', async (req: Request, res: Response): Promise<void> 
   const performedBy = user?.sub ?? 'unknown';
 
   try {
-    if (!vaultPaused) {
+    if (!getVaultPaused()) {
       res.status(409).json({ error: 'Vault is not paused' });
       return;
     }
 
-    vaultPaused = false;
-    logger.info('[admin] Vault UNPAUSED', { by: performedBy });
+    setVaultPaused(false);
+    logger.info({ by: performedBy }, '[admin] Vault UNPAUSED');
 
     await auditLog(
       'vault.unpause',
@@ -149,7 +149,7 @@ adminRouter.post('/unpause', async (req: Request, res: Response): Promise<void> 
     res.json({ paused: false, timestamp: new Date().toISOString() });
   } catch (err) {
     await auditLog('vault.unpause', performedBy, req.ip, {}, 'failure');
-    logger.error('[admin/unpause] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/unpause] error');
     res.status(500).json({ error: 'Failed to unpause vault' });
   }
 });
@@ -166,7 +166,7 @@ adminRouter.get('/queue', async (_req: Request, res: Response): Promise<void> =>
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error('[admin/queue] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/queue] error');
     res.status(500).json({ error: 'Failed to fetch queue stats' });
   }
 });
@@ -232,7 +232,7 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response): Promise<void
       entityId: '*',
       action: 'AUDIT_LOG_ACCESS',
       metadata: { filters: { action, userId: userId ?? actor, from, to }, page: effectivePage, pageSize: effectivePageSize },
-    }).catch((error) => logger.error('[admin/audit-logs] failed to record access audit', { error: String(error) }));
+    }).catch((error) => logger.error({ error: String(error) }, '[admin/audit-logs] failed to record access audit'));
 
     res.json(paginatedResponse(result.logs.map((log) => ({
         ...log,
@@ -241,7 +241,7 @@ adminRouter.get('/audit-logs', async (req: Request, res: Response): Promise<void
         metadata: redactAuditIp(log.metadata) as Record<string, unknown>,
       })), effectivePage, effectivePageSize, result.total));
   } catch (err) {
-    logger.error('[admin/audit-logs] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/audit-logs] error');
     res.status(500).json({ error: 'Failed to fetch audit logs' });
   }
 });
@@ -279,7 +279,7 @@ adminRouter.get('/upgrade/info', async (_req: Request, res: Response): Promise<v
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error('[admin/upgrade/info] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/upgrade/info] error');
     res.status(500).json({ error: 'Failed to fetch upgrade info' });
   }
 });
@@ -334,7 +334,7 @@ adminRouter.post('/upgrade', async (req: Request, res: Response): Promise<void> 
         threshold,
       });
 
-      logger.info('[admin] Upgrade proposal created', { proposalId, by: performedBy });
+      logger.info({ proposalId, by: performedBy }, '[admin] Upgrade proposal created');
 
       res.status(202).json({
         status: 'pending_signatures',
@@ -353,10 +353,10 @@ adminRouter.post('/upgrade', async (req: Request, res: Response): Promise<void> 
         reason: reason ?? null,
       });
 
-      logger.warn('[admin] Upgrade authorised (single-admin)', {
+      logger.warn({
         new_wasm_hash,
         by: performedBy,
-      });
+      }, '[admin] Upgrade authorised (single-admin)');
 
       res.json({
         status: 'authorised',
@@ -368,7 +368,7 @@ adminRouter.post('/upgrade', async (req: Request, res: Response): Promise<void> 
     }
   } catch (err) {
     await auditLog('vault.upgrade', performedBy, req.ip, { new_wasm_hash }, 'failure');
-    logger.error('[admin/upgrade] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/upgrade] error');
     res.status(500).json({ error: 'Failed to initiate upgrade' });
   }
 });
@@ -391,7 +391,7 @@ adminRouter.get('/multisig/ops', async (_req: Request, res: Response): Promise<v
     );
     res.json({ proposals: rows, timestamp: new Date().toISOString() });
   } catch (err) {
-    logger.error('[admin/multisig/ops] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/multisig/ops] error');
     res.status(500).json({ error: 'Failed to fetch multi-sig proposals' });
   }
 });
@@ -460,7 +460,7 @@ adminRouter.post('/multisig/sign', async (req: Request, res: Response): Promise<
       new_status: newStatus,
     });
 
-    logger.info('[admin] Multi-sig signed', { proposal_id, signer, newStatus });
+    logger.info({ proposal_id, signer, newStatus }, '[admin] Multi-sig signed');
 
     res.json({
       proposal_id,
@@ -470,7 +470,7 @@ adminRouter.post('/multisig/sign', async (req: Request, res: Response): Promise<
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error('[admin/multisig/sign] error', { err: String(err) });
+    logger.error({ err: String(err) }, '[admin/multisig/sign] error');
     res.status(500).json({ error: 'Failed to sign proposal' });
   }
 });

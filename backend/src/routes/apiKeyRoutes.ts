@@ -30,7 +30,7 @@ apiKeyRouter.post('/', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-apiKeyRouter.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+apiKeyRouter.delete('/:id', async (req: Request<{ id: string }>, res: Response): Promise<void> => {
   if (req.header('X-API-Key')) {
     res.status(403).json({ error: 'API keys cannot create or manage other API keys' });
     return;

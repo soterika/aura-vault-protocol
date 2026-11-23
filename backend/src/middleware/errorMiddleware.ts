@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "../logger.js";
-import { ERROR_CODES } from "../errorCodes.js";
+import { INVALID_INPUT } from "./errorCodes.js";
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -88,8 +88,8 @@ export function errorHandler(
     res.status(400).json({
       success: false,
       error: {
-        code: ERROR_CODES.INVALID_INPUT,
-        message: errorMessages[ERROR_CODES.INVALID_INPUT],
+        code: INVALID_INPUT,
+        message: errorMessages[INVALID_INPUT],
         details,
       },
       meta: {
