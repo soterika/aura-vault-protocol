@@ -14,7 +14,8 @@ dist
 build
 .DS_Store
 *.md
-docs
+docs/*
+!docs/openapi.yaml
 .cypress
 .vscode
 .idea
