@@ -110,6 +110,9 @@ Reviewers must verify the changelog entry as part of the PR review.
 ### Changed
 - **Stellar deployment instructions** — require Stellar CLI v21.3.0+, use the `stellar` command and `--source` identity syntax, and reject older CLI versions in deployment scripts.
 
+### Security
+- Updated the backend Stellar SDK, compression middleware, and transitive dependencies to address high-severity npm advisories.
+
 ---
 
 ## [0.2.0] — 2026-06-24
