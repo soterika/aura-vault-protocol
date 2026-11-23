@@ -28,8 +28,8 @@ export interface VaultStatsResult {
 
 // ── Fetcher ────────────────────────────────────────────────────────────────
 
-async function fetchVaultStats(): Promise<RawVaultStats> {
-  const res = await fetch("/api/v1/vault/stats");
+async function fetchVaultStats(url: string): Promise<RawVaultStats> {
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   // Support both flat and envelope response shapes
@@ -43,9 +43,9 @@ async function fetchVaultStats(): Promise<RawVaultStats> {
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
-export function useVaultStats(): VaultStatsResult {
+export function useVaultStats(url = "/api/v1/vault/stats"): VaultStatsResult {
   const { data, isLoading, error } = useSWR<RawVaultStats>(
-    "/api/v1/vault/stats",
+    url,
     fetchVaultStats,
     { refreshInterval: 15_000, revalidateOnFocus: false }
   );
