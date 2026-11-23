@@ -406,7 +406,7 @@ Hi {{userName}},
 Here's your weekly portfolio summary for {{walletAddress}}:
 
 Share Balance:          {{shareBalance}} shares
-USD Value:              ${{usdValue}}
+USD Value:              \${{usdValue}}
 Week-over-Week Change:  {{changeSign}}{{changeWow}}%
 APY This Week:          {{apyThisWeek}}%
 APY Last Week:          {{apyLastWeek}}%

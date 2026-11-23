@@ -134,7 +134,6 @@ eventsRouter.get(
  *   30-second polling.
  */
 
-import { Router, Request, Response } from "express";
 import { config } from "../config/index.js";
 
 

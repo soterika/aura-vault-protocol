@@ -16,6 +16,7 @@ import { cacheGet, cacheSet, NS } from "../cache.js";
 import {
   getVaultStats as getLegacyVaultStats,
   simulateDeposit,
+  getUserVolume,
   type VaultStatsData,
 } from "../services/vaultStatsService.js";
 import {
@@ -315,7 +316,7 @@ export async function invalidateVaultStatsCache(contractId?: string): Promise<vo
  */
 vaultRouter.get("/harvest/estimated", async (_req: Request, res: Response): Promise<void> => {
   try {
-    const stats = await getVaultStats();
+    const stats = await getLegacyVaultStats();
 
     const lastHarvestAt = stats.last_harvest ? new Date(stats.last_harvest) : null;
     const nowMs = Date.now();
@@ -394,7 +395,7 @@ vaultRouter.post(
     try {
       // Check that the vault has shares before attempting harvest.
       // The on-chain contract returns ZeroShares (error code 8) when total_shares == 0.
-      const stats = await getVaultStats();
+      const stats = await getLegacyVaultStats();
       if (stats.total_shares === 0) {
         res.status(422).json(
           errorResponse(

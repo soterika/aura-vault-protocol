@@ -91,7 +91,6 @@ const circuitBreakerOptions: CircuitBreaker.Options = {
   group: "horizon",
   enabled: true,
   allowWarmUp: false,
-  volumeThreshold: 5,
 };
 
 // opossum wraps a single function; callers pass the actual Horizon fetch fn
