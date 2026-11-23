@@ -3,6 +3,9 @@ import { initTracing, tracingMiddleware, shutdownTracing } from "./tracing.js";
 initTracing();
 
 import express from "express";
+import cors from "cors";
+import portfolioRouter from "./portfolio.js";
+import { autoMigrate } from "./migrations/runner.js";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
   authRateLimiter,
@@ -54,7 +57,7 @@ import {
   startDigestScheduler,
   stopDigestScheduler,
 } from "./services/digestScheduler.js";
-import { openApiValidationMiddleware } from "./middleware/requestValidationMiddleware.js";
+import { openApiValidation } from "./middleware/requestValidationMiddleware.js";
 import {
   startUserExportWorker,
   stopUserExportWorker,
@@ -86,7 +89,7 @@ import { federationRouter } from "./routes/federationRoutes.js";
 import { authenticateAdmin } from "./middleware/adminMiddleware.js";
 import {
   applySecurityHeaders,
-  applyCors,
+  corsOptions,
 } from "./middleware/securityMiddleware.js";
 import {
   correlationIdMiddleware,
@@ -145,7 +148,7 @@ app.use(responseEnvelopeMiddleware);
 
 // ── Issue #945: OpenAPI request validation (disabled in test env) ────────────
 if (process.env.NODE_ENV !== "test") {
-  app.use(openApiValidationMiddleware());
+  app.use(openApiValidation());
 }
 
 // Global IP rate limiter — health check and metrics excluded so load-balancer probes and scrapers are not throttled

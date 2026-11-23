@@ -14,14 +14,14 @@
 
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import express from "express";
-import path from "path";
+import { fileURLToPath } from "node:url";
 import * as OpenApiValidator from "express-openapi-validator";
 
 /** 64 KB in bytes */
 export const MAX_BODY_BYTES = 64 * 1024;
 
 /** Absolute path to the OpenAPI specification. */
-export const OPENAPI_SPEC_PATH = path.resolve(__dirname, "../../../docs/openapi.yaml");
+export const OPENAPI_SPEC_PATH = fileURLToPath(new URL("../../../docs/openapi.yaml", import.meta.url));
 
 /**
  * Returns the raw Content-Length from the request headers as a number,
