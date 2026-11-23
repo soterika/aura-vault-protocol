@@ -100,6 +100,7 @@ Reviewers must verify the changelog entry as part of the PR review.
 - **Changelog pull request check** — requires a `[Unreleased]` entry when backend or frontend code changes.
 - **Vault contract governance and operations** — multi-signature proposals, pause and circuit-breaker controls, storage/version inspection, migration guidance, and harvest economics documentation.
 - **Backend API and operations** — vault statistics and history, authenticated transaction submission, admin audit and upgrade endpoints, webhook delivery, rate limits, and service health monitoring.
+- Updated frontend dependencies to address high-severity npm advisories and moved Solidity tooling to Hardhat 3.
 - **Frontend vault workflows** — dashboard and portfolio views, accessible transaction and wallet flows, responsive navigation, localization, and history exports.
 - **Deployment and reliability automation** — Kubernetes deployment guidance, testnet deployment, migration safety checks, network isolation, disaster-recovery replication, and chaos workflows.
 - **Kubernetes deployment guide** (`docs/KUBERNETES.md`) — full K8s manifests reference for namespaces, RBAC, network policies, HPA, PostgreSQL, Redis, monitoring stack, Sealed Secrets, and Ingress. Closes #397.

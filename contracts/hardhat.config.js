@@ -1,20 +1,20 @@
-require("@nomicfoundation/hardhat-toolbox");
+import hardhatEthersChaiMatchers from "@nomicfoundation/hardhat-ethers-chai-matchers";
+import hardhatMocha from "@nomicfoundation/hardhat-mocha";
+import { defineConfig } from "hardhat/config";
 
-/** @type import('hardhat/config').HardhatUserConfig */
-module.exports = {
+export default defineConfig({
+  plugins: [hardhatEthersChaiMatchers, hardhatMocha],
   solidity: {
-    version: "0.8.20",
-    settings: { optimizer: { enabled: true, runs: 200 } },
+    version: "0.8.28",
+    settings: {
+      evmVersion: "shanghai",
+      optimizer: { enabled: true, runs: 200 },
+    },
   },
   paths: {
     sources: "./strategy",
-    tests: "./strategy",
+    tests: { mocha: "./strategy" },
     cache: "./cache",
     artifacts: "./artifacts",
   },
-  gasReporter: {
-    enabled: true,
-    currency: "USD",
-    noColors: false,
-  },
-};
+});
