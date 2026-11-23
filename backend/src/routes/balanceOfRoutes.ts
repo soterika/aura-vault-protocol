@@ -27,7 +27,7 @@ balanceOfRouter.get("/balance_of", async (req: Request, res: Response): Promise<
     }
 
     const sdk = await import("@stellar/stellar-sdk");
-    const server = new sdk.SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
+    const server = new sdk.rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
     const source = await server.getAccount(address);
     const passphrase = process.env.STELLAR_NETWORK_PASSPHRASE
       ?? (vault.network.toLowerCase().includes("test") ? sdk.Networks.TESTNET : sdk.Networks.PUBLIC);
@@ -40,7 +40,7 @@ balanceOfRouter.get("/balance_of", async (req: Request, res: Response): Promise<
       .build();
 
     const simulation = await server.simulateTransaction(transaction);
-    if (!sdk.SorobanRpc.Api.isSimulationSuccess(simulation) || !simulation.result) {
+    if (!sdk.rpc.Api.isSimulationSuccess(simulation) || !simulation.result) {
       res.status(502).json(errorResponse("BALANCE_LOOKUP_FAILED", "The contract could not return this balance"));
       return;
     }

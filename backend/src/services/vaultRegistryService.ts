@@ -321,8 +321,8 @@ export async function syncVaultStats(
   horizonUrl: string = process.env.HORIZON_URL ?? "https://horizon-testnet.stellar.org"
 ): Promise<void> {
   try {
-    const { SorobanRpc, Contract } = await import("@stellar/stellar-sdk");
-    const server = new SorobanRpc.Server(horizonUrl, {
+    const { rpc, Contract } = await import("@stellar/stellar-sdk");
+    const server = new rpc.Server(horizonUrl, {
       allowHttp: horizonUrl.startsWith("http://"),
     });
 
@@ -353,7 +353,7 @@ export async function syncVaultStats(
           .build();
 
         const simResult = await server.simulateTransaction(txForSim);
-        if (SorobanRpc.Api.isSimulationSuccess(simResult) && simResult.result) {
+        if (rpc.Api.isSimulationSuccess(simResult) && simResult.result) {
           // result.retval is an xdr.ScVal — extract the i128/u64 value
           const xdrVal = simResult.result.retval;
           const { xdr } = await import("@stellar/stellar-sdk");

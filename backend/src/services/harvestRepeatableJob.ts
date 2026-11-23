@@ -131,11 +131,11 @@ async function executeHarvest(job: Job<HarvestJobPayload>): Promise<string> {
   // 2. Submit harvest transaction to Stellar
   let txHash: string;
   try {
-    const { Keypair, SorobanRpc, Contract, TransactionBuilder, Networks, BASE_FEE, xdr } =
+    const { Keypair, rpc, Contract, TransactionBuilder, Networks, BASE_FEE, xdr } =
       await import("@stellar/stellar-sdk");
 
     const keeperKeypair = Keypair.fromSecret(keypair.secretKey);
-    const server = new SorobanRpc.Server(HORIZON_URL, { allowHttp: HORIZON_URL.startsWith("http://") });
+    const server = new rpc.Server(HORIZON_URL, { allowHttp: HORIZON_URL.startsWith("http://") });
 
     const account = await server.getAccount(keeperKeypair.publicKey());
     const contract = new Contract(vaultContractId);
