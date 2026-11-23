@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "../logger.js";
-import { ERROR_CODES } from "../errorCodes.js";
+import * as ERROR_CODES from "./errorCodes.js";
 
 export interface ApiError extends Error {
   statusCode?: number;

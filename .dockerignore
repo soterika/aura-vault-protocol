@@ -37,3 +37,9 @@ DEPLOYMENT_GUIDE.md
 *.test.tsx
 *.spec.ts
 *.spec.tsx
+
+**/node_modules
+**/dist
+**/.next
+**/*.test.ts
+**/*.spec.ts

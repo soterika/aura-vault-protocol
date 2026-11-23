@@ -2,7 +2,10 @@
 import { initTracing, tracingMiddleware, shutdownTracing } from "./tracing.js";
 initTracing();
 
+import cors from "cors";
 import express from "express";
+import portfolioRouter from "./portfolio.js";
+import { autoMigrate } from "./migrations/runner.js";
 import { authenticate } from "./middleware/authMiddleware.js";
 import {
   authRateLimiter,
@@ -86,7 +89,7 @@ import { federationRouter } from "./routes/federationRoutes.js";
 import { authenticateAdmin } from "./middleware/adminMiddleware.js";
 import {
   applySecurityHeaders,
-  applyCors,
+  corsOptions,
 } from "./middleware/securityMiddleware.js";
 import {
   correlationIdMiddleware,

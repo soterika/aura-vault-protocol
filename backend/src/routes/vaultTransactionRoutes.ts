@@ -24,6 +24,7 @@ import { authenticate } from "../middleware/authMiddleware.js";
 import { userRateLimiter, transactionRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import { validateXdr } from "../middleware/validateXdrMiddleware.js";
 import { validate } from "../validation.js";
+import { idempotency } from "../middleware/idempotencyMiddleware.js";
 import {
   vaultDepositSchema,
   vaultWithdrawSchema,
