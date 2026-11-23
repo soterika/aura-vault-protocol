@@ -13,5 +13,14 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2"
+  },
+  "overrides": {
+    "lodash": "^4.17.24",
+    "solc": {
+      "tmp": "^0.2.6"
+    },
+    "mocha": {
+      "serialize-javascript": "^7.1.3"
+    }
   }
 }

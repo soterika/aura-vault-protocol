@@ -53,13 +53,15 @@ jobs:
         working-directory: ${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/cargo-audit
           key: cargo-audit-${{ runner.os }}
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --root "$HOME/.cargo"
+      - name: Resolve Rust dependencies
+        run: cargo generate-lockfile
       - name: Audit Rust dependencies
         id: audit
         continue-on-error: true
@@ -88,7 +90,7 @@ jobs:
         with:
           script: |
             const failed = '${{ needs.npm-audit.result }}' === 'failure' || '${{ needs.cargo-audit.result }}' === 'failure';
-            const summary = `Dependency audit ${failed ? 'found high or critical vulnerabilities' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Download the workflow artifacts for scanner reports.`;
+            const summary = `Dependency audit ${failed ? 'failed' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Download the workflow artifacts for scanner reports.`;
             await core.summary.addHeading('Dependency security audit').addRaw(summary).write();
             if (context.eventName === 'pull_request') {
               const { owner, repo } = context.repo;
