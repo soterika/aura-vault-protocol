@@ -24,10 +24,13 @@ jobs:
       - name: Build backend image
         run: docker build -f Dockerfile.backend -t aura-vault-backend:nightly .
       - name: Build frontend image
+        if: ${{ !cancelled() }}
         run: docker build -f Dockerfile.frontend -t aura-vault-frontend:nightly .
       - name: Build Soroban contract Wasm
+        if: ${{ !cancelled() }}
         run: cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
       - name: Build migration Wasm
+        if: ${{ !cancelled() }}
         run: cargo build --manifest-path aura-migration/Cargo.toml --target wasm32-unknown-unknown --release
       - name: Export deployable images
         run: docker save aura-vault-backend:nightly aura-vault-frontend:nightly -o nightly-images.tar
