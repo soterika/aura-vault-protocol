@@ -53,17 +53,14 @@ jobs:
         working-directory: ${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rust-lang/setup-rust-toolchain@v1
-      - uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
         with:
-          path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-${{ runner.os }}
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --root "$HOME/.cargo"
+          tool: cargo-audit
       - name: Audit Rust dependencies
         id: audit
         continue-on-error: true
-        run: cargo audit --json > "${{ runner.temp }}/${{ matrix.crate }}-cargo-audit.json"
+        run: cargo audit --file Cargo.lock --json > "${{ runner.temp }}/${{ matrix.crate }}-cargo-audit.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,12 +85,10 @@ jobs:
         with:
           script: |
             const failed = '${{ needs.npm-audit.result }}' === 'failure' || '${{ needs.cargo-audit.result }}' === 'failure';
-            const summary = `Dependency audit ${failed ? 'found high or critical vulnerabilities' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Download the workflow artifacts for scanner reports.`;
+            const summary = `Dependency audit ${failed ? 'failed' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Review the workflow logs and any available scanner reports.`;
             await core.summary.addHeading('Dependency security audit').addRaw(summary).write();
-            if (context.eventName === 'pull_request') {
-              const { owner, repo } = context.repo;
-              const prs = await github.rest.pulls.list({ owner, repo, head: `${owner}:${context.payload.pull_request.head.ref}`, state: 'open' });
-              if (prs.data[0]) await github.rest.issues.createComment({ owner, repo, issue_number: prs.data[0].number, body: summary });
+            if (context.eventName === 'pull_request' && !context.payload.pull_request.head.repo.fork) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body: summary });
             }
             if (context.eventName === 'schedule' && failed) {
               await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Nightly dependency audit found vulnerabilities', body: `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
