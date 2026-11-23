@@ -111,6 +111,9 @@ Reviewers must verify the changelog entry as part of the PR review.
 - Updated Next.js and frontend tooling, removed unused wallet packages, and adopted Node.js 22 in CI.
 - **Stellar deployment instructions** — require Stellar CLI v21.3.0+, use the `stellar` command and `--source` identity syntax, and reject older CLI versions in deployment scripts.
 
+### Fixed
+- Repaired the nightly container build and restored backend production compilation.
+
 ### Security
 - Updated the backend Stellar SDK and compression dependencies to address nightly audit findings.
 
