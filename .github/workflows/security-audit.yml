@@ -25,8 +25,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - name: Resolve dependencies when no lockfile is checked in
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --no-audit
+          fi
       - name: Audit dependencies
         id: audit
         continue-on-error: true
@@ -53,13 +56,18 @@ jobs:
         working-directory: ${{ matrix.crate }}
     steps:
       - uses: actions/checkout@v4
-      - uses: rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/cargo-audit
           key: cargo-audit-${{ runner.os }}
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --root "$HOME/.cargo"
+      - name: Resolve Rust dependencies when no lockfile is checked in
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            cargo generate-lockfile
+          fi
       - name: Audit Rust dependencies
         id: audit
         continue-on-error: true
@@ -88,7 +96,7 @@ jobs:
         with:
           script: |
             const failed = '${{ needs.npm-audit.result }}' === 'failure' || '${{ needs.cargo-audit.result }}' === 'failure';
-            const summary = `Dependency audit ${failed ? 'found high or critical vulnerabilities' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Download the workflow artifacts for scanner reports.`;
+            const summary = `Dependency audit ${failed ? 'failed' : 'passed'} (npm: ${{ needs.npm-audit.result }}, cargo: ${{ needs.cargo-audit.result }}). Download the workflow artifacts for scanner reports.`;
             await core.summary.addHeading('Dependency security audit').addRaw(summary).write();
             if (context.eventName === 'pull_request') {
               const { owner, repo } = context.repo;
@@ -96,5 +104,5 @@ jobs:
               if (prs.data[0]) await github.rest.issues.createComment({ owner, repo, issue_number: prs.data[0].number, body: summary });
             }
             if (context.eventName === 'schedule' && failed) {
-              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Nightly dependency audit found vulnerabilities', body: `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Nightly dependency audit failed', body: `${summary}\n\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
             }
