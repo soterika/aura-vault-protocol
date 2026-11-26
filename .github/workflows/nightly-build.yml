@@ -22,12 +22,20 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Build backend image
+        id: backend
+        if: ${{ !cancelled() }}
         run: docker build -f Dockerfile.backend -t aura-vault-backend:nightly .
       - name: Build frontend image
+        id: frontend
+        if: ${{ !cancelled() }}
         run: docker build -f Dockerfile.frontend -t aura-vault-frontend:nightly .
       - name: Build Soroban contract Wasm
+        id: vault
+        if: ${{ !cancelled() }}
         run: cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
       - name: Build migration Wasm
+        id: migration
+        if: ${{ !cancelled() }}
         run: cargo build --manifest-path aura-migration/Cargo.toml --target wasm32-unknown-unknown --release
       - name: Export deployable images
         run: docker save aura-vault-backend:nightly aura-vault-frontend:nightly -o nightly-images.tar
@@ -42,9 +50,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Write build summary
+        if: ${{ !cancelled() }}
         run: |
           echo '## Nightly deployable artifacts' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Backend and frontend container images plus release Wasm artifacts are available in this run.' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "- Backend image: ${{ steps.backend.outcome }}"
+            echo "- Frontend image: ${{ steps.frontend.outcome }}"
+            echo "- Vault Wasm: ${{ steps.vault.outcome }}"
+            echo "- Migration Wasm: ${{ steps.migration.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Open issue when build fails
         if: failure() && github.event_name == 'schedule'
         uses: actions/github-script@v7
