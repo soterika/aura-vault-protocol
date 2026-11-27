@@ -63,8 +63,10 @@ different Stellar network.
 
 **Fix:** Use `http://localhost` (which supported browser wallet extensions
 treat as a secure development origin), unlock Freighter, and select the same
-network configured by the app. For another hostname, use a local HTTPS setup.
-Reload the page after changing wallet network or app configuration.
+network configured by the app (`NEXT_PUBLIC_STELLAR_NETWORK`). For another
+hostname, use a local HTTPS setup. Reload the page after changing wallet
+network or app configuration. See the [Frontend Public Configuration Reference](DEPLOYMENT.md#frontend-public-configuration-reference)
+for setting up your frontend environment.
 
 ## `soroban: command not found`
 
