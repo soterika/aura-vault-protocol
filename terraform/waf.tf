@@ -2,12 +2,16 @@
 # AWS WAF v2 — CloudFront Rate Limiting & Threat Protection — Issue #959
 #
 # WAF rules (in priority order):
-#   10  Block AWS Managed Threat Intelligence IPs
+#   5   Geo-block sanctioned countries (OFAC compliance)
+#   10  Block AWS Managed Threat Intelligence IPs (AmazonIpReputationList)
+#   15  AWS Managed Bot Control (COMMON inspection level)
 #   20  Block suspicious User-Agent patterns (bots, scanners, exploit tools)
+#   25  AWS Managed SQLiRuleSet applied to POST request bodies
+#   28  Size constraint: block request bodies > 10 KB on /api/auth/*
 #   30  Rate limit /api/auth/* — 1 000 req / 5 min per IP
-#   40  Rate limit /api/* (all other API endpoints) — 10 000 req / 5 min per IP
+#   40  Rate limit /api/* (all other API endpoints) — 1 000 req / 5 min per IP
 #
-# All blocked requests are logged to CloudWatch Logs.
+# All blocked requests are logged to CloudWatch Logs and S3 (90-day retention).
 #
 # NOTE: WAF WebACLs for CloudFront must be created in us-east-1.
 #       This file uses the aws.us_east_1 provider alias defined in provider.tf.
@@ -48,6 +52,36 @@ resource "aws_wafv2_web_acl" "cloudfront_api" {
     allow {}
   }
 
+  # ── Rule 5: Geo-Block Sanctioned Countries (OFAC Compliance) ────────────────
+  rule {
+    name     = "GeoBlockSanctionedCountries"
+    priority = 5
+
+    action {
+      block {
+        custom_response {
+          response_code = 403
+          response_header {
+            name  = "X-Blocked-By"
+            value = "AuraVaultWAF-Geo"
+          }
+        }
+      }
+    }
+
+    statement {
+      geo_match_statement {
+        country_codes = var.waf_blocked_countries
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.project_name}-geo-block-${var.environment}"
+      sampled_requests_enabled   = true
+    }
+  }
+
   # ── Rule 10: AWS Managed Threat Intelligence IP Block ───────────────────────
   rule {
     name     = "AWSManagedThreatIntelBlock"
@@ -67,6 +101,35 @@ resource "aws_wafv2_web_acl" "cloudfront_api" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.project_name}-threat-intel-${var.environment}"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # ── Rule 15: AWS Managed Bot Control (COMMON level) ─────────────────────────
+  rule {
+    name     = "AWSManagedBotControl"
+    priority = 15
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesBotControlRuleSet"
+        vendor_name = "AWS"
+
+        managed_rule_group_configs {
+          aws_managed_rules_bot_control_rule_set {
+            inspection_level = "COMMON"
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.project_name}-bot-control-${var.environment}"
       sampled_requests_enabled   = true
     }
   }
@@ -107,6 +170,100 @@ resource "aws_wafv2_web_acl" "cloudfront_api" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.project_name}-suspicious-ua-${var.environment}"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # ── Rule 25: AWS Managed SQLiRuleSet on POST Bodies ─────────────────────────
+  rule {
+    name     = "AWSManagedSQLiPostBodies"
+    priority = 25
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesSQLiRuleSet"
+        vendor_name = "AWS"
+
+        scope_down_statement {
+          byte_match_statement {
+            search_string = "POST"
+            field_to_match {
+              method {}
+            }
+            text_transformations {
+              priority = 0
+              type     = "NONE"
+            }
+            positional_constraint = "EXACTLY"
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.project_name}-sqli-post-${var.environment}"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # ── Rule 28: Size Constraint (> 10 KB) on Auth Endpoints ───────────────────
+  rule {
+    name     = "AuthBodySizeConstraint"
+    priority = 28
+
+    action {
+      block {
+        custom_response {
+          response_code = 413
+          response_header {
+            name  = "X-Blocked-By"
+            value = "AuraVaultWAF-Size"
+          }
+        }
+      }
+    }
+
+    statement {
+      and_statement {
+        statement {
+          size_constraint_statement {
+            comparison_operator = "GT"
+            size                = 10240
+            field_to_match {
+              body {
+                oversize_handling = "MATCH"
+              }
+            }
+            text_transformations {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          byte_match_statement {
+            search_string = "/api/auth/"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformations {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+            positional_constraint = "STARTS_WITH"
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.project_name}-auth-body-size-${var.environment}"
       sampled_requests_enabled   = true
     }
   }
@@ -161,7 +318,7 @@ resource "aws_wafv2_web_acl" "cloudfront_api" {
     }
   }
 
-  # ── Rule 40: Rate Limit all other /api/* — 10 000 req / 5 min per IP ────────
+  # ── Rule 40: Rate Limit all other /api/* — 1 000 req / 5 min per IP ─────────
   rule {
     name     = "RateLimitApiEndpoints"
     priority = 40
@@ -184,8 +341,8 @@ resource "aws_wafv2_web_acl" "cloudfront_api" {
 
     statement {
       rate_based_statement {
-        # 10 000 requests per 5-minute window per IP
-        limit              = 10000
+        # 1 000 requests per 5-minute window per IP
+        limit              = 1000
         aggregate_key_type = "IP"
 
         scope_down_statement {
@@ -258,12 +415,43 @@ locals {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WAF Logging Configuration → CloudWatch Logs
+# S3 Bucket for WAF Logs (90-day retention)
+# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_s3_bucket" "waf_logs" {
+  count = var.enable_cloudfront ? 1 : 0
+
+  # AWS WAF requires S3 log bucket names to start with "aws-waf-logs-"
+  bucket = "aws-waf-logs-${var.project_name}-${var.environment}"
+
+  tags = {
+    Name        = "aws-waf-logs-${var.project_name}-${var.environment}"
+    Environment = local.cost_environment
+    ManagedBy   = "terraform"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "waf_logs" {
+  count = var.enable_cloudfront ? 1 : 0
+
+  bucket = aws_s3_bucket.waf_logs[0].id
+
+  rule {
+    id     = "waf-logs-90-day-retention"
+    status = "Enabled"
+
+    expiration {
+      days = 90
+    }
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WAF Logging Configuration → S3
 # ─────────────────────────────────────────────────────────────────────────────
 resource "aws_wafv2_web_acl_logging_configuration" "cloudfront_api" {
   count = var.enable_cloudfront ? 1 : 0
 
-  log_destination_configs = [aws_cloudwatch_log_group.waf.arn]
+  log_destination_configs = [aws_s3_bucket.waf_logs[0].arn]
   resource_arn            = aws_wafv2_web_acl.cloudfront_api[0].arn
 
   # Log all blocked requests; redact Authorization header to avoid leaking tokens

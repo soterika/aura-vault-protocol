@@ -170,11 +170,12 @@ interface ProposalCardProps {
 }
 
 function ProposalCard({ proposal, walletAddress, token }: ProposalCardProps) {
+  const { network } = useWalletStore();
   const [txError, setTxError] = useState<string | null>(null);
   const [txSuccess, setTxSuccess] = useState<string | null>(null);
 
-  const voteMutation = useVoteMutation(token ?? "");
-  const executeMutation = useExecuteMutation(token ?? "");
+  const voteMutation = useVoteMutation(token ?? "", { chain: network });
+  const executeMutation = useExecuteMutation(token ?? "", { chain: network });
 
   const hasVoted = walletAddress
     ? proposal.signers.includes(walletAddress)
@@ -484,7 +485,7 @@ interface GovernanceDashboardProps {
 }
 
 export function GovernanceDashboard({ token }: GovernanceDashboardProps) {
-  const { address: walletAddress } = useWalletStore();
+  const { address: walletAddress, network } = useWalletStore();
 
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | undefined>(
     undefined
@@ -493,10 +494,11 @@ export function GovernanceDashboard({ token }: GovernanceDashboardProps) {
   const { data, isLoading, isError, error, refetch } = useGovernanceProposals({
     status: statusFilter,
     token: token ?? "",
+    chain: network,
   });
 
   // Real-time updates via SSE
-  useGovernanceSSE(token ?? "");
+  useGovernanceSSE(token ?? "", { chain: network });
 
   const proposals = data?.data?.proposals ?? [];
   const total = data?.data?.total ?? 0;

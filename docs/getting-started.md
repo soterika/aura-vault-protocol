@@ -67,6 +67,8 @@ Before you start you need:
 2. Select **Test SDF Network / Sep 2015** (Testnet).
 3. The Freighter header will show **TESTNET** in orange.
 
+> For frontend app setup against testnet, verify `NEXT_PUBLIC_STELLAR_NETWORK=testnet` in `frontend/.env.local`. See the [Frontend Public Configuration Reference](DEPLOYMENT.md#frontend-public-configuration-reference) for the complete list of settings.
+
 ---
 
 ## Step 2 — Connect Your Wallet

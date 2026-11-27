@@ -72,3 +72,23 @@ COMMENT ON COLUMN alert_subscriptions.price_threshold IS
 
 COMMENT ON COLUMN alert_subscriptions.amount_threshold IS
   'Token amount that triggers a large_deposit alert';
+
+-- Down Migration
+-- lint-migrations: allow DROP COLUMN  reason: removes only columns added by this migration
+BEGIN;
+DROP INDEX IF EXISTS idx_alert_subscriptions_eval;
+DROP INDEX IF EXISTS idx_alert_subscriptions_wallet_webhook_event;
+ALTER TABLE alert_subscriptions DROP CONSTRAINT IF EXISTS alert_subscriptions_webhook_url_chk;
+ALTER TABLE alert_subscriptions DROP CONSTRAINT IF EXISTS alert_subscriptions_channel_chk;
+COMMENT ON COLUMN alert_subscriptions.event_types IS NULL;
+COMMENT ON COLUMN alert_subscriptions.channel IS NULL;
+COMMENT ON COLUMN alert_subscriptions.webhook_url IS NULL;
+COMMENT ON COLUMN alert_subscriptions.price_threshold IS NULL;
+COMMENT ON COLUMN alert_subscriptions.amount_threshold IS NULL;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS last_evaluated_at;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS label;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS amount_threshold;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS price_threshold;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS webhook_url;
+ALTER TABLE alert_subscriptions DROP COLUMN IF EXISTS channel;
+COMMIT;
