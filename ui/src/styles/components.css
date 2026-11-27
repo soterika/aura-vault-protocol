@@ -30,7 +30,7 @@
 .btn--danger { background: var(--color-error); color: var(--color-text-inverse); }
 .btn--danger:hover:not(:disabled){ filter: brightness(1.1); transform: translateY(-1px); }
 
-.btn:disabled, .btn--loading { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+.btn:disabled, .btn--loading { opacity: 0.72; cursor: not-allowed; transform: none !important; }
 
 .btn-spinner {
   width: 1em; height: 1em; border: 2px solid currentColor;
@@ -55,7 +55,13 @@
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 .ds-input:hover { border-color: var(--color-border-strong); }
-.ds-input:focus { border-color: var(--color-primary); box-shadow: var(--focus-ring); outline: none; }
+.ds-input:focus,
+.ds-input:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
 .ds-input--error { border-color: var(--color-error); }
 .ds-input--error:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 30%, transparent); }
 .ds-input::placeholder { color: var(--color-text-disabled); }
