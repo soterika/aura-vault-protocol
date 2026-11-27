@@ -3,7 +3,7 @@
     "name": "Aura Vault",
     "slug": "aura-vault",
     "version": "0.1.0",
-    "scheme": "aura-vault",
+    "scheme": ["aura", "aura-vault"],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -14,6 +14,10 @@
     "ios": {
       "bundleIdentifier": "com.auravault.app",
       "supportsTablet": true,
+      "associatedDomains": [
+        "applinks:app.auravault.io",
+        "applinks:auravault.app"
+      ],
       "infoPlist": {
         "NSFaceIDUsageDescription": "Authenticate with Face ID to access your vault"
       }
@@ -24,7 +28,39 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT"]
+      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT"],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "app.auravault.io",
+              "pathPrefix": "/deposit"
+            },
+            {
+              "scheme": "https",
+              "host": "app.auravault.io",
+              "pathPrefix": "/vault"
+            },
+            {
+              "scheme": "https",
+              "host": "app.auravault.io",
+              "pathPrefix": "/leaderboard"
+            },
+            {
+              "scheme": "https",
+              "host": "auravault.app",
+              "pathPrefix": "/deposit"
+            },
+            {
+              "scheme": "aura"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": [
       "expo-local-authentication",

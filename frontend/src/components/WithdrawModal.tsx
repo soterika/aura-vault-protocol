@@ -18,7 +18,7 @@
  *   ✅ Re-uses AccessibleModal base component
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import {
   AccessibleModal,
   ShareInput,
@@ -26,7 +26,9 @@ import {
 } from "./AccessibleFormComponents";
 import { UsdAmountConverter } from "./UsdAmountConverter";
 import TransactionProgress from "./TransactionProgress";
+import RedemptionPreview from "./RedemptionPreview";
 import StellarBaseFee from "./StellarBaseFee";
+import ShareMathConfirmationModal, { shouldSkipShareMathConfirmation } from "./ShareMathConfirmationModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,8 @@ export interface WithdrawModalProps {
   totalShares?: string;
   /** Share symbol (default "aUSDC") */
   shareSymbol?: string;
+  /** Stats endpoint for the vault being reviewed. */
+  vaultStatsUrl?: string;
   /** Called on successful withdrawal — use to refresh portfolio data */
   onSuccess?: () => void;
 }
@@ -68,9 +72,10 @@ function previewTokens(shares: string, totalAssets: string, totalShares: string)
   return Math.floor((s * ta) / ts).toFixed(4);
 }
 
-async function fetchLiveSharePrice(): Promise<number> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  const response = await fetch(`${apiBase}/api/v1/vault/stats`, { cache: "no-store" });
+const DEFAULT_VAULT_STATS_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/vault/stats`;
+
+async function fetchLiveSharePrice(vaultStatsUrl: string): Promise<number> {
+  const response = await fetch(vaultStatsUrl, { cache: "no-store" });
   if (!response.ok) throw new Error("Could not refresh the vault exchange rate. Please try again.");
   const payload = await response.json() as {
     data?: { sharePrice?: string | number };
@@ -194,7 +199,12 @@ function resolveVaultError(raw: string): string {
 
 // ─── WithdrawModal ────────────────────────────────────────────────────────────
 
-export function WithdrawModal({
+export function WithdrawModal(props: WithdrawModalProps) {
+  const vaultStatsUrl = props.vaultStatsUrl ?? DEFAULT_VAULT_STATS_URL;
+  return <VaultWithdrawal key={vaultStatsUrl} {...props} vaultStatsUrl={vaultStatsUrl} />;
+}
+
+function VaultWithdrawal({
   isOpen,
   onClose,
   shareBalance,
@@ -202,12 +212,13 @@ export function WithdrawModal({
   totalShares = "0",
   shareSymbol = "aUSDC",
   onSuccess,
-}: WithdrawModalProps) {
+  vaultStatsUrl,
+}: WithdrawModalProps & { vaultStatsUrl: string }) {
   const [step, setStep] = useState<WithdrawStep>(1);
   const [shares, setShares] = useState("");
   const [sharesError, setSharesError] = useState("");
   const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
-  const [gasLoading, setGasLoading] = useState(false);
+  const reviewRequest = useRef(0);
   const [txStatus, setTxStatus] = useState<TxStatus>("idle");
   const [txHash, setTxHash] = useState("");
   const [progressStep, setProgressStep] = useState(2);
@@ -226,6 +237,9 @@ export function WithdrawModal({
   const [reviewEstimate, setReviewEstimate] = useState("");
   const [quoteError, setQuoteError] = useState("");
   const slippagePercent = slippagePreset === "custom" ? Number(customSlippage) : Number(slippagePreset);
+
+  // Invalidate pending reviews whenever their input or modal lifetime changes.
+  useLayoutEffect(() => () => { reviewRequest.current += 1; }, [isOpen, shares]);
 
   // Reset when closed
   useEffect(() => {
@@ -289,52 +303,62 @@ export function WithdrawModal({
     return true;
   }
 
-  const fetchGasEstimate = useCallback(async (amt: string) => {
-    setGasLoading(true);
+  async function fetchGasEstimate(amount: string): Promise<GasEstimate> {
+    const fallback = { baseFee: "0.0001", priorityFee: "0.00005", totalGas: "0.00015" };
     try {
       const res = await fetch("/api/vault/estimate-gas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "withdraw", amount: amt }),
+        body: JSON.stringify({ type: "withdraw", amount }),
       });
-      if (res.ok) {
-        const data = await res.json() as { baseFee?: string; priorityFee?: string; totalGas?: string };
-        setGasEstimate({
-          baseFee: data.baseFee ?? "0.0001",
-          priorityFee: data.priorityFee ?? "0.00005",
-          totalGas: data.totalGas ?? "0.00015",
-        });
-      } else {
-        setGasEstimate({ baseFee: "0.0001", priorityFee: "0.00005", totalGas: "0.00015" });
-      }
+      if (!res.ok) return fallback;
+      const data = await res.json() as Partial<GasEstimate>;
+      return {
+        baseFee: data.baseFee ?? fallback.baseFee,
+        priorityFee: data.priorityFee ?? fallback.priorityFee,
+        totalGas: data.totalGas ?? fallback.totalGas,
+      };
     } catch {
-      setGasEstimate({ baseFee: "0.0001", priorityFee: "0.00005", totalGas: "0.00015" });
-    } finally {
-      setGasLoading(false);
+      return fallback;
     }
-  }, []);
+  }
+
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  function requestConfirmOrSubmit() {
+    if (shouldSkipShareMathConfirmation()) {
+      void handleSubmit();
+    } else {
+      setShowConfirmation(true);
+    }
+  }
 
   async function handleNext() {
     if (step === 1) {
       if (!validate()) return;
-      await fetchGasEstimate(shares);
+      const request = ++reviewRequest.current;
+      setQuoteError("");
       try {
-        const livePrice = await fetchLiveSharePrice();
+        const [gas, livePrice] = await Promise.all([
+          fetchGasEstimate(shares),
+          fetchLiveSharePrice(vaultStatsUrl),
+        ]);
+        if (request !== reviewRequest.current) return;
+        setGasEstimate(gas);
         setReviewEstimate(tokensAtPrice(shares, livePrice));
-        setQuoteError("");
+        setStep(2);
       } catch (err) {
+        if (request !== reviewRequest.current) return;
         setQuoteError(err instanceof Error ? err.message : "Could not refresh the vault exchange rate.");
-        return;
       }
-      setStep(2);
     } else if (step === 2) {
-      await handleSubmit();
+      requestConfirmOrSubmit();
     }
   }
 
   async function handleSubmit() {
     try {
-      const livePrice = await fetchLiveSharePrice();
+      const livePrice = await fetchLiveSharePrice(vaultStatsUrl);
       const latestEstimate = Number(tokensAtPrice(shares, livePrice));
       const reviewed = Number(reviewEstimate || estimatedTokens);
       const changePct = reviewed > 0 ? Math.abs(latestEstimate - reviewed) / reviewed * 100 : 100;
@@ -386,6 +410,7 @@ export function WithdrawModal({
   };
 
   return (
+    <>
     <AccessibleModal
       isOpen={isOpen}
       onClose={requestClose}
@@ -484,6 +509,7 @@ export function WithdrawModal({
 
           {/* Real-time redemption preview (#884) */}
           <RedemptionPreview
+            vaultStatsUrl={vaultStatsUrl}
             sharesInput={shares}
             shareSymbol={shareSymbol}
           />
@@ -528,12 +554,7 @@ export function WithdrawModal({
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
               Estimated Gas Fee
             </p>
-            {gasLoading ? (
-              <div className="flex items-center gap-2 text-sm text-zinc-400">
-                <Spinner />
-                Fetching estimate…
-              </div>
-            ) : gasEstimate ? (
+            {gasEstimate ? (
               <>
                 <GasEstimateRow label="Base fee" value={gasEstimate.baseFee} />
                 <GasEstimateRow label="Priority fee" value={gasEstimate.priorityFee} />
@@ -555,7 +576,6 @@ export function WithdrawModal({
             <button
               type="button"
               onClick={() => void handleNext()}
-              disabled={gasLoading}
               data-cy="withdraw-confirm-btn"
               className="flex-1 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
             >
@@ -679,7 +699,21 @@ export function WithdrawModal({
           )}
         </div>
       )}
-    </AccessibleModal>
+      </AccessibleModal>
+      <ShareMathConfirmationModal
+        isOpen={showConfirmation}
+        mode="withdraw"
+        amount={shares}
+        totalShares={totalShares}
+        totalAssets={totalAssets}
+        shareSymbol={shareSymbol}
+        onConfirm={() => {
+          setShowConfirmation(false);
+          void handleSubmit();
+        }}
+        onCancel={() => setShowConfirmation(false)}
+      />
+    </>
   );
 }
 

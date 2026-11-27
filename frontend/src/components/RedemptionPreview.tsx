@@ -26,6 +26,7 @@ import { useVaultStats } from "@/lib/useVaultStats";
 export interface RedemptionPreviewProps {
   /** Raw share amount string from the input field. */
   sharesInput: string;
+  vaultStatsUrl?: string;
   /** Symbol of the share token (default "aUSDC"). */
   shareSymbol?: string;
   /** Symbol of the underlying token (default "USDC"). */
@@ -69,11 +70,12 @@ function formatTokens(raw: bigint): string {
 
 export function RedemptionPreview({
   sharesInput,
+  vaultStatsUrl,
   shareSymbol = "aUSDC",
   tokenSymbol = "USDC",
   className = "",
 }: RedemptionPreviewProps) {
-  const { totalAssets, totalShares, sharePrice, isLoading } = useVaultStats();
+  const { totalAssets, totalShares, sharePrice, isLoading } = useVaultStats(vaultStatsUrl);
 
   // Capture the share price observed on first load for drift detection
   const initialSharePrice = useRef<string | null>(null);
@@ -94,7 +96,7 @@ export function RedemptionPreview({
   const hasValidInput = !isNaN(shareAmount) && shareAmount > 0;
 
   // Compute estimated redemption value
-  const rawRedemption = hasValidInput
+  const rawRedemption = hasValidInput && debouncedShares === sharesInput
     ? computeRedemption(debouncedShares, totalAssets, totalShares)
     : null;
   const estimatedOutput = rawRedemption !== null ? formatTokens(rawRedemption) : null;

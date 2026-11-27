@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { SparklineSkeleton } from "./Skeleton";
 import {
   ResponsiveContainer,
   LineChart,
@@ -63,7 +64,11 @@ function ChartTooltip({ active, payload, label }: TooltipProps) {
   );
 }
 
-export function PerformanceCharts() {
+export interface PerformanceChartsProps {
+  isLoading?: boolean;
+}
+
+export function PerformanceCharts({ isLoading = false }: PerformanceChartsProps = {}) {
   const [tf, setTf] = useState<Timeframe>("1M");
 
   const rawBalance = useMemo(() => generateBalanceHistory(tf), [tf]);
@@ -77,6 +82,10 @@ export function PerformanceCharts() {
     () => exportCsv(rawBalance, rawApy, tf),
     [rawBalance, rawApy, tf]
   );
+
+  if (isLoading) {
+    return <SparklineSkeleton height={220} />;
+  }
 
   return (
     <section aria-labelledby="perf-title" className="perf-charts">

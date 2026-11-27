@@ -7,6 +7,7 @@ export interface WalletState {
   address: string | null;
   network: string | null;
   connected: boolean;
+  connectionVersion: number;
   loading: boolean;
   error: string | null;
 }
@@ -24,14 +25,31 @@ export const useWalletStore = create<WalletState & WalletActions>()(
       address: null,
       network: null,
       connected: false,
+      connectionVersion: 0,
       loading: false,
       error: null,
 
       setConnected: (address, network) =>
-        set({ address, network, connected: true, loading: false, error: null }),
+        set((state) => ({
+          address,
+          network,
+          connected: true,
+          connectionVersion: state.connected && state.address === address && state.network === network
+            ? state.connectionVersion
+            : state.connectionVersion + 1,
+          loading: false,
+          error: null,
+        })),
 
       setDisconnected: () =>
-        set({ address: null, network: null, connected: false, loading: false, error: null }),
+        set((state) => ({
+          address: null,
+          network: null,
+          connected: false,
+          connectionVersion: state.connectionVersion + 1,
+          loading: false,
+          error: null,
+        })),
 
       setLoading: (loading) => set({ loading }),
 

@@ -13,6 +13,11 @@ import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import type { GovernanceProposal, ProposalStatus } from "../lib/useGovernanceQueries";
+import {
+  governanceListQueryKey,
+  governanceDetailQueryKey,
+  governanceScopeKey,
+} from "../lib/useGovernanceQueries";
 
 // ── Pure helpers (inlined from GovernanceDashboard.tsx) ───────────────────────
 
@@ -368,5 +373,72 @@ describe("msw: POST /api/v1/governance/proposals/:id/execute", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Cross-network cache isolation (Issue #1467) ───────────────────────────────
+
+describe("useGovernanceQueries cross-network cache isolation", () => {
+  it("scopes list and detail query keys by chain and contractId", () => {
+    const testnetKey = governanceDetailQueryKey("prop-1", {
+      chain: "testnet",
+      contractId: "C_TESTNET_GOV",
+    });
+    const mainnetKey = governanceDetailQueryKey("prop-1", {
+      chain: "mainnet",
+      contractId: "C_MAINNET_GOV",
+    });
+
+    expect(testnetKey).not.toEqual(mainnetKey);
+    expect(governanceScopeKey({ chain: "testnet", contractId: "C_TESTNET_GOV" })).toEqual({
+      chain: "testnet",
+      contractId: "C_TESTNET_GOV",
+    });
+
+    const listTestnet = governanceListQueryKey({ chain: "testnet" }, { page: 1 });
+    const listMainnet = governanceListQueryKey({ chain: "mainnet" }, { page: 1 });
+    expect(listTestnet).not.toEqual(listMainnet);
+  });
+
+  it("resolves proposal details and vote state from the active network when proposal IDs match", () => {
+    const wallet = "GVOTER1";
+    const testnetProposal = makeProposal({
+      id: "prop-1",
+      title: "Testnet Upgrade",
+      description: "Testnet-only proposal",
+      votesFor: 2,
+      signers: [wallet],
+      thresholdMet: false,
+    });
+    const mainnetProposal = makeProposal({
+      id: "prop-1",
+      title: "Mainnet Upgrade",
+      description: "Mainnet-only proposal",
+      votesFor: 0,
+      signers: [],
+      thresholdMet: false,
+    });
+
+    const cache = new Map<string, GovernanceProposal>();
+    cache.set(
+      JSON.stringify(governanceDetailQueryKey("prop-1", { chain: "testnet", contractId: "C_TEST" })),
+      testnetProposal
+    );
+    cache.set(
+      JSON.stringify(governanceDetailQueryKey("prop-1", { chain: "mainnet", contractId: "C_MAIN" })),
+      mainnetProposal
+    );
+
+    const activeTestnet = cache.get(
+      JSON.stringify(governanceDetailQueryKey("prop-1", { chain: "testnet", contractId: "C_TEST" }))
+    )!;
+    expect(activeTestnet.title).toBe("Testnet Upgrade");
+    expect(canVote(activeTestnet, wallet)).toBe(false);
+
+    const activeMainnet = cache.get(
+      JSON.stringify(governanceDetailQueryKey("prop-1", { chain: "mainnet", contractId: "C_MAIN" }))
+    )!;
+    expect(activeMainnet.title).toBe("Mainnet Upgrade");
+    expect(canVote(activeMainnet, wallet)).toBe(true);
   });
 });

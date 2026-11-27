@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EmptyState } from "./EmptyState";
 
 type Period = "all" | "30d" | "7d" | "24h";
 
@@ -183,7 +184,7 @@ export function Leaderboard() {
           </ol>
           </>
         ) : (
-          <p className="p-8 text-center text-sm text-zinc-500">No vault positions are available yet.</p>
+          <EmptyState variant="no-leaderboard" className="py-8" />
         )}
       </div>
       {data && data.totalPages > 1 && <nav aria-label="Leaderboard pages" className="mt-4 flex items-center justify-between">
