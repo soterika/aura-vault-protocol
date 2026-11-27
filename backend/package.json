@@ -38,7 +38,7 @@
     "express-rate-limit": "^8.7.5",
     "handlebars": "^4.7.10",
     "helmet": "^8.3.0",
-    "ioredis": "^5.4.2",
+    "ioredis": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "opossum": "^10.0.0",
     "pg": "^8.23.1",
