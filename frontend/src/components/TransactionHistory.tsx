@@ -1,9 +1,10 @@
 "use client";
 
+import { EmptyState } from "./EmptyState";
 import { useMemo, useState } from "react";
 import { downloadTransactionPdf } from "@/lib/transactionPdf";
-import { resolveNetwork, stellarExpertTxUrl, type StellarNetwork } from "@/lib/explorerLinks";
-import { EmptyState } from "./EmptyState";
+import { resolveNetwork, type StellarNetwork } from "@/lib/explorerLinks";
+import { ExplorerLink } from "./ExplorerLink";
 
 export type TxType = "deposit" | "withdraw" | "harvest" | "all";
 export type TxStatus = "confirmed" | "pending" | "failed" | "all";
@@ -116,7 +117,7 @@ export default function TransactionHistory({
             {currentRows.map((tx) => (
               <tr key={tx.hash} className="border-t border-zinc-200 dark:border-zinc-700">
                 <td className="p-3">{new Date(tx.date).toLocaleString()}</td><td className="p-3 capitalize">{tx.type}</td><td className="p-3">{tx.amount}</td><td className="p-3 capitalize">{tx.status}</td>
-                <td className="p-3"><a className="text-blue-700 underline dark:text-blue-300" href={stellarExpertTxUrl(tx.hash, resolvedNetwork)} target="_blank" rel="noreferrer">{tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}</a></td>
+                <td className="p-3"><ExplorerLink type="tx" id={tx.hash} network={resolvedNetwork} className="text-blue-700 underline dark:text-blue-300">{tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}</ExplorerLink></td>
               </tr>
             ))}
             {currentRows.length === 0 && (
