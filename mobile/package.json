@@ -19,7 +19,7 @@
     "expo-linking": "~7.0.0",
     "expo-local-authentication": "~15.0.0",
     "expo-notifications": "~0.29.0",
-    "expo-secure-store": "~14.0.0",
+    "expo-secure-store": "~58.0.3",
     "react": "18.3.1",
     "react-native": "0.76.0",
     "react-native-safe-area-context": "~5.0.0",
