@@ -29,7 +29,7 @@ import {
   TraceIdRatioBasedSampler,
   BatchSpanProcessor,
   ConsoleSpanExporter,
-} from '@opentelemetry/sdk-trace-node';
+} from '@opentelemetry/sdk-trace';
 import { resourceFromAttributes, defaultResource } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -97,8 +97,8 @@ export function initTracing(): void {
     resource,
     sampler: new TraceIdRatioBasedSampler(SAMPLING_RATE),
     spanProcessors: [
-      new BatchSpanProcessor(otlpExporter),
-      ...(isDev ? [new BatchSpanProcessor(new ConsoleSpanExporter())] : []),
+      new BatchSpanProcessor({ exporter: otlpExporter }),
+      ...(isDev ? [new BatchSpanProcessor({ exporter: new ConsoleSpanExporter() })] : []),
     ],
     instrumentations: [
       getNodeAutoInstrumentations({

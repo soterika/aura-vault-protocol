@@ -1,0 +1,19 @@
+# KEDA Helm values for Aura Vault
+# Install:
+#   helm dependency build k8s/keda
+#   helm upgrade --install keda k8s/keda --namespace keda --create-namespace --values k8s/keda/values.yaml
+
+keda:
+  operator:
+    replicaCount: 2
+  metricsServer:
+    replicaCount: 2
+  webhooks:
+    enabled: true
+  prometheus:
+    metricServer:
+      enabled: true
+      port: 8080
+    operator:
+      enabled: true
+      port: 8080

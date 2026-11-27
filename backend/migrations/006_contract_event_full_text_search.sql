@@ -36,3 +36,12 @@ CREATE INDEX IF NOT EXISTS idx_contract_events_search_vector
   ON contract_events USING GIN (search_vector);
 
 COMMIT;
+
+-- Down Migration
+-- lint-migrations: allow DROP COLUMN  reason: search_vector was introduced by this migration and has no other writer
+BEGIN;
+DROP INDEX IF EXISTS idx_contract_events_search_vector;
+DROP TRIGGER IF EXISTS trg_contract_events_search_vector ON contract_events;
+DROP FUNCTION IF EXISTS update_contract_events_search_vector();
+ALTER TABLE contract_events DROP COLUMN IF EXISTS search_vector;
+COMMIT;

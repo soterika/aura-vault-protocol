@@ -23,7 +23,7 @@ aura_vault (database)
 
 ## Table: `vault_positions`
 
-Stores one row per active or deactivated user position in a vault. A "position" represents a user's aggregate holding in a specific vault at a given point in time — it is not a ledger of individual transactions. Soft deletion via `deleted_at` preserves historical data for auditing and analytics.
+Stores one row per active or deactivated user position in a vault. A "position" represents a user's aggregate holding in a specific vault at a given point in time — it is not a ledger of individual transactions. Soft deletion via `deleted_at` preserves historical data for auditing and analytics. For frontend portfolio CSV export field semantics, see [Portfolio Export Field Semantics](./analytics.md#portfolio-export-field-semantics).
 
 ### Columns
 
