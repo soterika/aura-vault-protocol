@@ -181,6 +181,7 @@ Reviewers must verify the changelog entry as part of the PR review.
 ### Added
 - **Python integration examples** (`docs/integration-python.md`) — executable REST authentication, vault stats, yield calculation, Soroban deposit submission, confirmation polling, and retry patterns.
 - **Multi-vault architecture decision record** (`docs/adr/ADR-003-multi-vault-factory-pattern.md`) — documents the current independent-instance deployment model and the trade-offs and risks of introducing an on-chain factory.
+- **Dependency audit coverage** — added mobile and Soroban lockfiles so CI can scan those dependency trees.
 - **Changelog pull request check** — requires a `[Unreleased]` entry when backend or frontend code changes.
 - **Vault contract governance and operations** — multi-signature proposals, pause and circuit-breaker controls, storage/version inspection, migration guidance, and harvest economics documentation.
 - **Backend API and operations** — vault statistics and history, authenticated transaction submission, admin audit and upgrade endpoints, webhook delivery, rate limits, and service health monitoring.

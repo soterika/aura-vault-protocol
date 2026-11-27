@@ -1,6 +1,6 @@
 # Aura Vault — Mobile App
 
-React Native mobile client for the Aura Vault Protocol, built with Expo 52 and React Native 0.76.
+React Native mobile client for the Aura Vault Protocol, built with Expo 58 and React Native 0.88.
 
 ---
 
@@ -53,8 +53,8 @@ The mobile app gives users native iOS and Android access to their Aura Vault pos
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Node.js | 18 LTS or 20 LTS | [nodejs.org](https://nodejs.org/) |
-| Expo CLI | Latest | `npm install -g expo-cli` |
+| Node.js | 22.13 or later | [nodejs.org](https://nodejs.org/) |
+| Expo CLI | Bundled with Expo | `npx expo --version` |
 | EAS CLI | Latest | `npm install -g eas-cli` |
 | Xcode | 15+ | Mac App Store (iOS builds only) |
 | Android Studio | Hedgehog+ | [developer.android.com](https://developer.android.com/studio) |
