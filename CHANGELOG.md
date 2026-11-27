@@ -194,6 +194,7 @@ Reviewers must verify the changelog entry as part of the PR review.
 - **Versioning policy** (this section) — MAJOR/MINOR/PATCH criteria for contract, API, and frontend; PR merge requirements; git tagging convention. Closes #399.
 
 ### Changed
+- **Backend dependency audit** — upgraded the Stellar SDK and compression and declared the queue dashboard, OpenAPI validation, and metrics dependencies.
 - **Stellar deployment instructions** — require Stellar CLI v21.3.0+, use the `stellar` command and `--source` identity syntax, and reject older CLI versions in deployment scripts.
 
 ### Security
