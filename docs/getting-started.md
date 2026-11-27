@@ -1,44 +1,393 @@
 # Getting Started with Aura Vault
 
-For local setup failures, see the [troubleshooting guide](troubleshooting.md).
+This guide takes a new contributor from a clean machine to a running local stack, a deployed contract, and a first frontend deposit.
+
 For what Settings saves on this device versus to your account, see
 [Settings persistence](ARCHITECTURE.md#settings-persistence).
 
-Aura Vault is a yield-generating vault on the Stellar network. You deposit tokens, receive vault shares, and your shares automatically grow in value as the vault earns yield — no manual compounding required.
-
-> **New to crypto?** Start with [Step 1](#step-1--install-a-wallet). If you already have Freighter installed and funded, jump to [Step 2](#step-2--connect-your-wallet).
+For deeper setup details, see [DEVELOPMENT_SETUP.md](../DEVELOPMENT_SETUP.md). For runtime problems, see [troubleshooting.md](troubleshooting.md).
 
 ---
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Step 1 — Install a Wallet](#step-1--install-a-wallet)
-3. [Step 2 — Connect Your Wallet](#step-2--connect-your-wallet)
-4. [Step 3 — Make Your First Deposit](#step-3--make-your-first-deposit)
-5. [Step 4 — Monitor Your Portfolio](#step-4--monitor-your-portfolio)
-6. [Step 5 — Withdraw](#step-5--withdraw)
-7. [Understanding Vault Shares](#understanding-vault-shares)
-8. [Fee Structure](#fee-structure)
-9. [FAQ](#faq)
+1. [Developer prerequisites](#developer-prerequisites)
+2. [Install Rust and the WASM target](#1-install-rust-and-the-wasm-target)
+3. [Install the Stellar CLI and configure testnet](#2-install-the-stellar-cli-and-configure-testnet)
+4. [Create and fund a test keypair](#3-create-and-fund-a-test-keypair)
+5. [Configure and run the local stack](#4-configure-and-run-the-local-stack)
+6. [Seed the database](#5-seed-the-local-database)
+7. [Deploy the contract](#6-deploy-the-contract)
+8. [Make the first frontend deposit](#7-make-the-first-deposit)
+9. [Troubleshooting the five common setup errors](#troubleshooting-the-five-common-setup-errors)
+10. [Using the frontend and wallet](#using-the-frontend-and-wallet)
+11. [Understanding vault shares](#understanding-vault-shares)
+12. [FAQ](#faq)
 
 ---
 
-## Prerequisites
+## Review status
 
-Before you start you need:
+This guide is ready for an independent developer review. Approval must come from a team member who did not author the change. The reviewer should record the date and environment here in the PR before merge:
 
-| What | Why | Where to get it |
-|---|---|---|
-| A Stellar wallet (Freighter recommended) | To sign transactions and hold tokens | [freighter.app](https://www.freighter.app) |
-| A small amount of XLM | To pay Stellar network fees (~0.1 XLM per transaction) | Any crypto exchange |
-| The vault's underlying token | The asset you deposit to earn yield | Shown on the app homepage |
-
-> **Testnet tip:** Switch Freighter to **Testnet** and use [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=test) to create a funded test account — no real money needed while you learn.
+```text
+Reviewed by: <name>
+Review date: <YYYY-MM-DD>
+Environment: <OS / Node / Rust / Stellar CLI / Docker>
+Result: Approved
+```
 
 ---
 
-## Step 1 — Install a Wallet
+## Developer prerequisites
+
+Run every command from the repository root unless a section says otherwise.
+
+| Tool | Minimum version | Purpose |
+|---|---:|---|
+| Git | 2.40+ | Source control |
+| Node.js | 22+ | Backend and frontend |
+| npm | 10+ | JavaScript dependencies |
+| Rust | 1.78+ | Soroban contract |
+| `cargo` | 1.78+ | Rust builds and tests |
+| Docker Engine or Docker Desktop | 27+ | PostgreSQL, Redis, and optional local sandbox |
+| Docker Compose | 2.24+ | Multi-container development stack |
+| Stellar CLI | 21.3.0+ | Testnet/local network and contract deployment |
+| PostgreSQL client (optional) | 16+ | Database checks |
+| jq | 1.6+ | Parse deployment script output |
+| Chrome, Edge, or Firefox | Current | Frontend and Freighter |
+
+### Verify prerequisites
+
+```bash
+git --version
+node --version
+npm --version
+rustc --version
+cargo --version
+docker --version
+docker compose version
+stellar --version
+```
+
+Each command must succeed before continuing. Node must print `v22` or newer.
+
+---
+
+## 1. Install Rust and the WASM target
+
+### macOS and Linux
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-unknown-unknown
+rustc --version
+rustup target list --installed | grep wasm32-unknown-unknown
+```
+
+### Windows 11
+
+Use WSL2 with Ubuntu 22.04 or newer. Run these commands inside WSL, not in PowerShell:
+
+```bash
+wsl --install -d Ubuntu-22.04
+```
+
+After Ubuntu starts, run:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-unknown-unknown
+```
+
+---
+
+## 2. Install the Stellar CLI and configure testnet
+
+Install the CLI with Rust on macOS, Linux, or WSL:
+
+```bash
+cargo install --locked stellar-cli --features opt
+stellar --version
+```
+
+Configure the Testnet network and verify it:
+
+```bash
+stellar network add testnet \
+  --rpc-url https://soroban-testnet.stellar.org \
+  --network-passphrase "Test SDF Network ; September 2015"
+
+stellar network ls
+stellar network info testnet
+```
+
+---
+
+## 3. Create and fund a test keypair
+
+Create a local named keypair for development:
+
+```bash
+stellar keys generate dev-key --network testnet
+DEV_ADDRESS="$(stellar keys address dev-key)"
+echo "$DEV_ADDRESS"
+```
+
+The address starts with `G` and is safe to share.
+
+Fund it from Friendbot:
+
+```bash
+curl --fail --show-error --location "https://friendbot.stellar.org?addr=${DEV_ADDRESS}"
+stellar keys fund dev-key --network testnet
+```
+
+Verify the account and preserve the address for the remaining steps:
+
+```bash
+curl --fail --show-error "https://horizon-testnet.stellar.org/accounts/${DEV_ADDRESS}" |
+  python3 -c 'import json,sys; data=json.load(sys.stdin); print("\n".join(f"{b[\"balance\"]} {b[\"asset_type\"]}" for b in data["balances"]))'
+```
+
+Never commit the generated secret key or a seed phrase.
+
+### Configure Freighter
+
+1. Install Freighter from [freighter.app](https://www.freighter.app).
+2. Create or import a wallet, then unlock it.
+3. Open Freighter settings and select **Test SDF Network / Sep 2015**.
+4. Import the dev key only if you want to sign deposits with the same account. Otherwise, create a separate Freighter testnet account and fund it the same way.
+
+To fund a Freighter address:
+
+```bash
+FREIGHTER_ADDRESS="<your-G-address>"
+curl --fail --show-error --location "https://friendbot.stellar.org?addr=${FREIGHTER_ADDRESS}"
+```
+
+---
+
+## 4. Configure and run the local stack
+
+Start PostgreSQL and Redis with the repository's test-compose file:
+
+```bash
+docker compose -f docker-compose.test.yml up -d postgres redis
+docker compose -f docker-compose.test.yml ps
+docker compose -f docker-compose.test.yml exec postgres pg_isready -U postgres -d aura_vault_test
+docker compose -f docker-compose.test.yml exec redis redis-cli ping
+```
+
+Install dependencies:
+
+```bash
+npm install
+npm install --prefix backend
+npm install --prefix frontend
+npm install --prefix ui
+npm install --prefix contracts
+```
+
+Create the backend environment file:
+
+```bash
+cat > backend/.env.local <<EOF
+PORT=3001
+NODE_ENV=development
+JWT_SECRET=$(openssl rand -hex 64)
+UNSUBSCRIBE_SECRET=$(openssl rand -hex 32)
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/aura_vault_test
+DATABASE_REPLICA_URL=postgresql://postgres:postgres@localhost:5432/aura_vault_test
+REDIS_URL=redis://localhost:6379
+HORIZON_URL=https://horizon-testnet.stellar.org
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+VAULT_CONTRACT_ID=
+EOF
+```
+
+Create the frontend environment file:
+
+```bash
+cat > frontend/.env.local <<'EOF'
+NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_STELLAR_NETWORK=testnet
+NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+EOF
+```
+
+Run the backend and frontend in two terminals.
+
+Terminal 1:
+
+```bash
+cd backend
+set -a
+source .env.local
+set +a
+npm run dev
+```
+
+Terminal 2:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Verify both services:
+
+```bash
+curl --fail http://localhost:3001/api/health
+curl --fail --head http://localhost:3000
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+---
+
+## 5. Seed the local database
+
+With PostgreSQL running, apply migrations and seed development data:
+
+```bash
+cd backend
+set -a
+source .env.local
+set +a
+npm run migrate:up
+npm run seed
+npm run migrate:status
+```
+
+The seed command adds sample vaults, positions, referrals, yield calculations, jobs, and contract events. Re-running it is safe.
+
+---
+
+## 6. Deploy the contract
+
+### Option A: local sandbox (recommended for contract development)
+
+Start the local Stellar container:
+
+```bash
+stellar container start local
+stellar network add local \
+  --rpc-url http://localhost:8000/soroban/rpc \
+  --network-passphrase "Standalone Network ; September 2015"
+stellar keys generate local-dev --network local
+LOCAL_ADDRESS="$(stellar keys address local-dev)"
+echo "$LOCAL_ADDRESS"
+```
+
+Build and deploy:
+
+```bash
+cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
+
+WASM_HASH="$(stellar contract upload \
+  --wasm aura-vault/target/wasm32-unknown-unknown/release/aura_vault.wasm \
+  --source local-dev --network local --output json |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["wasm_id"])')"
+
+CONTRACT_ID="$(stellar contract deploy \
+  --wasm-hash "$WASM_HASH" \
+  --source local-dev --network local --output json |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["contract_id"])')"
+
+SIGNERS="[\"${LOCAL_ADDRESS}\",\"${LOCAL_ADDRESS}\",\"${LOCAL_ADDRESS}\",\"${LOCAL_ADDRESS}\",\"${LOCAL_ADDRESS}\"]"
+
+stellar contract invoke \
+  --id "$CONTRACT_ID" \
+  --source local-dev \
+  --network local \
+  -- initialize \
+  --admin "$LOCAL_ADDRESS" \
+  --underlying_token "<SEP41_TOKEN_CONTRACT_ID>" \
+  --signers "$SIGNERS" \
+  --decimals 7
+
+echo "CONTRACT_ID=$CONTRACT_ID"
+```
+
+Set `VAULT_CONTRACT_ID=$CONTRACT_ID` in `backend/.env.local`, then restart the backend. Replace `<SEP41_TOKEN_CONTRACT_ID>` with a deployed local SEP-41 token contract; initialization requires a real contract address.
+
+Stop the sandbox when finished:
+
+```bash
+stellar container stop local
+```
+
+### Option B: Testnet
+
+From the repository root, run the tested quick-deploy script:
+
+```bash
+bash scripts/testnet-quick-deploy.sh --skip-tests
+```
+
+The script creates and funds a deployer key, uploads the Wasm, deploys the vault, initializes it, and writes deployment metadata under `/tmp`. Review the returned contract ID and set `VAULT_CONTRACT_ID` to that value in `backend/.env.local`, then restart the backend.
+
+---
+
+## 7. Make the first deposit
+
+1. Open [http://localhost:3000](http://localhost:3000).
+2. Switch Freighter to Testnet.
+3. Click **Connect Wallet** and approve the request.
+4. Confirm the orange **TESTNET** network badge is displayed.
+5. Open **Deposit**.
+6. Enter an amount greater than zero and review the share and fee preview.
+7. Click **Deposit**, then approve the transaction in Freighter.
+8. Wait for the success state and confirm that the share balance changes.
+
+The on-chain deposit transfers the underlying SEP-41 token to the vault and mints vault shares. On a local sandbox, use the frontend only after configuring a local token and a wallet/Soroban signer supported by the app.
+
+---
+
+## Troubleshooting the five common setup errors
+
+1. **`rustc` or `cargo` not found**
+   Restart the terminal, run `source "$HOME/.cargo/env"`, and verify `rustup default stable`.
+
+2. **`wasm32-unknown-unknown` target missing**
+   ```bash
+   rustup update stable
+   rustup target add wasm32-unknown-unknown
+   cargo build --manifest-path aura-vault/Cargo.toml --target wasm32-unknown-unknown --release
+   ```
+
+3. **Freighter shows the wrong network**
+   Open Freighter settings and select **Test SDF Network / Sep 2015**. Refresh the frontend and reconnect.
+
+4. **PostgreSQL or Redis is unavailable**
+   ```bash
+   docker compose -f docker-compose.test.yml up -d postgres redis
+   docker compose -f docker-compose.test.yml logs postgres redis
+   ```
+
+5. **Friendbot funding or Testnet RPC times out**
+   Retry the direct URL in a browser, then run:
+   ```bash
+   DEV_ADDRESS="$(stellar keys address dev-key)"
+   curl --fail --retry 5 --retry-delay 3 --location "https://friendbot.stellar.org?addr=${DEV_ADDRESS}"
+   stellar network info testnet
+   ```
+
+For additional project-specific failures, see [troubleshooting.md](troubleshooting.md).
+
+---
+
+## Using the frontend and wallet
+
+### Step 1 — Install a Wallet
 
 **Freighter** is the most widely supported browser extension wallet for Stellar.
 

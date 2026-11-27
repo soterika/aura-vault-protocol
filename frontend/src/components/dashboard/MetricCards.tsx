@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardCard } from "./DashboardCard";
 import HelpTooltip from "@/components/HelpTooltip";
 import VaultStatSparkline from "./VaultStatSparkline";
@@ -113,14 +113,29 @@ export function LastHarvestCard({
   lastHarvestAmount,
   isLoading,
 }: LastHarvestCardProps) {
-  const relTime = lastHarvestAt != null ? formatRelativeTime(lastHarvestAt) : "Never";
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isoTime =
+    lastHarvestAt != null ? new Date(lastHarvestAt).toISOString() : null;
+  const relTime =
+    lastHarvestAt == null
+      ? "Never"
+      : mounted
+        ? formatRelativeTime(lastHarvestAt)
+        : isoTime!;
   const absTime =
-    lastHarvestAt != null
-      ? new Date(lastHarvestAt).toLocaleString(undefined, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        })
-      : null;
+    lastHarvestAt == null
+      ? null
+      : mounted
+        ? new Date(lastHarvestAt).toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })
+        : isoTime;
 
   return (
     <DashboardCard
