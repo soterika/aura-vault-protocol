@@ -227,6 +227,7 @@ export class GasPriceService {
   private readonly clock: () => number;
   private readonly rpc: GasRpcClient;
   private readonly store: GasPriceStore;
+  private readonly metrics = { cacheHits: 0, chainQuotes: 0, fallbackQuotes: 0 };
 
   constructor(deps: GasServiceDeps) {
     this.cacheTtlMs = deps.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
@@ -241,6 +242,7 @@ export class GasPriceService {
     if (!forceRefresh) {
       const cached = await this.store.readCached(chainId);
       if (cached) {
+        this.metrics.cacheHits += 1;
         return { ...cached, cached: true };
       }
     }
@@ -248,14 +250,20 @@ export class GasPriceService {
     let payload: GasEstimateResponse;
     try {
       payload = await this.fetchFromChain(chainId, gasLimit);
+      this.metrics.chainQuotes += 1;
     } catch (err) {
       payload = await this.buildFallback(chainId, gasLimit, err);
+      this.metrics.fallbackQuotes += 1;
     }
 
     await this.store.writeCached(chainId, payload, this.cacheTtlMs);
     await this.store.appendHistory(chainId, this.toHistoryEntry(payload), this.historyLimit);
 
     return payload;
+  }
+
+  getMetrics(): Readonly<typeof this.metrics> {
+    return { ...this.metrics };
   }
 
   async history(chainId: number, limit = 10): Promise<GasHistoryEntry[]> {

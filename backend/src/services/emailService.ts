@@ -277,7 +277,7 @@ export async function sendEmail(job: EmailJob): Promise<EmailResult> {
         : await sendViaMailgun(msg);
       return { success: true, messageId, provider };
     } catch (err) {
-      logger.error(`[Email] ${provider} failed:`, (err as Error).message);
+      logger.error({ err: (err as Error).message }, `[Email] ${provider} failed:`);
     }
   }
 

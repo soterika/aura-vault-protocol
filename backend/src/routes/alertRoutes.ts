@@ -119,7 +119,7 @@ const createSubscriptionSchema = z.object({
  */
 alertsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const walletAddress = (req as Request & { user: { sub: string } }).user.sub;
+    const walletAddress = (req as typeof req & { user: { sub: string } }).user.sub;
     const subscriptions = await listSubscriptions(walletAddress);
     res.status(200).json(successResponse(subscriptions));
   } catch (err) {
@@ -147,7 +147,7 @@ alertsRouter.post(
   validate(createSubscriptionSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const walletAddress = (req as Request & { user: { sub: string } }).user.sub;
+      const walletAddress = (req as typeof req & { user: { sub: string } }).user.sub;
       const input = req.body as z.infer<typeof createSubscriptionSchema>;
 
       const subscription = await createSubscription({
@@ -193,9 +193,9 @@ alertsRouter.post(
  */
 alertsRouter.delete(
   '/:id',
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     try {
-      const walletAddress = (req as Request & { user: { sub: string } }).user.sub;
+      const walletAddress = (req as typeof req & { user: { sub: string } }).user.sub;
       const { id } = req.params;
 
       if (!id) {

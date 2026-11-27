@@ -312,7 +312,7 @@ async function dispatchEmailNotification(
 
   await enqueueEmail({
     to: sub.email,
-    template: 'generic',
+    template: 'vault-alert',
     subject: buildSubject(eventType, sub, snapshot),
     data: buildEmailData(eventType, sub, snapshot),
     priority: eventType === 'vault_paused' ? 'high' : 'normal',

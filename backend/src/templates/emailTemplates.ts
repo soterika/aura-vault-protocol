@@ -368,7 +368,7 @@ const WEEKLY_DIGEST: TemplateDefinition = {
     </p>
     ${detailTable(`
       ${row('Share Balance', '<span style="color:#e0e0f0;font-size:18px;font-weight:700;">{{shareBalance}} shares</span>', false)}
-      ${row('USD Value', '<span style="color:#6366f1;font-size:18px;font-weight:700;">${{usdValue}}</span>')}
+      ${row('USD Value', '<span style="color:#6366f1;font-size:18px;font-weight:700;">\${{usdValue}}</span>')}
       ${row('Week-over-Week Change', `
         {{#if (eq changeSign "+")}}
           <span style="color:#22c55e;font-size:15px;font-weight:600;">{{changeSign}}{{changeWow}}%</span>
@@ -406,7 +406,7 @@ Hi {{userName}},
 Here's your weekly portfolio summary for {{walletAddress}}:
 
 Share Balance:          {{shareBalance}} shares
-USD Value:              ${{usdValue}}
+USD Value:              \${{usdValue}}
 Week-over-Week Change:  {{changeSign}}{{changeWow}}%
 APY This Week:          {{apyThisWeek}}%
 APY Last Week:          {{apyLastWeek}}%
@@ -433,5 +433,10 @@ export const EMAIL_TEMPLATES: Record<EmailTemplate, TemplateDefinition> = {
   'gdpr-erasure-confirmation': GDPR_ERASURE_CONFIRMATION,
   'gdpr-data-export-ready': GDPR_DATA_EXPORT_READY,
   'portfolio-digest': PORTFOLIO_DIGEST,
+  "vault-alert": {
+    defaultSubject: "Aura Vault alert",
+    html: "<p>Vault alert: {{subscriptionLabel}}</p><p>Wallet: {{walletAddress}}</p><p>{{timestamp}}</p>",
+    text: "Vault alert: {{subscriptionLabel}}\nWallet: {{walletAddress}}\n{{timestamp}}",
+  },
   'weekly-digest': WEEKLY_DIGEST,
 };

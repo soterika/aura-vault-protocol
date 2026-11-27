@@ -72,6 +72,6 @@ export async function warmCache(): Promise<void> {
     ]);
     logger.info("[Cache] Warm-up complete");
   } catch (err) {
-    logger.error("[Cache] Warm-up failed:", err);
+    logger.error({ err: err }, "[Cache] Warm-up failed:");
   }
 }

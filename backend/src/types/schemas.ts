@@ -23,7 +23,7 @@ import { StrKey } from "@stellar/stellar-sdk";
  * Uses StrKey.isValidEd25519PublicKey for RFC 4648 base32 compliance.
  */
 export const stellarAddressSchema = z
-  .string({ required_error: "Stellar address is required" })
+  .string({ error: "Stellar address is required" })
   .min(56, "Stellar address must be 56 characters")
   .max(56, "Stellar address must be 56 characters")
   .refine(
@@ -36,7 +36,7 @@ export const stellarAddressSchema = z
  * Amounts must be positive integers for on-chain compatibility.
  */
 export const amountSchema = z
-  .number({ required_error: "Amount is required" })
+  .number({ error: "Amount is required" })
   .int("Amount must be an integer (expressed in stroops/base units)")
   .positive("Amount must be greater than 0")
   .max(Number.MAX_SAFE_INTEGER, "Amount exceeds maximum value");
@@ -47,7 +47,7 @@ export const amountSchema = z
  * Examples: "1000", "1000.50", "0.0000001"
  */
 export const decimalAmountSchema = z
-  .string({ required_error: "Amount is required" })
+  .string({ error: "Amount is required" })
   .regex(
     /^[0-9]+(\.[0-9]{1,7})?$/,
     "Amount must be a non-negative number with up to 7 decimal places"
@@ -106,7 +106,7 @@ export const authLoginSchema = z.object({
 
 export const authRefreshSchema = z.object({
   refreshToken: z
-    .string({ required_error: "Refresh token is required" })
+    .string({ error: "Refresh token is required" })
     .min(1, "Refresh token is required"),
 });
 
@@ -122,14 +122,14 @@ export const authLogoutSchema = z.object({
 
 export const vaultDepositSchema = z.object({
   signedXdr: z
-    .string({ required_error: "Signed transaction XDR is required" })
+    .string({ error: "Signed transaction XDR is required" })
     .min(1, "Signed XDR is required"),
   address: stellarAddressSchema,
 });
 
 export const vaultWithdrawSchema = z.object({
   signedXdr: z
-    .string({ required_error: "Signed transaction XDR is required" })
+    .string({ error: "Signed transaction XDR is required" })
     .min(1, "Signed XDR is required"),
   address: stellarAddressSchema,
   shares: decimalAmountSchema,
@@ -137,7 +137,7 @@ export const vaultWithdrawSchema = z.object({
 
 export const vaultHarvestSchema = z.object({
   signedXdr: z
-    .string({ required_error: "Signed transaction XDR is required" })
+    .string({ error: "Signed transaction XDR is required" })
     .min(1, "Signed XDR is required"),
   yieldAmount: decimalAmountSchema,
 });
@@ -157,7 +157,7 @@ export const portfolioPositionSchema = z.object({
 export const portfolioSourceSchema = z.object({
   id: z.string().optional(),
   apy: z
-    .number({ required_error: "APY is required" })
+    .number({ error: "APY is required" })
     .min(0, "APY cannot be negative")
     .max(100, "APY cannot exceed 100"),
 });
@@ -165,14 +165,14 @@ export const portfolioSourceSchema = z.object({
 export const yieldCalculateSchema = z.object({
   positions: z
     .array(portfolioPositionSchema, {
-      required_error: "Positions array is required",
-      invalid_type_error: "Positions must be an array",
+      error: "Positions array is required",
+      message: "Positions must be an array",
     })
     .min(1, "At least one position is required"),
   sources: z
     .array(portfolioSourceSchema, {
-      required_error: "Sources array is required",
-      invalid_type_error: "Sources must be an array",
+      error: "Sources array is required",
+      message: "Sources must be an array",
     })
     .min(1, "At least one source is required"),
   calcDate: isoDatetimeSchema.optional(),
@@ -182,13 +182,13 @@ export const backfillSchema = z.object({
   positions: z
     .array(
       z.object({ id: z.string().optional() }),
-      { required_error: "Positions array is required" }
+      { error: "Positions array is required" }
     )
     .min(1, "At least one position is required"),
   sources: z
     .array(
       z.object({ id: z.string().optional() }),
-      { required_error: "Sources array is required" }
+      { error: "Sources array is required" }
     )
     .min(1, "At least one source is required"),
   startDate: isoDatetimeSchema,
@@ -268,17 +268,17 @@ export const userPreferencesSchema = z.object({
 
 export const emailSendSchema = z.object({
   to: z
-    .string({ required_error: "Recipient email is required" })
+    .string({ error: "Recipient email is required" })
     .email("Invalid email address"),
   subject: z
-    .string({ required_error: "Subject is required" })
+    .string({ error: "Subject is required" })
     .min(1, "Subject cannot be empty")
     .max(255, "Subject too long"),
   templateId: z
-    .string({ required_error: "Template ID is required" })
+    .string({ error: "Template ID is required" })
     .min(1, "Template ID is required"),
   context: z
-    .record(z.any())
+    .record(z.string(), z.unknown())
     .optional(),
 });
 
@@ -288,10 +288,10 @@ export const emailSendSchema = z.object({
 
 export const queueJobSchema = z.object({
   jobType: z
-    .string({ required_error: "Job type is required" })
+    .string({ error: "Job type is required" })
     .min(1, "Job type is required"),
   data: z
-    .record(z.any())
+    .record(z.string(), z.unknown())
     .optional(),
   priority: z
     .enum(["low", "normal", "high"])
@@ -307,11 +307,11 @@ export const queryPaginationSchema = z.object({
   page: z
     .string()
     .default("1")
-    .pipe(z.coerce.number().int().min(1)),
+    .pipe(z.coerce.number<string>().int().min(1)),
   pageSize: z
     .string()
     .default("20")
-    .pipe(z.coerce.number().int().min(1).max(100)),
+    .pipe(z.coerce.number<string>().int().min(1).max(100)),
 });
 
 export const queryDateRangeSchema = z.object({

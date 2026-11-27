@@ -86,8 +86,7 @@ async function handleFailure(job: EmailJob, err: unknown): Promise<void> {
   if (job.attempts >= job.maxAttempts) {
     await redis.lpush(DEAD_KEY, JSON.stringify(job));
     logger.error(
-      `[EmailQueue] Job ${job.id} dead-lettered after ${job.attempts} attempt(s):`,
-      (err as Error).message
+      { err: (err as Error).message }, `[EmailQueue] Job ${job.id} dead-lettered after ${job.attempts} attempt(s):`
     );
     return;
   }

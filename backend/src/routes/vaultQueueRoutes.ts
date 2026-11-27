@@ -39,7 +39,7 @@ const txSchema = z.object({
   signedXdr: z.string().optional(),
   /** Webhook URL to notify on completion / failure */
   webhookUrl: z.string().url().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ vaultQueueRouter.post(
  *   200  { jobId, status: "pending"|"processing"|"completed"|"failed"|"delayed" }
  *   404  Job not found
  */
-vaultQueueRouter.get("/job/:jobId", async (req: Request, res: Response): Promise<void> => {
+vaultQueueRouter.get("/job/:jobId", async (req: Request<{ jobId: string }>, res: Response): Promise<void> => {
   const { jobId } = req.params;
   const job = await getVaultJobStatus(jobId);
 

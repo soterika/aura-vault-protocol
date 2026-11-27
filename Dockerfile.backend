@@ -33,6 +33,7 @@ RUN addgroup -g 1001 -S nodejs
 RUN adduser -S backend -u 1001
 
 COPY docs/openapi.yaml ./docs/openapi.yaml
+COPY --chown=backend:nodejs backend/migrations ./backend/migrations
 
 # Copy built application from builder
 COPY --from=builder --chown=backend:nodejs /app/backend/dist ./backend/dist

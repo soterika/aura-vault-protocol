@@ -213,7 +213,7 @@ export async function runMigrationsUp(options?: {
           logger.info(`[migrations] Applied: ${migration.name}`);
         } catch (err) {
           await client.query("ROLLBACK;");
-          logger.error(`[migrations] Failed running migration ${migration.name}:`, err);
+          logger.error({ err: err }, `[migrations] Failed running migration ${migration.name}:`);
           throw err;
         }
 
@@ -282,7 +282,7 @@ export async function runMigrationsDown(options?: {
           logger.info(`[migrations] Rolled back: ${name}`);
         } catch (err) {
           await client.query("ROLLBACK;");
-          logger.error(`[migrations] Failed rolling back ${name}:`, err);
+          logger.error({ err: err }, `[migrations] Failed rolling back ${name}:`);
           throw err;
         }
 
@@ -336,6 +336,6 @@ export async function autoMigrate(): Promise<void> {
       logger.info("[migrations] Database schema is up to date");
     }
   } catch (err) {
-    logger.error("[migrations] Error during auto-migration on startup:", err);
+    logger.error({ err: err }, "[migrations] Error during auto-migration on startup:");
   }
 }

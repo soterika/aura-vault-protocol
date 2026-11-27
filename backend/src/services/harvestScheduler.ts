@@ -115,12 +115,12 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
     lastHarvestCompletedAt = Date.now();
     await recordHarvestSuccess(job.data.yieldAmount);
 
-    logger.info("[HarvestScheduler] Harvest executed on-chain", {
+    logger.info({
       jobId: job.id,
       vaultContractId: job.data.vaultContractId,
       yieldAmount: job.data.yieldAmount,
       txResult,
-    });
+    }, "[HarvestScheduler] Harvest executed on-chain");
 
     return txResult;
   });
@@ -144,21 +144,21 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
         accumulatedYield = await opts.getAccumulatedYield();
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        logger.error("[HarvestScheduler] Failed to fetch accumulated yield", { error });
+        logger.error({ error }, "[HarvestScheduler] Failed to fetch accumulated yield");
         return { outcome: "error", error };
       }
 
-      logger.debug("[HarvestScheduler] Tick", {
+      logger.debug({
         accumulatedYield,
         threshold: config.thresholdAmount,
-      });
+      }, "[HarvestScheduler] Tick");
 
       // 2. Check threshold
       if (accumulatedYield < config.thresholdAmount) {
-        logger.debug("[HarvestScheduler] Yield below threshold, skipping", {
+        logger.debug({
           accumulatedYield,
           threshold: config.thresholdAmount,
-        });
+        }, "[HarvestScheduler] Yield below threshold, skipping");
         return { outcome: "below_threshold", accumulatedYield };
       }
 
@@ -168,11 +168,11 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
         const msSinceLastHarvest = now - lastHarvestCompletedAt;
         if (msSinceLastHarvest < config.minHarvestGapMs) {
           const lastHarvestAt = new Date(lastHarvestCompletedAt).toISOString();
-          logger.info("[HarvestScheduler] Last harvest too recent, skipping", {
+          logger.info({
             msSinceLastHarvest,
             minHarvestGapMs: config.minHarvestGapMs,
             lastHarvestAt,
-          });
+          }, "[HarvestScheduler] Last harvest too recent, skipping");
           return { outcome: "too_soon", accumulatedYield, lastHarvestAt };
         }
       }
@@ -183,7 +183,7 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
         keypair = await getKeeperKeypair(config.keeperSecretId);
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        logger.error("[HarvestScheduler] Failed to load keeper keypair", { error });
+        logger.error({ error }, "[HarvestScheduler] Failed to load keeper keypair");
         await recordHarvestFailure(`keypair load error: ${error}`);
         return { outcome: "error", error };
       }
@@ -202,17 +202,17 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
         return { outcome: "duplicate", accumulatedYield };
       }
 
-      logger.info("[HarvestScheduler] Harvest job enqueued", {
+      logger.info({
         jobId: job.id,
         vaultContractId: config.vaultContractId,
         yieldAmount: accumulatedYield,
         threshold: config.thresholdAmount,
-      });
+      }, "[HarvestScheduler] Harvest job enqueued");
 
       return { outcome: "enqueued", accumulatedYield, jobId: job.id };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      logger.error("[HarvestScheduler] Unexpected tick error", { error });
+      logger.error({ error }, "[HarvestScheduler] Unexpected tick error");
       return { outcome: "error", error };
     } finally {
       tickRunning = false;
@@ -239,12 +239,12 @@ export function createHarvestScheduler(opts: HarvestSchedulerOptions) {
       void runTick().then((result) => opts.onTick?.(result));
     }, config.intervalMs);
 
-    logger.info("[HarvestScheduler] Started", {
+    logger.info({
       intervalMs: config.intervalMs,
       thresholdAmount: config.thresholdAmount,
       minHarvestGapMs: config.minHarvestGapMs,
       vaultContractId: config.vaultContractId,
-    });
+    }, "[HarvestScheduler] Started");
   }
 
   function stop(): void {

@@ -6,7 +6,7 @@
  * harvest executor (e.g., the Stellar horizon client).
  *
  * Features:
- *   - Durability: jobs survive process restarts (via queueDb persistence)
+ *   - Job status snapshots are persisted to Redis for diagnostics
  *   - Deduplication: prevents enqueueing a harvest when one is already waiting
  *     or active (avoids double-harvest)
  *   - Exponential backoff retry via the generic queue's MAX_ATTEMPTS logic
@@ -15,7 +15,7 @@
 
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../logger.js";
-import { saveJob } from "./queueDb.js";
+import { getRedis } from "../redis.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,10 +85,14 @@ function retryDelayMs(attempt: number): number {
   return BASE_DELAY_MS * Math.pow(2, attempt - 1);
 }
 
+async function saveJob(job: HarvestJob): Promise<void> {
+  await getRedis().set(`harvest:job:${job.id}`, JSON.stringify(job), "EX", 7 * 24 * 60 * 60);
+}
+
 function updateJob(job: HarvestJob, patch: Partial<HarvestJob>): void {
   Object.assign(job, patch, { updatedAt: Date.now() });
-  saveJob({ ...job, type: "harvest" } as any).catch((err) => {
-    logger.error("[HarvestQueue] Failed to persist job", { jobId: job.id, err });
+  saveJob(job).catch((err) => {
+    logger.error({ jobId: job.id, err }, "[HarvestQueue] Failed to persist job");
   });
 }
 
@@ -111,10 +115,10 @@ export function enqueueHarvest(data: HarvestJobData): HarvestJob | null {
   );
 
   if (duplicate) {
-    logger.warn("[HarvestQueue] Duplicate harvest suppressed — job already in flight", {
+    logger.warn({
       existingJobId: duplicate.id,
       vaultContractId: data.vaultContractId,
-    });
+    }, "[HarvestQueue] Duplicate harvest suppressed — job already in flight");
     return null;
   }
 
@@ -130,15 +134,15 @@ export function enqueueHarvest(data: HarvestJobData): HarvestJob | null {
   jobs.set(job.id, job);
   waitingQueue.push(job.id);
 
-  saveJob({ ...job, type: "harvest" } as any).catch((err) => {
-    logger.error("[HarvestQueue] Failed to persist new job", { jobId: job.id, err });
+  saveJob(job).catch((err) => {
+    logger.error({ jobId: job.id, err }, "[HarvestQueue] Failed to persist new job");
   });
 
-  logger.info("[HarvestQueue] Harvest job enqueued", {
+  logger.info({
     jobId: job.id,
     vaultContractId: data.vaultContractId,
     yieldAmount: data.yieldAmount,
-  });
+  }, "[HarvestQueue] Harvest job enqueued");
 
   return job;
 }
@@ -184,31 +188,31 @@ export async function tickHarvest(): Promise<void> {
     const result = await processor(job);
     updateJob(job, { status: "completed", result });
 
-    logger.info("[HarvestQueue] Harvest job completed", {
+    logger.info({
       jobId: job.id,
       vaultContractId: job.data.vaultContractId,
       result,
-    });
+    }, "[HarvestQueue] Harvest job completed");
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
 
     if (job.attempts < MAX_ATTEMPTS) {
       updateJob(job, { status: "waiting", error });
       retrySchedule.set(job.id, Date.now() + retryDelayMs(job.attempts));
-      logger.warn("[HarvestQueue] Harvest job failed, will retry", {
+      logger.warn({
         jobId: job.id,
         attempt: job.attempts,
         nextRetryMs: retryDelayMs(job.attempts),
         error,
-      });
+      }, "[HarvestQueue] Harvest job failed, will retry");
     } else {
       updateJob(job, { status: "dead", error });
       deadLetterQueue.push(job.id);
-      logger.error("[HarvestQueue] Harvest job exhausted retries — moved to DLQ", {
+      logger.error({
         jobId: job.id,
         vaultContractId: job.data.vaultContractId,
         error,
-      });
+      }, "[HarvestQueue] Harvest job exhausted retries — moved to DLQ");
     }
   }
 }

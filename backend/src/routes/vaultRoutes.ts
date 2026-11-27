@@ -16,6 +16,7 @@ import { cacheGet, cacheSet, NS } from "../cache.js";
 import {
   getVaultStats as getLegacyVaultStats,
   simulateDeposit,
+  getUserVolume,
   type VaultStatsData,
 } from "../services/vaultStatsService.js";
 import {
@@ -108,11 +109,7 @@ vaultRouter.get("/analytics/history", async (req: Request, res: Response): Promi
 });
 
 /** Dedicated per-IP rate limiter for the public volume endpoint (30 req/min). */
-const volumeRateLimiter = ipRateLimiter({
-  bucketKey: "rl:volume:ip",
-  limit: 30,
-  windowMs: 60_000,
-});
+const volumeRateLimiter = ipRateLimiter({ capacity: 30, refillRate: 0.5 }, "rl:volume:ip");
 
 /** Stellar account address: 56 chars, starting with G. */
 const STELLAR_ADDRESS_RE = /^G[A-Z2-7]{55}$/;
@@ -130,9 +127,9 @@ vaultRouter.get(
   "/users/:address/volume",
   volumeRateLimiter,
   async (req: Request, res: Response): Promise<void> => {
-    const address = req.params.address;
+    const { address } = req.params;
 
-    if (!STELLAR_ADDRESS_RE.test(address)) {
+    if (typeof address !== "string" || !STELLAR_ADDRESS_RE.test(address)) {
       res.status(400).json(
         errorResponse("INVALID_ADDRESS", "address must be a valid Stellar account address"),
       );
@@ -185,7 +182,7 @@ vaultRouter.get("/decimals", async (req: Request, res: Response): Promise<void> 
     const vault = await resolveVault(vaultIdParam).catch(() => null);
     res.json(successResponse({
       decimals: 7,
-      symbol: vault?.symbol ?? "AVS",
+      symbol: "AVS",
       name: vault?.name ?? "Aura Vault Share",
       ...(vault?.id && { vault_id: vault.id }),
       ...(vault?.contract_id && { contract_id: vault.contract_id }),
@@ -315,7 +312,7 @@ export async function invalidateVaultStatsCache(contractId?: string): Promise<vo
  */
 vaultRouter.get("/harvest/estimated", async (_req: Request, res: Response): Promise<void> => {
   try {
-    const stats = await getVaultStats();
+    const stats = await getLegacyVaultStats();
 
     const lastHarvestAt = stats.last_harvest ? new Date(stats.last_harvest) : null;
     const nowMs = Date.now();
@@ -339,7 +336,7 @@ vaultRouter.get("/harvest/estimated", async (_req: Request, res: Response): Prom
       })
     );
   } catch (err) {
-    logger.error("[vault/harvest/estimated]", err);
+    logger.error({ err: err }, "[vault/harvest/estimated]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to estimate yield"));
   }
 });
@@ -394,7 +391,7 @@ vaultRouter.post(
     try {
       // Check that the vault has shares before attempting harvest.
       // The on-chain contract returns ZeroShares (error code 8) when total_shares == 0.
-      const stats = await getVaultStats();
+      const stats = await getLegacyVaultStats();
       if (stats.total_shares === 0) {
         res.status(422).json(
           errorResponse(
@@ -415,11 +412,11 @@ vaultRouter.post(
       // Invalidate the stats cache so the next GET /stats reflects the harvest
       await invalidateVaultStatsCache();
 
-      logger.info("[vault/harvest/keeper] Harvest triggered", {
+      logger.info({
         yieldAmount,
         totalSharesBefore: stats.total_shares,
         newSharePrice: newSharePrice.toFixed(7),
-      });
+      }, "[vault/harvest/keeper] Harvest triggered");
 
       res.status(200).json(
         successResponse({
@@ -431,7 +428,7 @@ vaultRouter.post(
         })
       );
     } catch (err) {
-      logger.error("[vault/harvest/keeper]", err);
+      logger.error({ err: err }, "[vault/harvest/keeper]");
       res.status(500).json(errorResponse("INTERNAL_ERROR", "Harvest failed. Please try again."));
     }
   }
@@ -556,7 +553,7 @@ vaultRouter.get("/metrics/db", async (_req: Request, res: Response): Promise<voi
     const metrics = await getDbMetrics();
     res.json(successResponse({ metrics, generated_at: new Date().toISOString() }));
   } catch (err) {
-    logger.error("[vault/metrics/db]", err);
+    logger.error({ err: err }, "[vault/metrics/db]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve DB metrics"));
   }
 });
@@ -570,7 +567,7 @@ vaultRouter.get("/metrics/db/slow-log", async (_req: Request, res: Response): Pr
     const log = await getSlowQueryLog();
     res.json(successResponse({ slow_queries: log, count: log.length, generated_at: new Date().toISOString() }));
   } catch (err) {
-    logger.error("[vault/metrics/db/slow-log]", err);
+    logger.error({ err: err }, "[vault/metrics/db/slow-log]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Failed to retrieve slow query log"));
   }
 });
@@ -584,7 +581,7 @@ vaultRouter.get("/metrics/db/prometheus", async (_req: Request, res: Response): 
     const text = await dbMetricsPrometheusText();
     res.set("Content-Type", "text/plain; version=0.0.4").send(text);
   } catch (err) {
-    logger.error("[vault/metrics/db/prometheus]", err);
+    logger.error({ err: err }, "[vault/metrics/db/prometheus]");
     res.status(500).send("# error generating metrics\n");
   }
 });
