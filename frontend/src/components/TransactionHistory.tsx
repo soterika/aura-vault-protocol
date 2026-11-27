@@ -2,6 +2,7 @@
 
 import { EmptyState } from "./EmptyState";
 import { useMemo, useState } from "react";
+import DataTable, { type ColumnDef } from "./DataTable";
 import { downloadTransactionPdf } from "@/lib/transactionPdf";
 import { resolveNetwork, type StellarNetwork } from "@/lib/explorerLinks";
 import { ExplorerLink } from "./ExplorerLink";
@@ -72,10 +73,52 @@ export default function TransactionHistory({
     return !query || tx.hash.toLowerCase().includes(query.toLowerCase());
   }).sort((a, b) => b.date.localeCompare(a.date)), [transactions, type, status, from, to, query]);
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pages);
-  const currentRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const dateRange = [from || "Start", to || "Now"].join(" to ");
+  const columns: ColumnDef<Transaction>[] = useMemo(() => [
+    {
+      id: "date",
+      header: "Date",
+      accessorKey: "date",
+      sortable: true,
+      hideable: false,
+      cell: (tx) => new Date(tx.date).toLocaleString(),
+    },
+    {
+      id: "type",
+      header: "Type",
+      accessorKey: "type",
+      sortable: true,
+      cell: (tx) => <span className="capitalize">{tx.type}</span>,
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      accessorKey: "amount",
+      sortable: true,
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      sortable: true,
+      cell: (tx) => <span className="capitalize">{tx.status}</span>,
+    },
+    {
+      id: "hash",
+      header: "Transaction",
+      accessorKey: "hash",
+      cell: (tx) => (
+        <ExplorerLink
+          type="tx"
+          id={tx.hash}
+          network={resolvedNetwork}
+          className="text-blue-700 underline dark:text-blue-300"
+        >
+          {tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}
+        </ExplorerLink>
+      ),
+    },
+  ], [resolvedNetwork]);
 
   return (
     <section className="space-y-4" aria-labelledby="transaction-history-title">
@@ -110,38 +153,23 @@ export default function TransactionHistory({
         </label>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-        <table className="w-full min-w-[42rem] text-left text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-800"><tr><th className="p-3">Date</th><th className="p-3">Type</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3">Transaction</th></tr></thead>
-          <tbody>
-            {currentRows.map((tx) => (
-              <tr key={tx.hash} className="border-t border-zinc-200 dark:border-zinc-700">
-                <td className="p-3">{new Date(tx.date).toLocaleString()}</td><td className="p-3 capitalize">{tx.type}</td><td className="p-3">{tx.amount}</td><td className="p-3 capitalize">{tx.status}</td>
-                <td className="p-3"><ExplorerLink type="tx" id={tx.hash} network={resolvedNetwork} className="text-blue-700 underline dark:text-blue-300">{tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}</ExplorerLink></td>
-              </tr>
-            ))}
-            {currentRows.length === 0 && (
-              <tr>
-                <td className="p-5 text-center text-zinc-500" colSpan={5}>
-                  {transactions.length === 0 ? (
-                    <EmptyState variant="no-transactions" className="py-6" />
-                  ) : (
-                    "No transactions match these filters."
-                  )}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between text-sm">
-        <span>{filtered.length} matching transactions</span>
-        <div className="flex items-center gap-2">
-          <button type="button" className="rounded border px-3 py-1 disabled:opacity-40" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
-          <span aria-live="polite">Page {currentPage} of {pages}</span>
-          <button type="button" className="rounded border px-3 py-1 disabled:opacity-40" disabled={currentPage === pages} onClick={() => setPage((value) => Math.min(pages, value + 1))}>Next</button>
-        </div>
-      </div>
+      <DataTable
+        columns={columns}
+        data={filtered}
+        getRowKey={(tx) => tx.hash}
+        caption="Transaction history"
+        emptyMessage={
+          transactions.length === 0
+            ? <EmptyState variant="no-transactions" className="py-6" />
+            : "No transactions match these filters."
+        }
+        pagination={{
+          page,
+          pageSize: PAGE_SIZE,
+          onPageChange: setPage,
+          itemLabel: "matching transactions",
+        }}
+      />
     </section>
   );
 }

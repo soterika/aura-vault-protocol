@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import DataTable, { type ColumnDef } from "./DataTable";
 import { EmptyState } from "./EmptyState";
 
 type Period = "all" | "30d" | "7d" | "24h";
@@ -110,6 +111,67 @@ export function Leaderboard() {
     return () => cancelAnimationFrame(frame);
   }, [data]);
 
+  const columns: ColumnDef<LeaderboardRow>[] = useMemo(() => [
+    {
+      id: "rank",
+      header: "Rank",
+      accessorKey: "rank",
+      sortable: true,
+      hideable: false,
+      cellClassName: "whitespace-nowrap font-semibold tabular-nums",
+      cell: (entry) => {
+        const award = medal(entry.rank);
+        return (
+          <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
+            {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
+          </span>
+        );
+      },
+    },
+    {
+      id: "holder",
+      header: "Vault holder",
+      accessorKey: "userId",
+      filterable: true,
+      cellClassName: "font-mono text-zinc-600 dark:text-zinc-300",
+      cell: (entry) => truncateAddress(entry.userId),
+    },
+    {
+      id: "shares",
+      header: "Shares",
+      accessorKey: "shareBalance",
+      sortable: true,
+      align: "right",
+      cellClassName: "font-medium tabular-nums",
+      cell: (entry) => Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 }),
+    },
+    {
+      id: "usdValue",
+      header: "USD value",
+      accessorKey: "usdValue",
+      sortable: true,
+      align: "right",
+      cellClassName: "tabular-nums",
+      cell: (entry) => `$${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+    },
+    {
+      id: "rankChange",
+      header: "Rank change",
+      accessorKey: "rankChange",
+      sortable: true,
+      align: "right",
+      cell: (entry) => {
+        const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
+        return (
+          <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
+            {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
+            {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
+          </span>
+        );
+      },
+    },
+  ], [animatedChanges]);
+
   return (
     <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6" aria-labelledby="leaderboard-title">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -139,42 +201,16 @@ export function Leaderboard() {
         ) : data?.leaderboard.length ? (
           <>
           <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full min-w-[38rem] text-left text-sm">
-              <caption className="sr-only">Top vault holders, current rank and rank movement over the selected period</caption>
-              <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
-                <tr>
-                  <th scope="col" className="px-5 py-3">Rank</th>
-                  <th scope="col" className="px-5 py-3">Vault holder</th>
-                  <th scope="col" className="px-5 py-3 text-right">Shares</th>
-                  <th scope="col" className="px-5 py-3 text-right">USD value</th>
-                  <th scope="col" className="px-5 py-3 text-right">Rank change</th>
-                </tr>
-              </thead>
-              <tbody className={loading ? "opacity-60" : ""} aria-busy={loading}>
-                {data.leaderboard.map((entry) => {
-                  const award = medal(entry.rank);
-                  const direction = entry.rankChange === null ? "unknown" : entry.rankChange > 0 ? "up" : entry.rankChange < 0 ? "down" : "same";
-                  return (
-                    <tr key={entry.userId} className={`animate-[leaderboard-enter_350ms_ease-out_both] border-t border-zinc-100 dark:border-zinc-800 ${entry.isCurrentUser ? "bg-indigo-50 dark:bg-indigo-950/40" : ""}`}>
-                      <th scope="row" className="whitespace-nowrap px-5 py-4 font-semibold tabular-nums">
-                        <span aria-label={award ? `Rank ${entry.rank}, ${["", "gold", "silver", "bronze"][entry.rank]} medal` : `Rank ${entry.rank}`}>
-                          {award ? <span aria-hidden="true" className="mr-2">{award}</span> : null}#{entry.rank}
-                        </span>
-                      </th>
-                      <td className="px-5 py-4 font-mono text-zinc-600 dark:text-zinc-300">{truncateAddress(entry.userId)}</td>
-                      <td className="px-5 py-4 text-right font-medium tabular-nums">{Number(entry.shareBalance).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-                      <td className="px-5 py-4 text-right tabular-nums">${Number(entry.usdValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                      <td className="px-5 py-4 text-right">
-                        <span className={direction === "up" ? "text-emerald-600 dark:text-emerald-400" : direction === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"} aria-label={changeLabel(entry.rankChange)}>
-                          {direction === "up" ? "▲" : direction === "down" ? "▼" : direction === "same" ? "—" : "·"}{" "}
-                          {entry.rankChange === null ? "—" : (animatedChanges[entry.userId] ?? 0)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DataTable
+              columns={columns}
+              data={data.leaderboard}
+              getRowKey={(entry) => entry.userId}
+              caption="Top vault holders and rank movement over the selected period"
+              loading={loading}
+              rowClassName={(entry) =>
+                entry.isCurrentUser ? "bg-indigo-50 dark:bg-indigo-950/40" : ""
+              }
+            />
           </div>
           <ol className="divide-y divide-zinc-100 dark:divide-zinc-800 sm:hidden" aria-label="Leaderboard cards">
             {data.leaderboard.map((entry) => <li key={entry.userId} className={`p-4 ${entry.isCurrentUser ? "bg-indigo-50 dark:bg-indigo-950/40" : ""}`}>
