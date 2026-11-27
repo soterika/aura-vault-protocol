@@ -9,6 +9,7 @@ vi.mock("ioredis", () => ({
   default: class FakeRedis {
     ping = redisState.ping;
     get = redisState.get;
+    on = vi.fn();
     quit = vi.fn().mockResolvedValue(undefined);
   },
   Cluster: class FakeCluster {},
@@ -27,7 +28,7 @@ import {
 
 describe("Redis unavailability impact on the API", () => {
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     redisCircuitBreaker.close();
   });
 
