@@ -198,7 +198,7 @@ describe("AuraStrategy", function () {
       const tokens = await deployFiveTokens();
       // Only register 4
       await registerTokens(strategy, stratManager, tokens.slice(0, 4));
-      const [, , , , hasMinTokens] = await strategy.healthCheck();
+      const [, , , , hasMinTokens] = await strategy.healthCheck.staticCall();
       expect(hasMinTokens).to.be.false;
     });
 
@@ -208,7 +208,7 @@ describe("AuraStrategy", function () {
 
       // Harvest once so staleHarvest is false
       await strategy.connect(stratManager).harvest();
-      const [, , , , hasMinTokens] = await strategy.healthCheck();
+      const [, , , , hasMinTokens] = await strategy.healthCheck.staticCall();
       expect(hasMinTokens).to.be.true;
     });
 
@@ -216,7 +216,7 @@ describe("AuraStrategy", function () {
       const tokens = await deployFiveTokens();
       await registerTokens(strategy, stratManager, tokens);
       await strategy.connect(stratManager).disableToken(await tokens[0].getAddress());
-      const [, , activeCount] = await strategy.healthCheck();
+      const [, , activeCount] = await strategy.healthCheck.staticCall();
       expect(activeCount).to.equal(4n);
     });
   });
@@ -523,13 +523,13 @@ describe("AuraStrategy", function () {
     });
 
     it("pulls all funds to strategy and sets emergencyMode", async function () {
-      await strategy.connect(operator).emergencyWithdrawAll();
+      await strategy.connect(operator).emergencyWithdrawAll({ gasLimit: 300_000 });
       expect(await strategy.emergencyMode()).to.be.true;
       expect(await token.balanceOf(await strategy.getAddress())).to.equal(AMOUNT);
     });
 
     it("emits EmergencyWithdrawal event", async function () {
-      await expect(strategy.connect(operator).emergencyWithdrawAll())
+      await expect(strategy.connect(operator).emergencyWithdrawAll({ gasLimit: 300_000 }))
         .to.emit(strategy, "EmergencyWithdrawal")
         .withArgs(await token.getAddress(), AMOUNT);
     });
@@ -540,7 +540,7 @@ describe("AuraStrategy", function () {
     });
 
     it("admin can rescue funds after emergency", async function () {
-      await strategy.connect(operator).emergencyWithdrawAll();
+      await strategy.connect(operator).emergencyWithdrawAll({ gasLimit: 300_000 });
       await strategy.connect(admin).rescueFunds(await token.getAddress(), stranger.address);
       expect(await token.balanceOf(stranger.address)).to.equal(AMOUNT);
     });
@@ -551,7 +551,7 @@ describe("AuraStrategy", function () {
     });
 
     it("rescueFunds reverts when balance is zero", async function () {
-      await strategy.connect(operator).emergencyWithdrawAll();
+      await strategy.connect(operator).emergencyWithdrawAll({ gasLimit: 300_000 });
       // Rescue once to empty the balance
       await strategy.connect(admin).rescueFunds(await token.getAddress(), stranger.address);
       await expect(strategy.connect(admin).rescueFunds(await token.getAddress(), stranger.address))
@@ -597,7 +597,7 @@ describe("AuraStrategy", function () {
 
   describe("healthCheck", function () {
     it("is unhealthy with no tokens registered", async function () {
-      const [healthy] = await strategy.healthCheck();
+      const [healthy] = await strategy.healthCheck.staticCall();
       expect(healthy).to.be.false;
     });
 
@@ -605,7 +605,7 @@ describe("AuraStrategy", function () {
       const tokens = await deployFiveTokens();
       await registerTokens(strategy, stratManager, tokens);
       await strategy.connect(stratManager).harvest();
-      const [healthy, , activeCount, isStale, hasMin] = await strategy.healthCheck();
+      const [healthy, , activeCount, isStale, hasMin] = await strategy.healthCheck.staticCall();
       expect(healthy).to.be.true;
       expect(activeCount).to.equal(5n);
       expect(isStale).to.be.false;
@@ -619,7 +619,7 @@ describe("AuraStrategy", function () {
       await token.connect(vault).approve(await strategy.getAddress(), AMOUNT);
       await strategy.connect(vault).deposit(await token.getAddress(), AMOUNT);
 
-      const [, totalDeployed] = await strategy.healthCheck();
+      const [, totalDeployed] = await strategy.healthCheck.staticCall();
       expect(totalDeployed).to.equal(AMOUNT);
     });
 
@@ -627,12 +627,12 @@ describe("AuraStrategy", function () {
       await strategy.connect(stratManager)
         .addToken(await token.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress, 0);
       await strategy.connect(operator).emergencyWithdrawAll();
-      const [healthy] = await strategy.healthCheck();
+      const [healthy] = await strategy.healthCheck.staticCall();
       expect(healthy).to.be.false;
     });
 
     it("staleHarvest is true when harvest has never run", async function () {
-      const [, , , isStale] = await strategy.healthCheck();
+      const [, , , isStale] = await strategy.healthCheck.staticCall();
       expect(isStale).to.be.true;
     });
 
@@ -640,7 +640,7 @@ describe("AuraStrategy", function () {
       await strategy.connect(stratManager)
         .addToken(await token.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress, 0);
       await strategy.connect(stratManager).harvest();
-      const [, , , isStale] = await strategy.healthCheck();
+      const [, , , isStale] = await strategy.healthCheck.staticCall();
       expect(isStale).to.be.false;
     });
 
@@ -653,7 +653,7 @@ describe("AuraStrategy", function () {
       await ethers.provider.send("evm_increaseTime", [49 * 3600]);
       await ethers.provider.send("evm_mine");
 
-      const [, , , isStale] = await strategy.healthCheck();
+      const [, , , isStale] = await strategy.healthCheck.staticCall();
       expect(isStale).to.be.true;
     });
 
@@ -692,7 +692,7 @@ describe("AuraStrategy", function () {
       await registerTokens(strategy, stratManager, tokens);
       await strategy.connect(stratManager).harvest();
       await strategy.connect(operator).pause();
-      const [healthy] = await strategy.healthCheck();
+      const [healthy] = await strategy.healthCheck.staticCall();
       expect(healthy).to.be.false;
     });
   });
@@ -870,7 +870,7 @@ describe("AuraStrategy", function () {
       const INTEREST = ethers.parseEther("50");
       await aToken.accrueInterest(await strat2.getAddress(), INTEREST);
 
-      const [, totalDeployed] = await strat2.healthCheck();
+      const [, totalDeployed] = await strat2.healthCheck.staticCall();
       expect(totalDeployed).to.equal(DEP + INTEREST);
     });
   });
