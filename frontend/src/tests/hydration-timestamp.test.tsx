@@ -9,6 +9,7 @@ describe("LastHarvestCard hydration", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -16,6 +17,7 @@ describe("LastHarvestCard hydration", () => {
   afterEach(() => {
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders ISO timestamp on SSR and hydrates to relative time without mismatch warnings", async () => {
