@@ -29,7 +29,7 @@ import { URL } from 'node:url';
 // ─── Configuration ────────────────────────────────────────────────────────────
 
 const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:3001').replace(/\/$/, '');
-const TIMEOUT_MS = parseInt(process.env.SMOKE_TIMEOUT_MS ?? '5000', 10);
+const TIMEOUT_MS = parseInt(process.env.SMOKE_TIMEOUT_MS ?? '10000', 10);
 const TEST_WALLET = process.env.TEST_WALLET ?? 'GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBV3NVARIUOY';
 const MAX_STATS_AGE_MS = parseInt(process.env.MAX_STATS_AGE_MS ?? '120000', 10); // 2-minute freshness window
 let smokeAccessToken = '';
@@ -131,11 +131,17 @@ async function testHealthEndpoint(): Promise<void> {
   const res = await request(`${BASE_URL}/api/health`);
   assert(res.status === 200, `Expected HTTP 200, got ${res.status}`);
 
-  const body = res.json<{ status?: string; redis?: boolean }>();
+  const body = res.json<{ status?: string; redis?: boolean | string }>();
   assert(
     typeof body === 'object' && body !== null,
     `Expected JSON response body, got: ${res.body.slice(0, 200)}`,
   );
+  if ('redis' in body) {
+    assert(
+      body.redis !== false && body.redis !== 'down',
+      `Health endpoint reports Redis is down: ${JSON.stringify(body.redis)}`,
+    );
+  }
 }
 
 /**

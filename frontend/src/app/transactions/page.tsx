@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TransactionHistory, { type Transaction } from "@/components/TransactionHistory";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useWalletStore } from "@/lib/walletStore";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -56,7 +57,11 @@ export default function TransactionsPage() {
       {!address && <p role="status" className="rounded-lg bg-amber-50 p-4 text-amber-950">Connect a wallet to view transaction history.</p>}
       {loading && <p role="status">Loading transaction history…</p>}
       {error && <p role="alert" className="text-red-700">{error}</p>}
-      {address && !loading && !error && <TransactionHistory transactions={transactions} walletAddress={address} network={network === "mainnet" ? "mainnet" : "testnet"} />}
+      {address && !loading && !error && (
+        <ErrorBoundary section="history">
+          <TransactionHistory transactions={transactions} walletAddress={address} network={network === "mainnet" ? "mainnet" : "testnet"} />
+        </ErrorBoundary>
+      )}
     </main>
   );
 }

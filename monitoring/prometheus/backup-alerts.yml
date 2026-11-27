@@ -117,7 +117,7 @@ groups:
       # ── CRITICAL: Weekly restore test failed ─────────────────────────────
       - alert: BackupRestoreTestFailed
         expr: |
-          backup_restore_test_success{job="backup_restore_test"} == 0
+          backup_restore_test_success{job=~"backup_restore_test|backup_restore_test_ci"} == 0
         for: 1m
         labels:
           severity: critical

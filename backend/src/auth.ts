@@ -11,6 +11,7 @@ import {
 } from "./cache.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "aura-vault-dev-secret";
+const JWT_SECRET_PREVIOUS = process.env.JWT_SECRET_PREVIOUS || "";
 const ACCESS_TOKEN_TTL = 900; // 15 minutes
 const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days
 
@@ -84,17 +85,30 @@ export async function generateTokens(
   return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL };
 }
 
+function verifyWithDualSecret(token: string): unknown {
+  const verifyOpts = {
+    algorithms: [JWT_ALGORITHM],
+    ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
+    ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
+  };
+
+  try {
+    return jwt.verify(token, JWT_SECRET, verifyOpts);
+  } catch (primaryErr) {
+    if (JWT_SECRET_PREVIOUS && JWT_SECRET_PREVIOUS !== JWT_SECRET) {
+      return jwt.verify(token, JWT_SECRET_PREVIOUS, verifyOpts);
+    }
+    throw primaryErr;
+  }
+}
+
 export async function validateAccessToken(
   token: string
 ): Promise<TokenPayload | null> {
   const blacklisted = await cacheGet<true>(NS.AUTH_BLACKLIST, token);
   if (blacklisted) return null;
   try {
-    return jwt.verify(token, JWT_SECRET, {
-      algorithms: [JWT_ALGORITHM],
-      ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
-      ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
-    }) as TokenPayload;
+    return verifyWithDualSecret(token) as TokenPayload;
   } catch {
     return null;
   }
@@ -106,11 +120,7 @@ export async function refreshAccessToken(
   const stored = await cacheGet<StoredRefresh>(NS.AUTH_REFRESH, refreshToken);
   if (!stored) return null;
   try {
-    jwt.verify(refreshToken, JWT_SECRET, {
-      algorithms: [JWT_ALGORITHM],
-      ...(JWT_ISSUER && { issuer: JWT_ISSUER }),
-      ...(JWT_AUDIENCE && { audience: JWT_AUDIENCE }),
-    });
+    verifyWithDualSecret(refreshToken);
   } catch {
     return null;
   }

@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import WalletConnect from "./WalletConnect";
 import VaultActions from "./VaultActions";
 import { FinancialValue } from "./FinancialValue";
+import { ExplorerLink } from "./ExplorerLink";
 import { EmptyState } from "./EmptyState";
 import { AnimatedShareBalance } from "./AnimatedShareBalance";
 import { useAnimatedNumber } from "@/lib/useAnimatedNumber";
@@ -138,15 +140,14 @@ function TxRow({ tx }: { tx: Transaction }) {
         <p className="font-mono text-sm font-semibold text-zinc-800 dark:text-zinc-200">
           {tx.amount}
         </p>
-        <a
-          href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <ExplorerLink
+          type="tx"
+          id={tx.hash}
           className="font-mono text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          aria-label={`View transaction ${tx.hash} on explorer`}
+          ariaLabel={`View transaction ${tx.hash} on explorer`}
         >
           {tx.hash.slice(0, 8)}…
-        </a>
+        </ExplorerLink>
 // ── Stat Card ────────────────────────────────────────────────────────────────
 interface StatCardProps {
   icon: React.ReactNode;
@@ -317,33 +318,78 @@ export default function VaultDashboard({
       clearTimeout(reconnectTimer);
     };
   // ── Keyboard shortcut definitions ─────────────────────────────────────────
+  const router = useRouter();
+  const [shortcutsEnabledByPref, setShortcutsEnabledByPref] = useState(true);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("aura_settings");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (typeof parsed.keyboardShortcutsEnabled === "boolean") {
+          setShortcutsEnabledByPref(parsed.keyboardShortcutsEnabled);
+        }
+      }
+    } catch {
+      // Ignore malformed settings
+    }
+  }, []);
+
   const shortcuts = useMemo<ShortcutAction[]>(
     () => [
       {
         key: "d",
-        label: "Open Deposit modal",
+        label: "Open Deposit form",
         handler: () => setShortcutModal("deposit"),
       },
+      {
         key: "w",
-        label: "Open Withdraw modal",
+        label: "Open Withdraw form",
         handler: () => setShortcutModal("withdraw"),
+      },
+      {
         key: "h",
-        label: "Harvest yield",
-        handler: () => {
-          setLiveMsg("Harvest triggered via keyboard shortcut");
-          setTimeout(() => setLiveMsg(""), 3000);
-        },
-        key: "/",
-        label: "Focus search",
-          searchInputRef.current?.focus();
+        label: "Navigate to transaction history",
+        handler: () => router.push("/transactions"),
+      },
+      {
+        key: "l",
+        label: "Navigate to leaderboard",
+        handler: () => router.push("/leaderboard"),
+      },
+      {
         key: "?",
-        label: "Show keyboard shortcuts",
+        label: "Open keyboard shortcuts help modal",
         handler: () => setHelpOpen(true),
+      },
+      {
+        key: "Escape",
+        label: "Close any open modal",
+        handler: () => {
+          setHelpOpen(false);
+          setShortcutModal(null);
+        },
+      },
     ],
-    [],
+    [router],
+  );
+
+  // Close any open modal on Escape even when other shortcuts are suppressed
+  useEffect(() => {
+    if (!shortcutModal && !helpOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setHelpOpen(false);
+        setShortcutModal(null);
+      }
+    };
+    document.addEventListener("keydown", onEsc);
+    return () => document.removeEventListener("keydown", onEsc);
+  }, [shortcutModal, helpOpen]);
+
   // Disable all shortcuts while any modal (including the help dialog) is open
-  // so keys don't fire behind the overlay.
-  const shortcutsDisabled = helpOpen || shortcutModal !== null;
+  // or when disabled in user preferences.
+  const shortcutsDisabled = !shortcutsEnabledByPref || helpOpen || shortcutModal !== null;
   useKeyboardShortcuts(shortcuts, { disabled: shortcutsDisabled });
   const fmtNumber = (value: string) => {
     const number = parseFloat(value);

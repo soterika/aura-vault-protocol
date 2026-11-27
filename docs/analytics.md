@@ -134,3 +134,34 @@ Track conversion per variant using the standard event catalogue above.
 - Analytics SDK must be loaded with `defer` or dynamic `import()` — never block the critical path.
 - Total analytics payload per session must stay under 20 KB transferred.
 - Use batching (flush interval ≤ 5 s) to minimise network requests.
+
+---
+
+## Portfolio Export Field Semantics
+
+The Portfolio Analyzer (`frontend/src/components/PortfolioAnalyzer.tsx`, using `parseAddressCsv` from `frontend/src/lib/portfolioCsv.ts`) exports position analysis results as a UTF-8 CSV file with a UTF-8 BOM (`\uFEFF`), CRLF (`\r\n`) line endings, and MIME type `text/csv;charset=utf-8`.
+
+### Filename & Timestamp Format
+
+- **Filename pattern:** `aura-position-analysis-YYYY-MM-DD.csv`
+- **Timestamp format & time zone:** `YYYY-MM-DD` (ISO 8601 calendar date in **UTC**, derived from `new Date().toISOString().slice(0, 10)`). Individual rows do not include a timestamp column.
+
+### Column Definitions
+
+The header row is `address,shares,estimated_value,estimated_yield,error` (unquoted). Every data cell is double-quoted (`"..."`), with any internal double quotes escaped as `""`.
+
+| Column | Units | Decimal Representation | Blank / Unavailable | Notes |
+|---|---|---|---|---|
+| `address` | Stellar public key (`G...`, 56-char StrKey) | N/A (string) | Never blank for valid input | Deduplicated address from the uploaded CSV |
+| `shares` | Vault shares (`10^7` stroops per share) | Locale-formatted integer + `.` + 7 fractional digits | `"—"` (em-dash, `U+2014`) | Formatted by `formatTokens()` |
+| `estimated_value` | Underlying vault asset (`10^7` stroops per unit) | Locale-formatted integer + `.` + 7 fractional digits | `"—"` (em-dash, `U+2014`) | Computed from `shares` and current vault `sharePrice` |
+| `estimated_yield` | Underlying vault asset / year (`10^7` stroops per unit) | Locale-formatted integer + `.` + 7 fractional digits | `"—"` (em-dash, `U+2014`) | Annualized estimate from latest 30-day APY (`apy30d`), not realized return |
+| `error` | N/A (string) | N/A (string) | `""` (empty string) | Populated when address validation or balance lookup fails |
+
+### Example Exported CSV
+
+```csv
+address,shares,estimated_value,estimated_yield,error
+"GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN","1,250.0000000","1,312.5000000","65.6250000",""
+"GBINVALIDADDRESS0000000000000000000000000000000000000000","—","—","—","Invalid Stellar address"
+```

@@ -91,15 +91,29 @@ async function createSecret(secretId: string, token: string): Promise<void> {
   );
   const currentValue = JSON.parse(current.SecretString ?? '{}') as Record<string, string>;
 
-  // Rotate all secret-type keys; preserve non-secret config
-  const rotated: Record<string, string> = {
-    ...currentValue,
-    // Rotate JWT secret with a cryptographically random 64-byte base64url string
-    JWT_SECRET: generateSecureRandom(64),
-    // Record rotation timestamp (not a secret — safe to log)
-    ROTATED_AT: new Date().toISOString(),
-    PREVIOUS_ROTATION: currentValue['ROTATED_AT'] ?? '',
-  };
+  const isDatabaseSecret =
+    secretId.includes('database') ||
+    currentValue['engine'] === 'postgres' ||
+    typeof currentValue['password'] === 'string';
+
+  // Rotate secret-type keys; preserve non-secret config
+  const rotated: Record<string, string> = isDatabaseSecret
+    ? {
+        ...currentValue,
+        password: generateSecureRandom(32),
+        ROTATED_AT: new Date().toISOString(),
+        PREVIOUS_ROTATION: currentValue['ROTATED_AT'] ?? '',
+      }
+    : {
+        ...currentValue,
+        // Dual-secret rotation: keep previous JWT_SECRET for the 15-min overlap window
+        JWT_SECRET_PREVIOUS: currentValue['JWT_SECRET'] ?? '',
+        // Rotate JWT secret with a cryptographically random 64-byte base64url string
+        JWT_SECRET: generateSecureRandom(64),
+        // Record rotation timestamp (not a secret — safe to log)
+        ROTATED_AT: new Date().toISOString(),
+        PREVIOUS_ROTATION: currentValue['ROTATED_AT'] ?? '',
+      };
 
   await client.send(
     new PutSecretValueCommand({
@@ -112,7 +126,7 @@ async function createSecret(secretId: string, token: string): Promise<void> {
 
   console.info('[rotation] createSecret complete', {
     secretId,
-    rotatedKeys: ['JWT_SECRET'],
+    rotatedKeys: isDatabaseSecret ? ['password'] : ['JWT_SECRET'],
   });
 }
 
@@ -137,17 +151,29 @@ async function testSecret(secretId: string, token: string): Promise<void> {
   );
 
   const parsed = JSON.parse(pending.SecretString ?? '{}') as Record<string, unknown>;
+  const isDatabaseSecret =
+    secretId.includes('database') ||
+    parsed['engine'] === 'postgres' ||
+    typeof parsed['password'] === 'string';
 
-  // Validate required fields exist and have sensible values
-  if (typeof parsed['JWT_SECRET'] !== 'string' || (parsed['JWT_SECRET'] as string).length < 32) {
-    throw new Error(
-      '[rotation] testSecret failed: JWT_SECRET is missing or too short in AWSPENDING version'
-    );
+  if (isDatabaseSecret) {
+    if (typeof parsed['password'] !== 'string' || (parsed['password'] as string).length < 16) {
+      throw new Error(
+        '[rotation] testSecret failed: database password is missing or too short in AWSPENDING version'
+      );
+    }
+  } else {
+    // Validate required fields exist and have sensible values
+    if (typeof parsed['JWT_SECRET'] !== 'string' || (parsed['JWT_SECRET'] as string).length < 32) {
+      throw new Error(
+        '[rotation] testSecret failed: JWT_SECRET is missing or too short in AWSPENDING version'
+      );
+    }
   }
 
   console.info('[rotation] testSecret passed', {
     secretId,
-    validatedKeys: ['JWT_SECRET'],
+    validatedKeys: isDatabaseSecret ? ['password'] : ['JWT_SECRET'],
   });
 }
 

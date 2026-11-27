@@ -25,6 +25,10 @@ interface TxEntry {
 
 const TX_PAGE_SIZE = 10;
 
+function walletQueryScope(address: string, network: string | null, connectionVersion: number) {
+  return JSON.stringify([address, network, connectionVersion]);
+}
+
 // ── Cache invalidation helper ──────────────────────────────────────────────
 /**
  * Invalidates the portfolio SWR cache for the given address.
@@ -32,8 +36,11 @@ const TX_PAGE_SIZE = 10;
  * an automatic refresh of the portfolio panel (#886).
  */
 export function invalidatePortfolioCache(address: string): void {
-  void globalMutate(`portfolio-${address}`);
-  void globalMutate(`history-${address}`);
+  const wallet = useWalletStore.getState();
+  if (!wallet.connected || wallet.address !== address) return;
+  const scope = walletQueryScope(address, wallet.network, wallet.connectionVersion);
+  void globalMutate(`portfolio-${scope}`);
+  void globalMutate(`history-${scope}`);
 }
 
 // ── Fetchers ───────────────────────────────────────────────────────────────
@@ -149,8 +156,7 @@ function SkeletonRow() {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function PortfolioPanel() {
-  const { address, connected } = useWalletStore();
-  const [txPage, setTxPage] = useState(0);
+  const { address, network, connected, connectionVersion } = useWalletStore();
 
   if (!connected || !address) {
     return (
@@ -175,18 +181,14 @@ export default function PortfolioPanel() {
     );
   }
 
-  return <PortfolioPanelInner address={address} txPage={txPage} setTxPage={setTxPage} />;
+  const scope = walletQueryScope(address, network, connectionVersion);
+  return <PortfolioPanelInner key={scope} address={address} scope={scope} />;
 }
 
-interface InnerProps {
-  address: string;
-  txPage: number;
-  setTxPage: (page: number) => void;
-}
-
-function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
-  const portfolioKey = `portfolio-${address}`;
-  const historyKey = `history-${address}`;
+function PortfolioPanelInner({ address, scope }: { address: string; scope: string }) {
+  const [txPage, setTxPage] = useState(0);
+  const portfolioKey = `portfolio-${scope}`;
+  const historyKey = `history-${scope}`;
 
   const {
     data: portfolio,
@@ -197,7 +199,6 @@ function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
   } = useSWR<PortfolioData>(portfolioKey, () => fetchPortfolio(address), {
     refreshInterval: 30_000,
     revalidateOnFocus: false,
-    keepPreviousData: true,
   });
 
   const {
@@ -206,7 +207,6 @@ function PortfolioPanelInner({ address, txPage, setTxPage }: InnerProps) {
   } = useSWR<TxEntry[]>(historyKey, () => fetchHistory(address), {
     refreshInterval: 30_000,
     revalidateOnFocus: false,
-    keepPreviousData: true,
   });
 
   const refresh = useCallback(() => {

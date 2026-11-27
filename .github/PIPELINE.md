@@ -184,7 +184,7 @@ security-scan ──────────────────────
 **Triggers:**
 - `push` on `main`, `develop`
 - `pull_request` on `main`, `develop`
-- `workflow_dispatch` with `environment` input (`staging` | `production`)
+- `workflow_dispatch` with `environment` (`staging` | `production`), `action` (`deploy` | `rollback`), and optional `rollback_sha` inputs
 
 **Concurrency:** One run per workflow + ref; in-progress runs cancelled.
 
@@ -192,11 +192,11 @@ security-scan ──────────────────────
 
 ```
 lint ──────────────────────┐
-test-contract ─────────────┤
-test-frontend ─────────────┤──► build-image ──────────────────────► deploy-staging ──► deploy-production
-sast-rust ─────────────────┤
-sast-codeql ───────────────┤
-sast-container ─────────────┤──► build-wasm ──────────────────────┘
+test-contract ─────────────┼──► integration-tests ──► build-image ──┐
+test-frontend ─────────────┘                                         ├──► deploy-staging ──► staging-smoke-tests ──► deploy-production ──► notify-slack
+sast-rust ─────────────────┐                                         │
+sast-codeql ───────────────┼──► build-wasm ──────────────────────────┘
+sast-container ────────────┘
                             └──► ci-gate
 ```
 
@@ -205,14 +205,18 @@ sast-container ─────────────┤──► build-wasm �
 | `lint` | `cargo fmt --check` + `cargo clippy --all-targets -D warnings` with Cargo cache. |
 | `test-contract` | Builds Wasm (required by upgrade tests), then runs `cargo test --test-threads=4`. Uploads `contract-test-results` artifact. |
 | `test-frontend` | `npm ci && npm test` for both `ui` and `frontend` workspaces. |
+| `integration-tests` | Depends on `lint`, `test-contract`, `test-frontend`. Runs contract integration tests (`cargo test --test '*'`). Required gate before `build-image` and `deploy-staging`. |
 | `sast-rust` | `cargo-audit` (CVE scan) + `cargo-deny` (license + advisories check). |
 | `sast-codeql` | GitHub CodeQL analysis on `javascript-typescript` with `security-extended` queries. |
 | `sast-container` | Builds Docker image, runs Trivy (`CRITICAL,HIGH`), uploads SARIF. Blocks pipeline on CRITICAL findings. |
 | `build-wasm` | Compiles `wasm32-unknown-unknown --release`, enforces 64 KiB Soroban size limit, computes SHA-256 (exposed as output `wasm-sha256`). Artifacts retained 30 days. |
-| `build-image` | Logs into GHCR, tags image with `sha-*`, `latest`, `staging`; pushes on `push` / `workflow_dispatch` events only. |
-| `deploy-staging` | Downloads Wasm artifact, deploys to Stellar **testnet** using `STAGING_DEPLOY_KEYPAIR`. Runs post-deploy smoke tests. Requires `staging` GitHub Environment. |
-| `rollback-staging` | Auto-triggered on `deploy-staging` failure; identifies the previous stable commit and re-deploys it. |
-| `deploy-production` | Deploys to Stellar **mainnet** using `PROD_DEPLOY_KEYPAIR`. Requires `workflow_dispatch` with `environment: production` AND manual approval on `production` GitHub Environment. |
+| `build-image` | Logs into GHCR, tags image with Git SHA (`sha-*`) and `staging` (never `latest`); pushes on `push` / `workflow_dispatch` events only. |
+| `deploy-staging` | Depends on `build-wasm`, `build-image`, and `integration-tests`. Downloads Wasm artifact, deploys to Stellar **testnet** using `STAGING_DEPLOY_KEYPAIR`. Requires `staging` GitHub Environment. |
+| `staging-smoke-tests` | Runs E2E and smoke tests against `https://staging.aura-vault.xyz` after `deploy-staging`. Must pass before `deploy-production` can run. |
+| `rollback-staging` | Auto-triggered on `deploy-staging` or `staging-smoke-tests` failure; identifies the previous stable commit and re-deploys it. |
+| `deploy-production` | Deploys to Stellar **mainnet** using `PROD_DEPLOY_KEYPAIR` (blue-green switch + production smoke tests). Requires `workflow_dispatch` with `environment: production`, `staging-smoke-tests` passing, AND manual approval on `production` GitHub Environment. |
+| `rollback-manual` | Manual rollback job triggered via `workflow_dispatch` with `action: rollback` (optional `rollback_sha`, defaults to previous commit). |
+| `notify-slack` | Sends Slack notification via `SLACK_WEBHOOK_URL` on deployment/rollback success or failure. |
 | `ci-gate` | Fan-in job: fails if any of `lint`, `test-contract`, `test-frontend`, `sast-rust`, `sast-codeql`, `build-wasm` did not succeed. This is the required status check for branch protection. |
 
 ---

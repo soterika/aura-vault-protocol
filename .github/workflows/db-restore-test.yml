@@ -1,0 +1,154 @@
+name: Weekly DB Backup Restore Test (CI)
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      backup_key:
+        description: 'Specific S3 key to restore (leave blank for latest)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Run in dry-run mode (no AWS access required)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: db-restore-test-ci
+  cancel-in-progress: false
+
+jobs:
+  db-restore-test:
+    name: PostgreSQL Backup Restore Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'ci-test-password' }}
+          POSTGRES_DB: aura_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aura"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: aura
+      PGPASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'ci-test-password' }}
+      AWS_REGION: us-east-1
+      BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET || 'aura-vault-backups-ci' }}
+      BACKUP_PREFIX: postgres-backups
+      BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY || 'ci-dry-run-encryption-key-placeholder-32chars' }}
+      PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client and OpenSSL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-client \
+            openssl \
+            curl
+
+      - name: Configure AWS credentials
+        if: github.event.inputs.dry_run != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Run restore-test.sh
+        id: restore_test
+        run: |
+          ARGS=""
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [[ -n "${{ github.event.inputs.backup_key }}" ]]; then
+            ARGS="$ARGS --backup-key ${{ github.event.inputs.backup_key }}"
+          fi
+
+          chmod +x scripts/restore-test.sh
+          set +e
+          ./scripts/restore-test.sh $ARGS 2>&1 | tee /tmp/restore-test.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          exit "$EXIT_CODE"
+
+      - name: Push CI restore metric to Prometheus Pushgateway
+        if: always() && env.PUSHGATEWAY_URL != ''
+        run: |
+          SUCCESS=0
+          if [[ "${{ steps.restore_test.outputs.exit_code }}" == "0" ]]; then
+            SUCCESS=1
+          fi
+          cat <<EOF | curl -s --max-time 10 --data-binary @- "${PUSHGATEWAY_URL}/metrics/job/backup_restore_test_ci" || true
+          # HELP backup_restore_test_success 1 if last restore test passed, 0 otherwise
+          # TYPE backup_restore_test_success gauge
+          backup_restore_test_success{job="backup_restore_test_ci"} ${SUCCESS}
+          EOF
+
+      - name: Create GitHub issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const timestamp = '${{ steps.restore_test.outputs.timestamp }}' || new Date().toISOString();
+            const exitCode = '${{ steps.restore_test.outputs.exit_code }}' || 'unknown';
+            let logTail = 'No log output captured.';
+            if (fs.existsSync('/tmp/restore-test.log')) {
+              const lines = fs.readFileSync('/tmp/restore-test.log', 'utf8').trim().split('\n');
+              logTail = lines.slice(-40).join('\n');
+            }
+
+            const title = `[CI] Weekly DB Backup Restore Test Failed (${timestamp})`;
+            const body = [
+              '## Automated DB Backup Restore Test Failure',
+              '',
+              `- **Timestamp (UTC):** \`${timestamp}\``,
+              `- **Exit Code:** \`${exitCode}\``,
+              `- **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              `- **Commit:** \`${context.sha}\``,
+              '',
+              '### Error Output (last 40 lines)',
+              '```',
+              logTail,
+              '```',
+              '',
+              '### Next Steps',
+              '1. Inspect the workflow run logs and S3 backup integrity.',
+              '2. Verify `BACKUP_ENCRYPTION_KEY` and `BACKUP_BUCKET` secrets.',
+              '3. Run `./scripts/restore-test.sh` manually to reproduce.'
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['devops', 'bug', 'database']
+            });
