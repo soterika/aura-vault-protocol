@@ -33,6 +33,8 @@
     "@next/bundle-analyzer": "^16.4.6",
     "@size-limit/file": "^14.3.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^8.0.0",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.5",
     "@types/nprogress": "^0.2.3",
     "@types/react": "^19",

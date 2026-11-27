@@ -39,6 +39,24 @@ groups:
           summary: "High p95 latency on {{ $labels.job }}"
           description: "95th percentile latency is above 2 seconds (current: {{ $value }}s)."
 
+      - alert: ApiHighErrorRate
+        expr: sum(rate(http_requests_total{job="aura-vault-api",status_code=~"5.."}[5m])) / sum(rate(http_requests_total{job="aura-vault-api"}[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend API error rate > 1%"
+          description: "Backend API 5xx error rate is above 1% for 5 minutes (current: {{ $value | humanizePercentage }})."
+
+      - alert: ApiHighP99Latency
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="aura-vault-api"}[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backend API p99 latency > 1s"
+          description: "Backend API 99th percentile latency is above 1 second for 5 minutes (current: {{ $value }}s)."
+
       - alert: HighMemoryUsage
         expr: process_resident_memory_bytes / 1024 / 1024 > 512
         for: 10m

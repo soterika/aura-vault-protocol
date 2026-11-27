@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { VaultStatsCard, VaultStatsCardSkeleton } from "../components/VaultStatsCard";

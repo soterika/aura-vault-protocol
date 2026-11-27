@@ -1,0 +1,150 @@
+{
+  "uid": "aura-vault-api-golden-signals",
+  "title": "Aura Vault - Backend API Golden Signals",
+  "tags": ["aura-vault", "backend", "golden-signals"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "1. Latency (p50, p95, p99 by route)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"aura-vault-api\"}[5m])) by (le, route))",
+          "legendFormat": "p50 {{ route }}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"aura-vault-api\"}[5m])) by (le, route))",
+          "legendFormat": "p95 {{ route }}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"aura-vault-api\"}[5m])) by (le, route))",
+          "legendFormat": "p99 {{ route }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 2,
+      "title": "2. Traffic (req/s by route & method)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"aura-vault-api\"}[5m])) by (route, method)",
+          "legendFormat": "{{ method }} {{ route }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 3,
+      "title": "3. Error Rate (4xx & 5xx by route)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"aura-vault-api\",status_code=~\"4..\"}[5m])) by (route)",
+          "legendFormat": "4xx {{ route }}"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{job=\"aura-vault-api\",status_code=~\"5..\"}[5m])) by (route)",
+          "legendFormat": "5xx {{ route }}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 4,
+      "title": "4. Saturation (Event Loop Lag, Heap Used, CPU)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "nodejs_eventloop_lag_seconds{job=\"aura-vault-api\"}",
+          "legendFormat": "Event Loop Lag (s)"
+        },
+        {
+          "expr": "nodejs_heap_size_used_bytes{job=\"aura-vault-api\"} / 1024 / 1024",
+          "legendFormat": "Heap Used (MB)"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"aura-vault-api\"}[5m]) * 100",
+          "legendFormat": "CPU Usage (%)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "5. Redis (Cache Hit Rate, Memory Used, Evictions)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "cache_hit_ratio{job=\"aura-vault-api\"} * 100",
+          "legendFormat": "Cache Hit Rate (%)"
+        },
+        {
+          "expr": "redis_memory_used_bytes / 1024 / 1024",
+          "legendFormat": "Redis Memory Used (MB)"
+        },
+        {
+          "expr": "rate(redis_evicted_keys_total[5m])",
+          "legendFormat": "Evictions / sec"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "6. Database (Pool Connections, Query Latency, Errors)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "pg_pool_active_connections{job=\"aura-vault-api\"}",
+          "legendFormat": "Active Pool Connections"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(pg_query_duration_seconds_bucket{job=\"aura-vault-api\"}[5m])) by (le))",
+          "legendFormat": "Query Latency p95 (s)"
+        },
+        {
+          "expr": "rate(pg_query_errors_total{job=\"aura-vault-api\"}[5m])",
+          "legendFormat": "DB Errors / sec"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "7. BullMQ (Completion Rate, Failed Jobs, Queue Depth)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(bullmq_jobs_completed_total[5m])) by (queue)",
+          "legendFormat": "Completed/s {{ queue }}"
+        },
+        {
+          "expr": "sum(rate(bullmq_jobs_failed_total[5m])) by (queue)",
+          "legendFormat": "Failed/s {{ queue }}"
+        },
+        {
+          "expr": "queue_depth",
+          "legendFormat": "Queue Depth"
+        }
+      ]
+    }
+  ]
+}
