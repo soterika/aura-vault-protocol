@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useWidgetLayout } from "@/lib/useWidgetLayout";
 import { AppearanceSettings } from "@/components/AppearanceSettings";
+import { PreferencesPanel } from "@/components/PreferencesPanel";
 
 interface Settings {
   slippageTolerance: number;
@@ -14,6 +15,7 @@ interface Settings {
   emailNotifications: boolean;
   email: string;
   twoFactorEnabled: boolean;
+  keyboardShortcutsEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +26,7 @@ const DEFAULT_SETTINGS: Settings = {
   emailNotifications: false,
   email: "",
   twoFactorEnabled: false,
+  keyboardShortcutsEnabled: true,
 };
 
 function loadSettings(): Settings {
@@ -106,6 +109,8 @@ export default function SettingsContent() {
       <div className="max-w-2xl mx-auto px-4 py-12">
         <h1 className="text-2xl font-semibold mb-8">{t("settings.title")}</h1>
 
+        <PreferencesPanel />
+
         {saved && (
           <div role="status" className="mb-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 text-sm text-emerald-600 dark:text-emerald-400">
             {t("settings.saved")}
@@ -139,6 +144,25 @@ export default function SettingsContent() {
                 />
               </label>
             ))}
+          </div>
+        </section>
+
+        {/* Keyboard Shortcuts */}
+        <section className="mb-8">
+          <h2 className="text-lg font-medium mb-3">Keyboard Shortcuts</h2>
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 bg-white dark:bg-zinc-900">
+            <label className="flex items-center justify-between gap-4 cursor-pointer">
+              <div>
+                <span className="text-sm font-medium block">Enable keyboard shortcuts</span>
+                <span className="text-xs text-zinc-500">Use D, W, H, L, ?, and Esc for quick navigation and actions</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.keyboardShortcutsEnabled}
+                onChange={(e) => update("keyboardShortcutsEnabled", e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            </label>
           </div>
         </section>
 

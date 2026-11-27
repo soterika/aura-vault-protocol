@@ -1,5 +1,7 @@
 // Default exports
 export { default as SharePriceChart } from "./SharePriceChart";
+export { SharePriceTicker } from "./SharePriceTicker";
+export type { SharePriceTickerProps, TickerDirection } from "./SharePriceTicker";
 export { default as NavHeader } from "./NavHeader";
 export { default as WalletConnect } from "./WalletConnect";
 
@@ -74,6 +76,8 @@ export {
 export { KeyboardShortcutHelp } from "./KeyboardShortcutHelp";
 export { startProgress, doneProgress } from "./ProgressBar";
 export { OnboardingTour, useRestartTour } from "./OnboardingTour";
+export { ExplorerLink } from "./ExplorerLink";
+export type { ExplorerLinkProps } from "./ExplorerLink";
 export { ExplorerMenu } from "./ExplorerMenu";
 export type { ExplorerMenuProps } from "./ExplorerMenu";
 // Toast notification system (Issue #257)
