@@ -25,8 +25,8 @@ export default function DeepLinkHandler() {
 
   /**
    * Called by VaultActions once the deep-link modal has been closed.
-   * Strips `action` and `amount` from the URL so the canonical URL
-   * no longer exposes the pre-filled values.
+   * Strips `action` and `amount` from the URL while preserving locale path
+   * and any other valid query parameters (e.g. referral, network, tab).
    *
    * Uses router.replace() — Next.js App Router equivalent of
    * history.replaceState — so no new history entry is created.
@@ -40,7 +40,10 @@ export default function DeepLinkHandler() {
 
     // router.replace keeps the existing scroll position and avoids a
     // server fetch since we're just dropping params from the same path.
-    router.replace(url.pathname + (url.search || ""), { scroll: false });
+    const newSearch = url.searchParams.toString();
+    router.replace(url.pathname + (newSearch ? `?${newSearch}` : "") + url.hash, {
+      scroll: false,
+    });
   }, [router]);
 
   return (

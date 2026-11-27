@@ -119,6 +119,11 @@ describe("keyMatches", () => {
   it('does NOT match "w" against shortcut "d"', () => {
     expect(keyMatches("w", "d")).toBe(false);
   });
+
+  it("handles empty-string shortcut key gracefully", () => {
+    expect(keyMatches("", "")).toBe(true);
+    expect(keyMatches("d", "")).toBe(false);
+  });
 });
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -176,13 +181,6 @@ describe("shortcut dispatch", () => {
     const deposit = vi.fn();
     dispatchKey("d", [{ key: "d", handler: deposit }], { disabled: true });
     expect(deposit).not.toHaveBeenCalled();
-  });
-});
-  });
-
-  it("handles empty-string shortcut key gracefully", () => {
-    expect(keyMatches("", "")).toBe(true);
-    expect(keyMatches("d", "")).toBe(false);
   });
 });
 

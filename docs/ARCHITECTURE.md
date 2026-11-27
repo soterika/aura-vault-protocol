@@ -48,6 +48,28 @@ Events are persisted before broadcast. Consumers should deduplicate by the
 contract event identity and treat SSE as a low-latency notification; REST reads
 remain the source of current aggregate state.
 
+## Settings Persistence
+
+Settings are stored in the browser's origin-scoped `localStorage` unless noted
+as account-synced below. Signing out does not remove browser-local settings;
+clearing site data or using another browser/profile does. Account-synced values
+are loaded again after the user authenticates to the same account.
+
+| Setting | Storage | Returning-account and fresh-profile behavior |
+|---|---|---|
+| Theme (`light`, `dark`, or `system`) | `localStorage` key `aura-theme` | Device/browser only; not restored by signing in. |
+| Dashboard widget order and visibility | `localStorage` key `aura_widget_layout`; also `/api/users/preferences` as `dashboardWidgets` when authenticated | The browser value loads first; the authenticated account preference then replaces it and refreshes the browser copy. |
+| Accent color, font size, compact mode | `localStorage` key `aura-appearance`; also `/api/users/preferences` as `appearance` after using **Save appearance** while authenticated | The local value applies first. An authenticated account's saved appearance is then loaded and cached locally. Unsaved changes remain browser-local. |
+| Slippage, transaction/email notification toggles, email address, and two-factor toggle | `localStorage` key `aura_settings` | Browser/profile only; these controls are not synced through the user-preferences API. A fresh profile starts with defaults. |
+| Wallet nickname | `/api/users/preferences` as `addressAliases`, keyed by wallet address | Account-synced; requires an authenticated wallet to load or save. |
+
+To check the behavior, change the settings in one browser profile, sign out and
+back into the same account, then compare with a fresh profile. Dashboard layout
+and saved appearance should return after authentication; the theme, notification
+and slippage controls, and any unsaved appearance changes should not. Clearing
+site data removes local-only values, while account-synced values can be fetched
+again after signing in.
+
 Aura Vault is a share-based yield vault on Stellar/Soroban with a full-stack off-chain companion (API, frontend, mobile). Users deposit a single SEP-41 token, receive proportional shares, and auto-compound yield through permissionless keeper harvests.
 
 ```
@@ -521,3 +543,35 @@ cd ../frontend && npm ci && npm test
 - **Why `i128` everywhere?** SEP-41 uses `i128`; matching the type avoids implicit conversions and overflow edge cases.
 - **Why mock data in PerformanceCharts?** The `/api/vault/performance` endpoint falls back to deterministic mock data when unavailable, enabling frontend development without a live backend.
 - **Why cargo-deny in SAST?** `cargo-audit` catches CVEs in the dependency tree; `cargo-deny` enforces license compatibility and blocks newly-introduced advisories before they reach main.
+
+---
+
+## Localized Routes & Shared URLs
+
+The Next.js frontend uses `next-intl` (`frontend/src/i18n/routing.ts` and `frontend/middleware.ts`) to serve localized routes alongside unprefixed fallback routes.
+
+### Routing Configuration
+
+- **Supported locales**: `en`, `es`, `fr`, `de`, `zh`, `ar` (`defaultLocale: "en"`, `localeDetection: true`).
+- **Middleware matcher**: `/((?!_next|_vercel|.*\\..*).*)` intercepts page requests, detects the user's preferred locale, and applies locale routing headers/redirects.
+- **Strict `[locale]` segment validation**: `frontend/src/app/[locale]/layout.tsx` sets `export const dynamicParams = false;` and calls `notFound()` if `params.locale` is not in `routing.locales`.
+
+### Localized Entry Points
+
+| Route | Localized Entry Point (`frontend/src/app/[locale]/...`) | Unprefixed Equivalent | Query Params & Segment Handling |
+|---|---|---|---|
+| Home / Vault | `[locale]/page.tsx` | `app/page.tsx` | Preserves `?action=deposit\|withdraw` and `?amount=<n>` via `useDeepLink()` |
+| Dashboard | `[locale]/dashboard/page.tsx` | `app/dashboard/page.tsx` | Renders `VaultDashboard` under the active locale |
+| Transaction status | `[locale]/tx/[hash]/page.tsx` | `app/tx/[hash]/page.tsx` | Validates 64-char hex `hash` segment; "Share" copies `window.location.href` (preserving locale & query params); "Back to dashboard" retains locale & search params |
+| Referral landing | `[locale]/ref/[code]/page.tsx` | `app/ref/[code]/page.tsx` | Decodes base58 `code` segment, persists `aura_referral_code` in `localStorage`, and redirects to `/<locale>/dashboard` while retaining query params |
+| Settings | `[locale]/settings/page.tsx` | `app/settings/page.tsx` | Preserves locale and query params across `LanguageSwitcher` updates |
+| FAQ | `[locale]/faq/page.tsx` | `app/faq/page.tsx` | Renders localized FAQ content |
+
+### Fallback Behavior Examples
+
+- **Supported non-default locale** (e.g. `/es/tx/<64-hex-hash>?ref=abc`):
+  - `[locale]/layout.tsx` validates `"es"` against `routing.locales`, renders the Spanish locale context (`lang="es"`, `dir="ltr"`), and `[locale]/tx/[hash]/page.tsx` loads the transaction while keeping `/es` and `?ref=abc` intact on navigation.
+  - Similarly, `/es/ref/<code >?action=deposit&amount=100` stores the referral code and redirects to `/es/dashboard?action=deposit&amount=100`.
+- **Unsupported locale** (e.g. `/ja/tx/<64-hex-hash>` or `/xx/dashboard`):
+  - Because `dynamicParams = false` in `frontend/src/app/[locale]/layout.tsx`, Next.js rejects any `[locale]` segment not listed in `routing.locales` and renders the 404 `notFound()` response rather than serving broken translations.
+  - Unprefixed routes (e.g. `/dashboard`) without a valid locale prefix fall back to `defaultLocale` (`"en"`) via `next-intl` middleware (`localeDetection: true` may negotiate from `Accept-Language`).
