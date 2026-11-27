@@ -70,7 +70,7 @@ export default function App() {
             <h1>Aura Vault</h1>
           </header>
 
-        <main id="main" className="app-main">
+        <main id="main" className="app-main" tabIndex={-1}>
           {/* Show empty state for new users with zero share balance */}
           {shareBalance === 0 ? (
             <EmptyState onDeposit={handleFirstDeposit} />

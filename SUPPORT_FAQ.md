@@ -20,6 +20,7 @@
 - **Webhooks**: `WEBHOOK_SETUP.md`
 - **Testing**: `TESTING_CHECKLIST.md`
 - **Deployment**: `DEPLOYMENT_GUIDE.md`
+- **Troubleshooting**: `docs/troubleshooting.md`
 
 ---
 
@@ -267,6 +268,122 @@ stellar contract invoke --id <CONTRACT_ID> --network testnet -- total_assets
 
 ---
 
+## Vault States: Paused, Capacity-Limited, and Unknown Capacity
+
+A vault can reject new deposits for three different reasons. The dashboard
+symptoms look similar, but the on-chain behaviour and the next step are
+different. Identify the state before advising the user.
+
+| State | Dashboard indicator | On-chain signal | New deposits | Withdrawals / exit |
+|---|---|---|---|---|
+| **Paused** | Amber banner: "⚠️ Vault operations are currently paused. Withdrawals remain available. Deposits and harvests are suspended until the admin resumes the vault." Deposit button reads **Vault Paused**; notice: "Actions are disabled while the vault is paused." | `is_paused()` returns `true`; `paused` event; mutations return error **11 (VaultPaused)** | Blocked | Normal Withdraw is disabled and reverts with error 11. The contract-level exit is `emergency_withdraw(caller, shares)`, callable **only while paused**, with no fee and no queue. |
+| **Capacity limit reached** | Capacity bar is red: **Vault Capacity: 100.0% full**; **Details** shows Current TVL = Cap and Remaining **0.00**. At 80–95% the bar is amber (warning only). | `get_tvl_caps()` / `get_tvl_cap()` returns the hard cap; deposits that would exceed it return error **16 (TvlCapExceeded)** | Blocked at the cap; a smaller deposit that fits the remaining capacity succeeds | Withdrawals are unaffected unless the vault is also paused |
+| **Capacity information unavailable** | No capacity bar is shown at all. If the stats request itself fails, the dashboard shows **Failed to load vault data** with a **Retry** button. | `/api/v1/vault/stats` returns HTTP 500, a non-JSON body, or no `tvl_cap`; `get_tvl_caps()` is the authoritative on-chain check | Depends on the real cap; do not promise capacity | Withdrawals are unaffected |
+
+> `tvl_cap: null` means **no cap is configured** (unlimited), not that the
+> information is unavailable. Only treat a missing bar as "unknown" after
+> confirming whether the stats request failed or the cap is genuinely unset.
+
+### 1. Paused vault
+
+**Example dashboard messages**
+
+- Banner: `⚠️ Vault operations are currently paused. Withdrawals remain available.`
+- Button: `Vault Paused`
+- Inline notice: `Actions are disabled while the vault is paused.`
+- Contract error: `11 — Vault is paused` (the UI shows "Vault Paused: The vault is currently paused. Please wait for the admin to resume operations.")
+
+**What is verified on-chain**
+
+`pause(admin)` is an admin/GUARDIAN operation. While paused, `deposit`,
+`deposit_with_swap`, `batch_deposit`, `withdraw`, `batch_withdraw`,
+`claim_queued_withdrawal`, `harvest`, and `harvest_strategy` all return
+`VaultPaused` (11). Read-only calls (`is_paused`, `balance_of`,
+`total_assets`, `total_shares`, `get_tvl_caps`) keep working.
+
+**Actions that remain available**
+
+- Read balances and share price; queued withdrawals stay queued.
+- `emergency_withdraw(caller, shares)` — burns shares and transfers the
+  pro-rata underlying immediately, with no fee and no queue. It can only be
+  called while the vault is paused; when the vault is unpaused it returns
+  `VaultNotPaused` and the user must use the normal `withdraw`.
+- An admin/GUARDIAN can call `unpause` to restore normal operations.
+
+Do not tell users that the normal **Withdraw** button works during a pause.
+The banner says "withdrawals remain available", but the on-chain `withdraw`
+function is blocked while paused; the exit path is `emergency_withdraw` (or an
+admin `unpause`).
+
+**Escalate when** the pause was not announced, has lasted longer than the
+status page indicates, or `is_paused()` returns `true` while the admin says
+the vault is open.
+
+### 2. Capacity limit reached (TVL cap)
+
+**Example dashboard messages**
+
+- Capacity label: `Vault Capacity: 100.0% full` (red).
+- Details tooltip: `Current TVL 1.00M`, `Cap 1.00M`, `Remaining 0.00`.
+- Deposit error: `16 — TVL Cap Exceeded` — "This deposit would exceed the vault's total-value-locked cap. Try a smaller amount or wait for capacity."
+- At 80–95%: amber bar (`Vault Capacity: 87.3% full`). This is a warning
+  only; deposits still succeed until the hard cap is reached. A configured
+  soft cap emits a `tvl_soft_cap_warning` event but does not revert.
+
+**Actions that remain available**
+
+- Deposit an amount that fits the remaining capacity (`cap - total_assets`).
+- Withdraw/redeem normally (this frees capacity) unless the vault is paused.
+- Wait for other users to withdraw, or ask the admin to raise/remove the cap
+  with `set_tvl_caps(soft, hard)` or `set_tvl_cap(admin, cap)`.
+
+**Escalate when** the bar is red but the reported capacity does not match
+`get_tvl_caps()`, deposits below the cap still fail with error 16, or the cap
+was changed without an announcement.
+
+### 3. Capacity information unavailable
+
+**Example dashboard messages**
+
+- No "Vault Capacity" section at all.
+- `Failed to load vault data` card with a `Retry` button (stats request failed).
+- `GET /api/v1/vault/stats` → `500` with `Failed to retrieve vault stats`, or a
+  response that has no `tvl_cap` field.
+
+**What to check**
+
+1. Retry the dashboard; the capacity bar refreshes every 60 seconds.
+2. Check the `/api/v1/vault/stats` response and its `X-Cache` header
+   (`HIT`, `MISS`, or `STALE`).
+3. Query the contract directly with `get_tvl_caps()` (or `get_tvl_cap()`) for
+   the authoritative caps; the dashboard bar is only a convenience view.
+4. Confirm the vault ID/contract ID; an unknown `vaultId` returns 404.
+
+**Actions that remain available**
+
+- Deposits and withdrawals follow the on-chain state, not the dashboard. If
+  `get_tvl_caps()` shows capacity, deposits up to that cap work.
+- Users who need certainty should read the caps directly from the contract.
+
+**Escalate when** the stats endpoint returns 500 for multiple vaults, cached
+values stay stale beyond the 30-second TTL, or the bar is missing while
+`get_tvl_caps()` reports a cap.
+
+### Information to include in every escalation
+
+- Network (testnet/mainnet), contract ID, and vault ID.
+- Exact dashboard text or screenshot and the error code (11, 16, or none).
+- `is_paused()`, `get_tvl_caps()` / `get_tvl_cap()`, `total_assets`, and
+  `total_shares` at the time of the report.
+- Failing transaction hashes and the `/api/v1/vault/stats` response with its
+  `X-Cache` header.
+- Timestamp (UTC) and whether the behaviour is reproducible.
+
+For step-by-step checks, see
+[docs/troubleshooting.md](docs/troubleshooting.md#vault-state-paused-capacity-or-unknown-capacity).
+
+---
+
 ## Frequently Asked Questions
 
 ### General
@@ -399,9 +516,21 @@ Error received?
 ├─ Error 10 (StorageLayoutMismatch)
 │  └─ Contract state corruption; contact support
 │
+├─ Error 11 (VaultPaused)
+│  └─ Read-only calls still work; use emergency_withdraw to exit while paused
+│
+├─ Error 16 (TvlCapExceeded)
+│  └─ Check capacity bar / get_tvl_caps(); deposit less or withdraw first
+│
+├─ Capacity bar missing
+│  └─ Treat as unknown; verify get_tvl_caps() and /api/v1/vault/stats
+│
 └─ TX Timeout
    └─ Increase fee or wait & retry
 ```
+
+For the full paused vs capacity-limited vs unknown-capacity guide, see
+[Vault States](#vault-states-paused-capacity-limited-and-unknown-capacity).
 
 ---
 

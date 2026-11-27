@@ -1,0 +1,10 @@
+apiVersion: v2
+name: keda
+description: KEDA (Kubernetes Event-driven Autoscaling) Helm chart wrapper for Aura Vault
+type: application
+version: 0.1.0
+appVersion: "2.14.0"
+dependencies:
+  - name: keda
+    version: "2.14.2"
+    repository: "https://kedacore.github.io/charts"

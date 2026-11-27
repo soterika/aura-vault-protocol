@@ -182,6 +182,21 @@ let balance = vault.get_balance(&address).await?;
 
 ---
 
+## Keyboard Shortcuts
+
+Power users can navigate and trigger common actions in the web UI using keyboard shortcuts. Shortcuts only fire when no input element is focused and can be disabled in **Settings → Keyboard Shortcuts**.
+
+| Shortcut | Action |
+|----------|--------|
+| `D` | Open deposit form |
+| `W` | Open withdraw form |
+| `H` | Navigate to transaction history |
+| `L` | Navigate to leaderboard |
+| `?` | Open keyboard shortcuts help modal |
+| `Esc` | Close any open modal |
+
+---
+
 ## Support
 
 | Issue | Channel | Time |

@@ -567,6 +567,8 @@ Development:  http://localhost:3001
 Production:   https://api.auravault.io   (set NEXT_PUBLIC_API_URL)
 ```
 
+For full details on frontend public environment variables including API endpoints and network settings, see the [Frontend Public Configuration Reference](DEPLOYMENT.md#frontend-public-configuration-reference).
+
 ---
 
 ### POST /api/auth/login

@@ -462,3 +462,68 @@ When BullMQ is adopted, the Redis key patterns will be:
 4. **Hash long values** — raw JWTs and similar tokens are SHA-256 hashed before use as key IDs (`hashKey()` in `cache.ts`).
 5. **No spaces or special characters** in any segment.
 6. **Every key must have a TTL** unless explicitly documented as persistent with a defined manual invalidation path.
+
+
+---
+
+## Production key schema and TTL reference
+This document is the authoritative inventory of Redis keys used by the production backend. It complements [caching.md](./caching.md), which describes cache warming and invalidation strategy. Key names are built by the helpers in `backend/src/cache.ts` (`<namespace>:<id>`) unless noted otherwise.
+
+## Key schema conventions
+
+- Namespaces are lowercase, colon-separated, and owned by a single service.
+- `id` is a stable business identifier (address, page number, token hash, job id).
+- Long or sensitive identifiers (for example raw JWTs) are stored as `sha256` hex digests via `hashKey()`.
+- Cache values are JSON strings; counters use Redis `HASH`/`ZSET`/`SET` commands where indicated.
+- Every cache entry has an explicit `EX` TTL. Locks and rate-limit keys use `NX` to avoid double processing.
+
+## Key inventory and TTLs
+
+| Pattern | Redis type | Value | TTL | Owner |
+|---|---|---|---|---|
+| `auth:blacklist:<token-hash>` | string | boolean / revocation metadata | remaining token lifetime (max 900 s) | `auth.ts` |
+| `auth:refresh:<token-hash>` | string | refresh session JSON | 30 days | `auth.ts` |
+| `auth:sessions:<session-id>` | string | session JSON | 30 days | `stellarAuthRoutes.ts` |
+| `auth:sessions:tokens:<session-id>` | set | refresh token hashes | 30 days | `stellarAuthRoutes.ts` |
+| `api:<path>:<query-hash>` | string | serialized HTTP response | 30 s (per-route override) | `cacheMiddleware.ts` |
+| `gas:price:<network>` | string | gas price snapshot | 60 s (`GAS_CACHE_TTL_MS`) | `gasService.ts` |
+| `gas:history:<network>` | zset | timestamped gas samples | 30 days | `gasService.ts` |
+| `defi:price:<token>` | string | USD price | 30 s (`CACHE_DEFI_PRICE_TTL`) | `defi.ts` |
+| `defi:pools:all` | string | pool snapshot | 60 s (`CACHE_DEFI_POOL_TTL`) | `defi.ts` |
+| `email:unsubscribed:<address-hash>` | string | unsubscribe flag | 30 days | `emailService.ts` |
+| `email:bounce:hard:<address-hash>` | string | hard bounce record | 30 days | `emailService.ts` |
+| `email:bounce:soft:<address-hash>` | string | soft bounce record | 7 days | `emailService.ts` |
+| `email:tracking:<event-id>` | string | delivery/opens payload | 30 days | `emailService.ts` |
+| `email:queue:high`, `email:queue:normal`, `email:queue:low` | zset | scheduled job payloads | no TTL (durable queue) | `emailQueue.ts` |
+| `email:retry` | zset | retry-scheduled jobs | no TTL (durable queue) | `emailQueue.ts` |
+| `email:dead` | string | dead-letter job payload | no TTL (manual triage) | `emailQueue.ts` |
+| `email:inflight:<job-id>` | string | in-flight job payload | 300 s | `emailQueue.ts` |
+| `yield:stats:<window>` | string | aggregate yield stats | 7 days | `yieldWorker.ts` |
+| `yield:history:<window>` | zset | historical yield points | 7 days | `yieldWorker.ts` |
+| `vault:simulate:<request-hash>` | string | simulation result | 15 s | `vaultRoutes.ts` |
+| `analytics:leaderboard:<window>` | hash | ranked addresses | 60 s | `analyticsCache.ts` |
+| `analytics:apy:<window>` | hash | APY series | 300 s | `analyticsCache.ts` |
+| `analytics:user-volume:<window>` | hash | per-user volume | 300 s | `analyticsCache.ts` |
+| `user:volume:<address>` | string | rolling user volume | 300 s | `vaultRoutes.ts` |
+| `vault:registry:list`, `vault:registry:default`, `vault:registry:pages:<n>`, `vault:registry:<id>` | string | vault registry records | 300 s | `vaultRegistryService.ts` |
+| `vault:stats:v1:<key>` | string | vault stats entry | 30 s (`VAULT_STATS_CACHE_TTL_SECS`) | `vaultStatsServiceV2.ts` |
+| `vault:stats:v1:stale:<key>` | string | last-known-good stats fallback | 5 min | `vaultStatsServiceV2.ts` |
+| `vault:stats:current` | string | warmed vault stats | 60 s | `cacheWarmup.ts` |
+| `vault:share_price:current` | string | warmed share price | 30 s | `cacheWarmup.ts` |
+| `vault:top_depositors:current` | string | warmed top-100 depositors | 300 s | `cacheWarmup.ts` |
+| `stellar:fee-stats:<network>` | string | fee statistics | 30 s | `stellarFeeService.ts` |
+| `horizon:fallback:<key>` | string | last successful Horizon response | 300 s | `horizonClient.ts` |
+| `harvest:last_at` | string | ISO timestamp of last harvest | 30 days | `harvestMetrics.ts` |
+| `harvest:metrics:<window>` | zset | harvest metrics | 30 days | `harvestMetrics.ts` |
+| `cache:stats` | hash | per-namespace hit/miss counters | no TTL (aggregated) | `cache.ts` |
+| `idempotency:<key>` | string | idempotency record | 24 h | `idempotencyMiddleware.ts` |
+| `export:rate:<user-id>` | string | rate-limit guard | 1 h | `userExportService.ts` |
+| `export:job:<job-id>`, `export:data:<job-id>`, `export:token:<job-id>` | string | job state, result, download token hash | 48 h | `userExportService.ts` |
+
+## Ownership and operational rules
+
+1. A service must only read or delete keys in its own namespace. Cross-service invalidation goes through the owning service.
+2. Cache keys must never embed plaintext secrets, session tokens, or full JWTs; use `hashKey()` instead.
+3. Durable queues (`email:queue:*`, `email:retry`, `email:dead`) intentionally have no TTL; monitor their depth instead.
+4. Any new namespace must be added to this table together with its Redis type, value shape and TTL before it is used in production.
+5. Environment-overridable TTLs are documented with their environment variable; the table lists the production default.

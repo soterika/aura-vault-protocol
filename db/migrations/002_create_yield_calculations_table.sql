@@ -34,3 +34,16 @@ CREATE TABLE IF NOT EXISTS yield_snapshots (
 
 CREATE INDEX idx_yield_snapshots_contract ON yield_snapshots(contract_id);
 CREATE INDEX idx_yield_snapshots_snapshot_at ON yield_snapshots(snapshot_at);
+
+-- Down Migration
+-- lint-migrations: allow DROP TABLE   reason: rollback removes the tables created by this migration
+BEGIN;
+DROP INDEX IF EXISTS idx_yield_calculations_contract;
+DROP INDEX IF EXISTS idx_yield_calculations_type;
+DROP INDEX IF EXISTS idx_yield_calculations_calculated_at;
+DROP INDEX IF EXISTS idx_yield_calculations_window_end;
+DROP INDEX IF EXISTS idx_yield_snapshots_contract;
+DROP INDEX IF EXISTS idx_yield_snapshots_snapshot_at;
+DROP TABLE IF EXISTS yield_snapshots;
+DROP TABLE IF EXISTS yield_calculations;
+COMMIT;
