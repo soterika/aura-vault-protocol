@@ -3,17 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeVaultStats, type PublicVaultStats } from "@/lib/vaultStatsServer";
 
-export interface VaultStatsCardProps {
+export interface LiveVaultStatsCardProps {
   initialStats: PublicVaultStats;
   apiBaseUrl?: string;
 }
 
 const STREAM_EVENT_TYPES = ["deposit", "withdraw", "harvest", "vault_updated", "stats"];
 
-export function VaultStatsCard({
+export function LiveVaultStatsCard({
   initialStats,
   apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001",
-}: VaultStatsCardProps) {
+}: LiveVaultStatsCardProps) {
   const [stats, setStats] = useState<PublicVaultStats>(initialStats);
   const [isLive, setIsLive] = useState(false);
   const esRef = useRef<EventSource | null>(null);
@@ -159,4 +159,4 @@ export function VaultStatsCard({
   );
 }
 
-export default VaultStatsCard;
+export default LiveVaultStatsCard;

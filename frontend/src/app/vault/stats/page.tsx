@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { VaultStatsCard } from "@/components/VaultStatsCard";
+import { LiveVaultStatsCard } from "@/components/LiveVaultStatsCard";
 import { fetchPublicVaultStats } from "@/lib/vaultStatsServer";
 
 /**
@@ -64,7 +64,7 @@ export default async function VaultStatsPage() {
       </header>
 
       <Suspense fallback={<VaultStatsSkeleton />}>
-        <VaultStatsCard initialStats={initialStats} />
+        <LiveVaultStatsCard initialStats={initialStats} />
       </Suspense>
     </main>
   );
