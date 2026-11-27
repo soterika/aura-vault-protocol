@@ -48,6 +48,28 @@ Events are persisted before broadcast. Consumers should deduplicate by the
 contract event identity and treat SSE as a low-latency notification; REST reads
 remain the source of current aggregate state.
 
+## Settings Persistence
+
+Settings are stored in the browser's origin-scoped `localStorage` unless noted
+as account-synced below. Signing out does not remove browser-local settings;
+clearing site data or using another browser/profile does. Account-synced values
+are loaded again after the user authenticates to the same account.
+
+| Setting | Storage | Returning-account and fresh-profile behavior |
+|---|---|---|
+| Theme (`light`, `dark`, or `system`) | `localStorage` key `aura-theme` | Device/browser only; not restored by signing in. |
+| Dashboard widget order and visibility | `localStorage` key `aura_widget_layout`; also `/api/users/preferences` as `dashboardWidgets` when authenticated | The browser value loads first; the authenticated account preference then replaces it and refreshes the browser copy. |
+| Accent color, font size, compact mode | `localStorage` key `aura-appearance`; also `/api/users/preferences` as `appearance` after using **Save appearance** while authenticated | The local value applies first. An authenticated account's saved appearance is then loaded and cached locally. Unsaved changes remain browser-local. |
+| Slippage, transaction/email notification toggles, email address, and two-factor toggle | `localStorage` key `aura_settings` | Browser/profile only; these controls are not synced through the user-preferences API. A fresh profile starts with defaults. |
+| Wallet nickname | `/api/users/preferences` as `addressAliases`, keyed by wallet address | Account-synced; requires an authenticated wallet to load or save. |
+
+To check the behavior, change the settings in one browser profile, sign out and
+back into the same account, then compare with a fresh profile. Dashboard layout
+and saved appearance should return after authentication; the theme, notification
+and slippage controls, and any unsaved appearance changes should not. Clearing
+site data removes local-only values, while account-synced values can be fetched
+again after signing in.
+
 Aura Vault is a share-based yield vault on Stellar/Soroban with a full-stack off-chain companion (API, frontend, mobile). Users deposit a single SEP-41 token, receive proportional shares, and auto-compound yield through permissionless keeper harvests.
 
 ```

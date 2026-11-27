@@ -109,7 +109,31 @@ Any Soroban contract error code returned to the user (see table below) requires 
 - `total_assets` in UI differs from direct contract query
 - Withdrawal received wrong token amount
 
-### 2.4 Security / Suspicious Activity
+### 2.4 Transaction Support Checklist
+
+For a pending or failed deposit, withdrawal, or other transaction, collect:
+
+1. The network selected in both the app and wallet (for example, Stellar
+   Testnet).
+2. The operation and approximate amount/asset.
+3. The approximate date and time, including timezone (UTC is preferred).
+4. The full transaction hash, if the wallet or app created one. A hash is a
+   public ledger reference and can be looked up on the matching network's
+   explorer.
+5. The exact on-screen error text and any displayed error/reference code.
+
+If no hash exists, ask when the flow stopped: before wallet approval, during
+wallet signing, or after approval while submitting. Record the visible message
+and screen state; do not infer that a transaction reached the network.
+
+Example handoff: **Network:** Stellar Testnet; **operation:** deposit 25 USDC;
+**time:** 2026-11-20 14:32 UTC; **hash:** not shown; **stage:** wallet approval
+completed, app reported a submission error; **error reference:** copy the exact
+message shown by the app. Replace these illustrative values with the user's
+actual details. Never request a seed phrase, private key, wallet password,
+access token, or signed transaction envelope.
+
+### 2.5 Security / Suspicious Activity
 
 Escalate **immediately** via the security channel (see Escalation Channels below):
 - `suspicious` event observed in contract logs (flash loan guard triggered)
@@ -136,12 +160,16 @@ When posting to `#support-escalations`, use this format:
 **User:** @username (Discord) or wallet address
 **Summary:** One sentence description
 **Evidence:**
-  - Tx hash: ...
-  - Error code: ...
+  - Network: ...
+  - Approximate time and timezone: ...
+  - Tx hash (if available): ...
+  - On-screen error/reference and last completed step: ...
   - Screenshot: (attach)
   - On-chain query result: ...
 **Urgency:** [Low / Medium / High / Critical]
 ```
+
+Never attach wallet secrets, access tokens, or signed transaction envelopes.
 
 ---
 
