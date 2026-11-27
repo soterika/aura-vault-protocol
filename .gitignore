@@ -1,5 +1,7 @@
 target/
 Cargo.lock
+!/aura-vault/Cargo.lock
+!/aura-migration/Cargo.lock
 .DS_Store
 *.wasm
 mutants.out/
