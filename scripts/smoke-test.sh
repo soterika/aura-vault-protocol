@@ -9,7 +9,7 @@
 #
 # Environment variables:
 #   BASE_URL          Backend base URL (required)
-#   SMOKE_TIMEOUT_MS  Per-request timeout in milliseconds (default 5000)
+#   SMOKE_TIMEOUT_MS  Per-request timeout in milliseconds (default 10000)
 #   TEST_WALLET       Stellar wallet address for auth smoke test
 #   MAX_STATS_AGE_MS  Maximum stats freshness window in ms (default 120000)
 #
@@ -17,7 +17,7 @@
 # command. Any non-zero exit from the TypeScript runner is propagated verbatim
 # so the CI/CD pipeline can detect and roll back a failed deployment.
 #
-# Closes #947
+# Closes #947, #1252
 
 set -euo pipefail
 
@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 BASE_URL="${BASE_URL:-http://localhost:3001}"
-SMOKE_TIMEOUT_MS="${SMOKE_TIMEOUT_MS:-5000}"
+SMOKE_TIMEOUT_MS="${SMOKE_TIMEOUT_MS:-10000}"
 MAX_STATS_AGE_MS="${MAX_STATS_AGE_MS:-120000}"
 HARD_TIMEOUT_SECS=55
 

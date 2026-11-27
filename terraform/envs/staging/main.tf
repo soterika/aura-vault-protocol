@@ -78,6 +78,21 @@ module "rds_replica" {
 }
 
 # ---------------------------------------------------------------------------
+# ElastiCache Redis 7 Cluster — Staging
+# ---------------------------------------------------------------------------
+module "elasticache" {
+  source = "../../modules/elasticache"
+
+  cluster_name               = "aura-vault-redis-staging"
+  node_type                  = "cache.t4g.medium"
+  num_shards                 = 3
+  environment                = "staging"
+  vpc_id                     = data.terraform_remote_state.root.outputs.vpc_id
+  subnet_ids                 = data.terraform_remote_state.root.outputs.private_subnet_ids
+  allowed_security_group_ids = [data.terraform_remote_state.root.outputs.backend_security_group_id]
+}
+
+# ---------------------------------------------------------------------------
 # Outputs
 # ---------------------------------------------------------------------------
 output "replica_endpoint" {
@@ -89,4 +104,19 @@ output "replica_endpoint" {
 output "replica_arn" {
   description = "ARN of the staging read replica."
   value       = module.rds_replica.replica_arn
+}
+
+output "redis_cluster_endpoint" {
+  description = "Staging ElastiCache Redis cluster configuration endpoint."
+  value       = module.elasticache.cluster_endpoint
+}
+
+output "redis_reader_endpoint" {
+  description = "Staging ElastiCache Redis cluster reader endpoint."
+  value       = module.elasticache.reader_endpoint
+}
+
+output "redis_port" {
+  description = "Staging ElastiCache Redis cluster port."
+  value       = module.elasticache.port
 }
