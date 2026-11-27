@@ -5,6 +5,8 @@ import {
   TableSkeleton,
   GraphSkeleton,
   FormSkeleton,
+  VaultStatsCardSkeleton,
+  SparklineSkeleton,
   LoadingIndicator,
 } from "../components/Skeleton";
 
@@ -49,6 +51,16 @@ export const Graph: Story = {
 /** Form skeleton — deposit/withdraw forms during initial load. */
 export const Form: Story = {
   render: () => <FormSkeleton fields={2} />,
+};
+
+/** VaultStatsCard skeleton — 3 metric placeholders. */
+export const VaultStatsCard: Story = {
+  render: () => <VaultStatsCardSkeleton metrics={3} />,
+};
+
+/** APY sparkline skeleton — rectangle placeholder. */
+export const Sparkline: Story = {
+  render: () => <SparklineSkeleton height={160} />,
 };
 
 /** Indeterminate progress indicator. */

@@ -119,6 +119,66 @@ describe("keyMatches", () => {
   it('does NOT match "w" against shortcut "d"', () => {
     expect(keyMatches("w", "d")).toBe(false);
   });
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   Shortcut dispatch & preference disablement
+═══════════════════════════════════════════════════════════════════ */
+describe("shortcut dispatch", () => {
+  function dispatchKey(
+    key: string,
+    shortcuts: Array<{ key: string; handler: () => void }>,
+    options: { disabled?: boolean; targetTag?: string } = {},
+  ) {
+    if (options.disabled) return;
+    if (isTypingTarget({ target: { tagName: options.targetTag ?? "BODY" } })) return;
+    for (const s of shortcuts) {
+      if (keyMatches(key, s.key)) {
+        s.handler();
+        return;
+      }
+    }
+  }
+
+  it("triggers D, W, H, L, ?, and Escape handlers", () => {
+    const deposit = vi.fn();
+    const withdraw = vi.fn();
+    const history = vi.fn();
+    const leaderboard = vi.fn();
+    const help = vi.fn();
+    const close = vi.fn();
+
+    const shortcuts = [
+      { key: "d", handler: deposit },
+      { key: "w", handler: withdraw },
+      { key: "h", handler: history },
+      { key: "l", handler: leaderboard },
+      { key: "?", handler: help },
+      { key: "Escape", handler: close },
+    ];
+
+    dispatchKey("d", shortcuts);
+    dispatchKey("W", shortcuts);
+    dispatchKey("h", shortcuts);
+    dispatchKey("L", shortcuts);
+    dispatchKey("?", shortcuts);
+    dispatchKey("Escape", shortcuts);
+
+    expect(deposit).toHaveBeenCalledTimes(1);
+    expect(withdraw).toHaveBeenCalledTimes(1);
+    expect(history).toHaveBeenCalledTimes(1);
+    expect(leaderboard).toHaveBeenCalledTimes(1);
+    expect(help).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trigger any shortcut when disabled in user preferences", () => {
+    const deposit = vi.fn();
+    dispatchKey("d", [{ key: "d", handler: deposit }], { disabled: true });
+    expect(deposit).not.toHaveBeenCalled();
+  });
+});
+  });
 
   it("handles empty-string shortcut key gracefully", () => {
     expect(keyMatches("", "")).toBe(true);

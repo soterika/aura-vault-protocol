@@ -48,6 +48,7 @@ import {
 import VaultPauseBanner from "@/components/VaultPauseBanner";
 import AdminPauseControls from "@/components/AdminPauseControls";
 import VaultActions from "@/components/VaultActions";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useVaultPause } from "@/lib/useVaultPause";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -562,7 +563,9 @@ export function SortableDashboardGrid() {
         >
           Actions
         </h2>
-        <VaultActions isPaused={isPaused} />
+        <ErrorBoundary section="deposit_form">
+          <VaultActions isPaused={isPaused} />
+        </ErrorBoundary>
       </section>
 
       {/* Admin-only pause / unpause control */}

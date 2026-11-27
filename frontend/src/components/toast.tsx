@@ -82,7 +82,8 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_VISIBLE = 3;
-const DEFAULT_DURATION_MS = 5_000;
+const DEFAULT_DURATION_MS = 4_000;
+const ERROR_DURATION_MS = 8_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider
@@ -104,9 +105,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const scheduleAutoDismiss = useCallback(
-    (id: string, variant: ToastVariant, duration: number) => {
-      // Error toasts always persist — never auto-dismiss
-      if (variant === "error") return;
+    (id: string, duration: number) => {
       // duration of 0 means manual-dismiss-only
       if (duration === 0) return;
       const timer = setTimeout(() => removeToast(id), duration);
@@ -119,9 +118,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (options: ToastOptions): string => {
       const id = crypto.randomUUID();
       const duration =
-        options.variant === "error"
-          ? 0 // errors never auto-dismiss
-          : (options.duration ?? DEFAULT_DURATION_MS);
+        options.duration ??
+        (options.variant === "error" ? ERROR_DURATION_MS : DEFAULT_DURATION_MS);
 
       const toast: Toast = {
         ...options,
@@ -131,7 +129,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       };
 
       setToasts((prev) => [...prev, toast]);
-      scheduleAutoDismiss(id, options.variant, duration);
+      scheduleAutoDismiss(id, duration);
       return id;
     },
     [scheduleAutoDismiss],
@@ -326,7 +324,7 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
 
   return (
     <div
-      role="alert"
+      role={isError ? "alert" : "status"}
       aria-live={isError ? "assertive" : "polite"}
       aria-atomic="true"
       data-testid="toast"
@@ -334,6 +332,7 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
       className={[
         "pointer-events-auto flex w-full items-start gap-3",
         "rounded-xl border shadow-lg backdrop-blur-sm p-4",
+        "transition-all duration-300 ease-out",
         "animate-in slide-in-from-right-5 fade-in duration-300",
         VARIANT_STYLES[toast.variant],
       ].join(" ")}
@@ -426,12 +425,29 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
   const visible = toasts.slice(-MAX_VISIBLE); // most-recent N
   const queuedCount = Math.max(0, toasts.length - MAX_VISIBLE);
 
+  // Dismiss the most recent visible toast on Escape key
+  useEffect(() => {
+    if (visible.length === 0) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        const latest = visible[visible.length - 1];
+        if (latest) {
+          onDismiss(latest.id);
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [visible, onDismiss]);
+
   return (
     /*
      * On mobile the container is centred horizontally.
      * On sm+ it is anchored to the top-right corner.
      */
     <div
+      role="status"
+      aria-live="polite"
       aria-label="Notifications"
       className={[
         "fixed z-[100] flex flex-col gap-2",
