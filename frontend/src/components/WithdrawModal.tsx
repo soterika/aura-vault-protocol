@@ -28,6 +28,7 @@ import { UsdAmountConverter } from "./UsdAmountConverter";
 import TransactionProgress from "./TransactionProgress";
 import RedemptionPreview from "./RedemptionPreview";
 import StellarBaseFee from "./StellarBaseFee";
+import ShareMathConfirmationModal, { shouldSkipShareMathConfirmation } from "./ShareMathConfirmationModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -322,6 +323,16 @@ function VaultWithdrawal({
     }
   }
 
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  function requestConfirmOrSubmit() {
+    if (shouldSkipShareMathConfirmation()) {
+      void handleSubmit();
+    } else {
+      setShowConfirmation(true);
+    }
+  }
+
   async function handleNext() {
     if (step === 1) {
       if (!validate()) return;
@@ -341,7 +352,7 @@ function VaultWithdrawal({
         setQuoteError(err instanceof Error ? err.message : "Could not refresh the vault exchange rate.");
       }
     } else if (step === 2) {
-      await handleSubmit();
+      requestConfirmOrSubmit();
     }
   }
 
@@ -399,6 +410,7 @@ function VaultWithdrawal({
   };
 
   return (
+    <>
     <AccessibleModal
       isOpen={isOpen}
       onClose={requestClose}
@@ -687,7 +699,21 @@ function VaultWithdrawal({
           )}
         </div>
       )}
-    </AccessibleModal>
+      </AccessibleModal>
+      <ShareMathConfirmationModal
+        isOpen={showConfirmation}
+        mode="withdraw"
+        amount={shares}
+        totalShares={totalShares}
+        totalAssets={totalAssets}
+        shareSymbol={shareSymbol}
+        onConfirm={() => {
+          setShowConfirmation(false);
+          void handleSubmit();
+        }}
+        onCancel={() => setShowConfirmation(false)}
+      />
+    </>
   );
 }
 

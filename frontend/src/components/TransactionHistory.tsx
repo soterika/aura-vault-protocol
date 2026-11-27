@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "./EmptyState";
 import { useMemo, useState } from "react";
 import { downloadTransactionPdf } from "@/lib/transactionPdf";
 import { resolveNetwork, type StellarNetwork } from "@/lib/explorerLinks";
@@ -119,7 +120,17 @@ export default function TransactionHistory({
                 <td className="p-3"><ExplorerLink type="tx" id={tx.hash} network={resolvedNetwork} className="text-blue-700 underline dark:text-blue-300">{tx.hash.slice(0, 8)}…{tx.hash.slice(-6)}</ExplorerLink></td>
               </tr>
             ))}
-            {currentRows.length === 0 && <tr><td className="p-5 text-center text-zinc-500" colSpan={5}>No transactions match these filters.</td></tr>}
+            {currentRows.length === 0 && (
+              <tr>
+                <td className="p-5 text-center text-zinc-500" colSpan={5}>
+                  {transactions.length === 0 ? (
+                    <EmptyState variant="no-transactions" className="py-6" />
+                  ) : (
+                    "No transactions match these filters."
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
