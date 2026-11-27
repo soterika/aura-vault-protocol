@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WalletConnect from "./WalletConnect";
 import VaultActions from "./VaultActions";
 import { FinancialValue } from "./FinancialValue";
+import { ExplorerLink } from "./ExplorerLink";
 import { EmptyState } from "./EmptyState";
 import { AnimatedShareBalance } from "./AnimatedShareBalance";
 import { useAnimatedNumber } from "@/lib/useAnimatedNumber";
@@ -138,15 +139,14 @@ function TxRow({ tx }: { tx: Transaction }) {
         <p className="font-mono text-sm font-semibold text-zinc-800 dark:text-zinc-200">
           {tx.amount}
         </p>
-        <a
-          href={`https://stellar.expert/explorer/testnet/tx/${tx.hash}`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <ExplorerLink
+          type="tx"
+          id={tx.hash}
           className="font-mono text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          aria-label={`View transaction ${tx.hash} on explorer`}
+          ariaLabel={`View transaction ${tx.hash} on explorer`}
         >
           {tx.hash.slice(0, 8)}…
-        </a>
+        </ExplorerLink>
 // ── Stat Card ────────────────────────────────────────────────────────────────
 interface StatCardProps {
   icon: React.ReactNode;

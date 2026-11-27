@@ -76,6 +76,8 @@ export {
 export { KeyboardShortcutHelp } from "./KeyboardShortcutHelp";
 export { startProgress, doneProgress } from "./ProgressBar";
 export { OnboardingTour, useRestartTour } from "./OnboardingTour";
+export { ExplorerLink } from "./ExplorerLink";
+export type { ExplorerLinkProps } from "./ExplorerLink";
 export { ExplorerMenu } from "./ExplorerMenu";
 export type { ExplorerMenuProps } from "./ExplorerMenu";
 // Toast notification system (Issue #257)
