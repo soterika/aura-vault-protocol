@@ -21,6 +21,14 @@ interface FormSkeletonProps {
   fields?: number;
 }
 
+interface VaultStatsCardSkeletonProps {
+  metrics?: number;
+}
+
+interface SparklineSkeletonProps {
+  height?: number | string;
+}
+
 /** Basic row-based skeleton */
 export function Skeleton({ rows = 2 }: Props) {
   return (
@@ -134,6 +142,42 @@ export function FormSkeleton({ fields = 2 }: FormSkeletonProps) {
         </div>
       ))}
       <div className="skeleton-row skeleton-row--btn" />
+    </div>
+  );
+}
+
+/** VaultStatsCard skeleton — 3 metric placeholders */
+export function VaultStatsCardSkeleton({ metrics = 3 }: VaultStatsCardSkeletonProps) {
+  const id = useId();
+  return (
+    <div
+      role="status"
+      aria-label="Loading vault stats"
+      aria-busy="true"
+      className="skeleton-stats-card"
+    >
+      <span className="sr-only">Loading vault statistics…</span>
+      {Array.from({ length: metrics }).map((_, i) => (
+        <div key={`${id}-metric-${i}`} className="skeleton-stats-card__metric">
+          <div className="skeleton-row skeleton-row--sm" style={{ width: "45%" }} />
+          <div className="skeleton-row skeleton-row--lg" style={{ width: "75%" }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** APY sparkline skeleton — grey rectangle placeholder */
+export function SparklineSkeleton({ height = 160 }: SparklineSkeletonProps) {
+  return (
+    <div
+      role="status"
+      aria-label="Loading APY sparkline"
+      aria-busy="true"
+      className="skeleton-sparkline"
+      style={{ height: typeof height === "number" ? `${height}px` : height }}
+    >
+      <span className="sr-only">Loading APY chart…</span>
     </div>
   );
 }

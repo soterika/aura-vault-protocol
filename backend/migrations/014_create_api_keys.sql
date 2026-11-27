@@ -11,3 +11,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS api_keys_user_active_idx
   ON api_keys (user_id, created_at DESC) WHERE revoked_at IS NULL;
+
+-- Down Migration
+-- lint-migrations: allow DROP TABLE   reason: rollback removes the table created by this migration
+BEGIN;
+DROP INDEX IF EXISTS api_keys_user_active_idx;
+DROP TABLE IF EXISTS api_keys;
+COMMIT;

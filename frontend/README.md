@@ -20,6 +20,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Configuration
+
+The frontend is configured using public Next.js environment variables (`NEXT_PUBLIC_*`). Copy the template to create your local overrides:
+
+```bash
+cp .env.example .env.local
+```
+
+For complete variable descriptions, active code references, defaults, and instructions for non-production networks (Testnet/Futurenet), see:
+- [Frontend Public Configuration Reference in docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md#frontend-public-configuration-reference)
+- [CLAUDE.md](CLAUDE.md)
+
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

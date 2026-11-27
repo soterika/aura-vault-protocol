@@ -37,3 +37,13 @@ $$;
 CREATE TRIGGER trg_alert_subscriptions_updated_at
   BEFORE UPDATE ON alert_subscriptions
   FOR EACH ROW EXECUTE FUNCTION update_alert_subscriptions_updated_at();
+
+-- Down Migration
+-- lint-migrations: allow DROP TABLE   reason: rollback removes the table created by this migration
+BEGIN;
+DROP TRIGGER IF EXISTS trg_alert_subscriptions_updated_at ON alert_subscriptions;
+DROP FUNCTION IF EXISTS update_alert_subscriptions_updated_at();
+DROP INDEX IF EXISTS idx_alert_subscriptions_email;
+DROP INDEX IF EXISTS idx_alert_subscriptions_wallet;
+DROP TABLE IF EXISTS alert_subscriptions;
+COMMIT;

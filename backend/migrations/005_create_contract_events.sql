@@ -18,3 +18,10 @@ CREATE INDEX IF NOT EXISTS idx_contract_events_created_at
   ON contract_events (created_at DESC);
 
 COMMIT;
+
+-- Down Migration
+-- lint-migrations: allow DROP TABLE   reason: rollback recreates this migration's contract_events table from the up section
+BEGIN;
+DROP INDEX IF EXISTS idx_contract_events_created_at;
+DROP TABLE IF EXISTS contract_events;
+COMMIT;

@@ -14,6 +14,7 @@ interface Settings {
   emailNotifications: boolean;
   email: string;
   twoFactorEnabled: boolean;
+  keyboardShortcutsEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +25,7 @@ const DEFAULT_SETTINGS: Settings = {
   emailNotifications: false,
   email: "",
   twoFactorEnabled: false,
+  keyboardShortcutsEnabled: true,
 };
 
 function loadSettings(): Settings {
@@ -139,6 +141,25 @@ export default function SettingsContent() {
                 />
               </label>
             ))}
+          </div>
+        </section>
+
+        {/* Keyboard Shortcuts */}
+        <section className="mb-8">
+          <h2 className="text-lg font-medium mb-3">Keyboard Shortcuts</h2>
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 bg-white dark:bg-zinc-900">
+            <label className="flex items-center justify-between gap-4 cursor-pointer">
+              <div>
+                <span className="text-sm font-medium block">Enable keyboard shortcuts</span>
+                <span className="text-xs text-zinc-500">Use D, W, H, L, ?, and Esc for quick navigation and actions</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.keyboardShortcutsEnabled}
+                onChange={(e) => update("keyboardShortcutsEnabled", e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            </label>
           </div>
         </section>
 
