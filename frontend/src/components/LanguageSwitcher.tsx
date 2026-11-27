@@ -21,7 +21,9 @@ export function LanguageSwitcher() {
 
   function changeLanguage(event: React.ChangeEvent<HTMLSelectElement>) {
     const nextLocale = event.target.value as (typeof LANGUAGES)[number]["code"];
-    startTransition(() => router.replace(pathname, { locale: nextLocale }));
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const target = search ? `${pathname}${search}` : pathname;
+    startTransition(() => router.replace(target, { locale: nextLocale }));
   }
 
   return (

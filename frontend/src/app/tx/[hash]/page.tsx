@@ -14,8 +14,9 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { extractLocaleFromPath, resolveLocalizedDestination } from '@/lib/useDeepLink';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,14 @@ const STATUS_CONFIG: Record<
 
 export default function TransactionStatusPage() {
   const params = useParams();
+  const pathname = usePathname();
   const hash = typeof params?.hash === 'string' ? params.hash : '';
+  const locale = extractLocaleFromPath(pathname ?? '');
+  const dashboardHref = resolveLocalizedDestination(
+    '/',
+    typeof window !== 'undefined' ? window.location.search : '',
+    locale
+  );
 
   const [state, setState] = useState<FetchState>({ phase: 'loading' });
   const [copied, setCopied] = useState(false);
@@ -220,7 +228,7 @@ export default function TransactionStatusPage() {
             URL and try again.
           </p>
           <Link
-            href="/"
+            href={dashboardHref}
             className="inline-block mt-2 text-sm text-indigo-600 dark:text-indigo-400 underline underline-offset-2"
           >
             ← Back to dashboard
@@ -262,7 +270,7 @@ export default function TransactionStatusPage() {
         {/* ── Header ───────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <Link
-            href="/"
+            href={dashboardHref}
             className="text-sm text-indigo-600 dark:text-indigo-400 underline underline-offset-2"
             aria-label="Back to dashboard"
           >
