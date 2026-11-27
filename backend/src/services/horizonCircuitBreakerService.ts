@@ -91,7 +91,6 @@ const circuitBreakerOptions: CircuitBreaker.Options = {
   group: "horizon",
   enabled: true,
   allowWarmUp: false,
-  volumeThreshold: 5,
 };
 
 // opossum wraps a single function; callers pass the actual Horizon fetch fn
@@ -181,7 +180,7 @@ export async function withHorizonCircuitBreaker<T>(
     if (fallbackKey) {
       const cached = await getFallback<T>(fallbackKey);
       if (cached !== null) {
-        logger.warn("[horizon-circuit-breaker] Serving cached fallback for key:", fallbackKey);
+        logger.warn({ err: fallbackKey }, "[horizon-circuit-breaker] Serving cached fallback for key:");
         return cached;
       }
     }

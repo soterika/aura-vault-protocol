@@ -157,9 +157,7 @@ export async function getPortfolioHistory(
     shares: row.shares,
     tx_hash: row.tx_hash,
     timestamp:
-      row.timestamp instanceof Date
-        ? row.timestamp.toISOString()
-        : String(row.timestamp),
+      new Date(row.timestamp).toISOString(),
   }));
 
   return { items, total, page, pageSize };

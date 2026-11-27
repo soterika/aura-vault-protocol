@@ -31,7 +31,7 @@ apyRouter.get('/history', async (req: Request, res: Response): Promise<void> => 
     res.set('Cache-Control', 'public, max-age=300');
     res.success(history);
   } catch (err) {
-    logger.error('[APY] GET /history error:', err);
+    logger.error({ err: err }, '[APY] GET /history error:');
     res.failure(INTERNAL_ERROR, 'Failed to retrieve APY history.', 500);
   }
 });

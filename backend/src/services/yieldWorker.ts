@@ -57,7 +57,7 @@ async function persistRunStats(stats: RunStats): Promise<void> {
     // Trim to last 200 runs (~8 days of hourly runs)
     await redis.zremrangebyrank(NS.YIELD_HISTORY, 0, -201);
   } catch (err) {
-    logger.error("[YieldWorker] Failed to persist run stats:", err);
+    logger.error({ err: err }, "[YieldWorker] Failed to persist run stats:");
   }
 }
 
@@ -142,7 +142,7 @@ async function runOnce(opts: Required<YieldWorkerOptions>): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     opts.onAlert("Yield worker run failed", { error: msg, runAt });
-    logger.error("[YieldWorker] Run failed:", err);
+    logger.error({ err: err }, "[YieldWorker] Run failed:");
   } finally {
     runInProgress = false;
   }
@@ -156,7 +156,7 @@ function buildOptions(opts: YieldWorkerOptions): Required<YieldWorkerOptions> {
     getSources: opts.getSources ?? (async () => []),
     onAlert:
       opts.onAlert ??
-      ((msg, meta) => logger.error(`[YieldWorker] ALERT: ${msg}`, meta ?? "")),
+      ((msg, meta) => logger.error({ err: meta ?? "" }, `[YieldWorker] ALERT: ${msg}`)),
     onRunComplete: opts.onRunComplete ?? (async () => {}),
   };
 }

@@ -13,9 +13,10 @@
  */
 
 import { Queue, Worker, type Job } from 'bullmq';
-import { getVaultStats } from './vaultStatsService.js';
+import { getVaultStats } from './vaultStatsServiceV2.js';
 import { evaluateSubscriptions, type VaultSnapshot } from './alertSubscriptionServiceV2.js';
-import { getRedisConnection } from '../redis.js';
+import { getVaultPaused } from "./vaultPauseState.js";
+import { getRedis } from '../redis.js';
 import { logger } from '../logger.js';
 
 const QUEUE_NAME = 'alert-evaluation';
@@ -43,7 +44,7 @@ let alertQueue: Queue | null = null;
 let alertWorker: Worker | null = null;
 
 export async function startAlertEvaluationJob(): Promise<void> {
-  const connection = getRedisConnection();
+  const connection = getRedis();
 
   alertQueue = new Queue(QUEUE_NAME, { connection });
 
@@ -93,21 +94,11 @@ async function runEvaluationTick(): Promise<void> {
   const tickStart = Date.now();
 
   // Fetch current vault state
-  const stats = await getVaultStats();
-
-  const currentSharePrice =
-    typeof stats.share_price === 'number'
-      ? stats.share_price
-      : stats.share_price != null
-      ? parseFloat(String(stats.share_price))
-      : null;
-
-  const isPaused = stats.is_paused === true;
-
-  const lastHarvest: string | null =
-    (stats as Record<string, unknown>).last_harvest_at != null
-      ? String((stats as Record<string, unknown>).last_harvest_at)
-      : null;
+  const { stats } = await getVaultStats();
+  const price = Number(stats.sharePrice);
+  const currentSharePrice = Number.isFinite(price) ? price : null;
+  const isPaused = getVaultPaused();
+  const lastHarvest = stats.lastHarvest;
 
   // Compute share price change percentage vs previous tick
   let sharePriceChangePercent: number | null = null;

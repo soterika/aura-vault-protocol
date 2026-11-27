@@ -117,13 +117,13 @@ export interface HarvestJobPayload {
 async function executeHarvest(job: Job<HarvestJobPayload>): Promise<string> {
   const { vaultContractId, triggeredAt, correlationId } = job.data;
 
-  logger.info("[HarvestRepeatableJob] Executing harvest", {
+  logger.info({
     jobId: job.id,
     attempt: (job.attemptsMade ?? 0) + 1,
     vaultContractId,
     triggeredAt,
     correlationId,
-  });
+  }, "[HarvestRepeatableJob] Executing harvest");
 
   // 1. Load keeper keypair from AWS Secrets Manager (cached)
   const keypair = await getKeeperKeypair(KEEPER_SECRET_ID);
@@ -131,7 +131,7 @@ async function executeHarvest(job: Job<HarvestJobPayload>): Promise<string> {
   // 2. Submit harvest transaction to Stellar
   let txHash: string;
   try {
-    const { Keypair, SorobanRpc, Contract, TransactionBuilder, Networks, BASE_FEE, xdr } =
+    const { Keypair, rpc: SorobanRpc, Contract, TransactionBuilder, Networks, BASE_FEE, xdr } =
       await import("@stellar/stellar-sdk");
 
     const keeperKeypair = Keypair.fromSecret(keypair.secretKey);
@@ -158,12 +158,12 @@ async function executeHarvest(job: Job<HarvestJobPayload>): Promise<string> {
     const result = await server.sendTransaction(preparedTx);
     txHash = result.hash;
 
-    logger.info("[HarvestRepeatableJob] Harvest transaction submitted", {
+    logger.info({
       jobId: job.id,
       txHash,
       vaultContractId,
       correlationId,
-    });
+    }, "[HarvestRepeatableJob] Harvest transaction submitted");
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
 
@@ -172,13 +172,13 @@ async function executeHarvest(job: Job<HarvestJobPayload>): Promise<string> {
       harvestJobRetriesCounter.inc();
     }
 
-    logger.warn("[HarvestRepeatableJob] Harvest transaction failed", {
+    logger.warn({
       jobId: job.id,
       attempt: (job.attemptsMade ?? 0) + 1,
       error,
       vaultContractId,
       correlationId,
-    });
+    }, "[HarvestRepeatableJob] Harvest transaction failed");
 
     // Record failed attempt in contract_events
     await recordContractEvent({
@@ -244,10 +244,10 @@ async function recordContractEvent(rec: ContractEventRecord): Promise<void> {
     );
   } catch (err) {
     // Non-fatal — log and continue; don't let DB errors abort the harvest result
-    logger.error("[HarvestRepeatableJob] Failed to record contract event", {
+    logger.error({
       err,
       correlationId: rec.correlationId,
-    });
+    }, "[HarvestRepeatableJob] Failed to record contract event");
   }
 }
 
@@ -298,11 +298,11 @@ export async function startHarvestRepeatableJob(): Promise<void> {
     }
   );
 
-  logger.info("[HarvestRepeatableJob] Repeatable job registered", {
+  logger.info({
     cron: HARVEST_CRON,
     intervalHours: HARVEST_INTERVAL_HOURS,
     vaultContractId: VAULT_CONTRACT_ID,
-  });
+  }, "[HarvestRepeatableJob] Repeatable job registered");
 
   // 3. Create worker
   harvestWorker = new Worker<HarvestJobPayload, string>(
@@ -321,10 +321,10 @@ export async function startHarvestRepeatableJob(): Promise<void> {
 
   // 4. Worker lifecycle events
   harvestWorker.on("completed", (job, result) => {
-    logger.info("[HarvestRepeatableJob] Job completed", {
+    logger.info({
       jobId: job.id,
       result,
-    });
+    }, "[HarvestRepeatableJob] Job completed");
   });
 
   harvestWorker.on("failed", (job, err) => {
@@ -332,24 +332,24 @@ export async function startHarvestRepeatableJob(): Promise<void> {
 
     if (isFinal) {
       harvestJobFailureCounter.inc();
-      logger.error("[HarvestRepeatableJob] Job exhausted all retries — Prometheus alert threshold may trigger", {
+      logger.error({
         jobId: job?.id,
         error: err.message,
-      });
+      }, "[HarvestRepeatableJob] Job exhausted all retries — Prometheus alert threshold may trigger");
     } else {
-      logger.warn("[HarvestRepeatableJob] Job failed, will retry", {
+      logger.warn({
         jobId: job?.id,
         attemptsMade: job?.attemptsMade,
         error: err.message,
-      });
+      }, "[HarvestRepeatableJob] Job failed, will retry");
     }
   });
 
   harvestWorker.on("error", (err) => {
-    logger.error("[HarvestRepeatableJob] Worker error", { error: err.message });
+    logger.error({ error: err.message }, "[HarvestRepeatableJob] Worker error");
   });
 
-  logger.info("[HarvestRepeatableJob] Worker started", { queue: QUEUE_NAME });
+  logger.info({ queue: QUEUE_NAME }, "[HarvestRepeatableJob] Worker started");
 }
 
 /**

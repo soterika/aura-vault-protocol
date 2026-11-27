@@ -169,7 +169,7 @@ export async function getStellarFeeStats(): Promise<StellarFeeStats> {
 
     return stats;
   } catch (err) {
-    logger.error("[stellar-fee-stats] Horizon fetch failed, using fallback", err);
+    logger.error({ err: err }, "[stellar-fee-stats] Horizon fetch failed, using fallback");
 
     // 3. Graceful fallback: return sensible defaults when Horizon is down
     const BASE_FEE_FALLBACK = 100; // 100 stroops = Stellar minimum

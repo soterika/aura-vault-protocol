@@ -23,7 +23,7 @@ router.get('/:address/analytics', async (req: Request, res: Response) => {
     const analytics = await getPortfolioAnalytics(address, loadEventsForAddress);
     res.success(analytics);
   } catch (err) {
-    logger.error('[analyticsRoute] error computing analytics:', err);
+    logger.error({ err: err }, '[analyticsRoute] error computing analytics:');
     res.failure(INTERNAL_ERROR, 'Internal server error', 500);
   }
 });
@@ -37,7 +37,7 @@ router.get('/:address/volume', async (req: Request, res: Response) => {
   try {
     res.success(await getCachedUserVolume(address));
   } catch (err) {
-    logger.error('[analyticsRoute] error computing user volume:', err);
+    logger.error({ err: err }, '[analyticsRoute] error computing user volume:');
     res.failure(INTERNAL_ERROR, 'Internal server error', 500);
   }
 });

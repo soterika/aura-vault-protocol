@@ -8,9 +8,9 @@
 npm-debug.log
 yarn-debug.log
 yarn-error.log
-.next
+**/.next
 .vercel
-dist
+**/dist
 build
 .DS_Store
 *.md
@@ -38,3 +38,7 @@ DEPLOYMENT_GUIDE.md
 *.test.tsx
 *.spec.ts
 *.spec.tsx
+
+!docs/
+docs/*
+!docs/openapi.yaml

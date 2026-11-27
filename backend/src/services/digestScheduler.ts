@@ -272,7 +272,7 @@ async function runTick(loadRecipients: RecipientLoader): Promise<void> {
   try {
     recipients = await loadRecipients();
   } catch (err) {
-    logger.error('[DigestScheduler] Failed to load recipients:', err);
+    logger.error({ err: err }, '[DigestScheduler] Failed to load recipients:');
     return;
   }
 
@@ -305,7 +305,7 @@ async function runWeeklyTick(loadRecipients: WeeklyRecipientLoader): Promise<voi
   try {
     recipients = await loadRecipients();
   } catch (err) {
-    logger.error('[DigestScheduler] Failed to load weekly recipients:', err);
+    logger.error({ err: err }, '[DigestScheduler] Failed to load weekly recipients:');
     return;
   }
 

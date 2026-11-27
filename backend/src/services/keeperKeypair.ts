@@ -79,10 +79,10 @@ export async function getKeeperKeypair(secretId: string): Promise<KeeperKeypair>
 
   _cached = { keypair, expiresAt: Date.now() + CACHE_TTL_MS };
 
-  logger.info("[KeeperKeypair] Keeper keypair loaded", {
+  logger.info({
     secretId,
     publicKey: publicKey ?? "(not set)",
-  });
+  }, "[KeeperKeypair] Keeper keypair loaded");
 
   return keypair;
 }

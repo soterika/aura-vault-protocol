@@ -80,7 +80,7 @@ async function main(): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    logger.error("[migrate] Error executing command:", err);
+    logger.error({ err: err }, "[migrate] Error executing command:");
     process.exit(1);
   } finally {
     await closePools().catch(() => {});

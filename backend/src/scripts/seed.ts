@@ -95,7 +95,7 @@ export async function seedDatabase(): Promise<void> {
     logger.info("[seed] Database seeding completed successfully!");
   } catch (err) {
     await client.query("ROLLBACK;");
-    logger.error("[seed] Error seeding database:", err);
+    logger.error({ err: err }, "[seed] Error seeding database:");
     throw err;
   } finally {
     client.release();

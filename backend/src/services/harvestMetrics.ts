@@ -62,7 +62,7 @@ export async function recordHarvestAttempt(): Promise<void> {
     const redis = getRedis();
     await redis.incr(KEY_TOTAL_ATTEMPTED);
   } catch (err) {
-    logger.error("[HarvestMetrics] Failed to record attempt", { err });
+    logger.error({ err }, "[HarvestMetrics] Failed to record attempt");
   }
 }
 
@@ -93,9 +93,9 @@ export async function recordHarvestSuccess(yieldAmount: number): Promise<void> {
     // Trim history to avoid unbounded growth
     await redis.zremrangebyrank(KEY_HISTORY, 0, -(HISTORY_MAX_ENTRIES + 1));
 
-    logger.info("[HarvestMetrics] Harvest success recorded", { yieldAmount, harvestedAt: nowIso });
+    logger.info({ yieldAmount, harvestedAt: nowIso }, "[HarvestMetrics] Harvest success recorded");
   } catch (err) {
-    logger.error("[HarvestMetrics] Failed to record success", { err });
+    logger.error({ err }, "[HarvestMetrics] Failed to record success");
   }
 }
 
@@ -104,9 +104,9 @@ export async function recordHarvestFailure(reason: string): Promise<void> {
   try {
     const redis = getRedis();
     await redis.incr(KEY_TOTAL_FAILED);
-    logger.warn("[HarvestMetrics] Harvest failure recorded", { reason });
+    logger.warn({ reason }, "[HarvestMetrics] Harvest failure recorded");
   } catch (err) {
-    logger.error("[HarvestMetrics] Failed to record failure", { err });
+    logger.error({ err }, "[HarvestMetrics] Failed to record failure");
   }
 }
 
@@ -153,7 +153,7 @@ export async function getHarvestMetrics(): Promise<HarvestMetrics> {
       averageYieldPerHarvest,
     };
   } catch (err) {
-    logger.error("[HarvestMetrics] Failed to read metrics", { err });
+    logger.error({ err }, "[HarvestMetrics] Failed to read metrics");
     // Return safe zero-value snapshot on Redis failure
     return {
       totalAttempted: 0,
@@ -184,7 +184,7 @@ export async function getHarvestHistory(limit = 24): Promise<{ yieldAmount: numb
       })
       .filter((e): e is { yieldAmount: number; harvestedAt: string } => e !== null);
   } catch (err) {
-    logger.error("[HarvestMetrics] Failed to read history", { err });
+    logger.error({ err }, "[HarvestMetrics] Failed to read history");
     return [];
   }
 }

@@ -152,20 +152,12 @@ portfolioSearchRouter.get("/search", authenticate, async (req: Request, res: Res
     const total: number = countResult.rows[0]?.total ?? 0;
     const page = Math.floor(offset / limit) + 1;
     const pageSize = limit;
-    const totalPages = Math.ceil(total / pageSize);
 
     res.json(
-      paginatedResponse(dataResult.rows, {
-        page,
-        pageSize,
-        total,
-        totalPages,
-        hasNext: offset + limit < total,
-        hasPrev: offset > 0,
-      })
+      paginatedResponse(dataResult.rows, page, pageSize, total)
     );
   } catch (err) {
-    logger.error("[portfolio/search]", err);
+    logger.error({ err: err }, "[portfolio/search]");
     res.status(500).json(errorResponse("INTERNAL_ERROR", "Search query failed"));
   }
 });

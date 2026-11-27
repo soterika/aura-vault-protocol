@@ -27,7 +27,7 @@ balanceOfRouter.get("/balance_of", async (req: Request, res: Response): Promise<
     }
 
     const sdk = await import("@stellar/stellar-sdk");
-    const server = new sdk.SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
+    const server = new sdk.rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") });
     const source = await server.getAccount(address);
     const passphrase = process.env.STELLAR_NETWORK_PASSPHRASE
       ?? (vault.network.toLowerCase().includes("test") ? sdk.Networks.TESTNET : sdk.Networks.PUBLIC);
@@ -40,21 +40,18 @@ balanceOfRouter.get("/balance_of", async (req: Request, res: Response): Promise<
       .build();
 
     const simulation = await server.simulateTransaction(transaction);
-    if (!sdk.SorobanRpc.Api.isSimulationSuccess(simulation) || !simulation.result) {
+    if (!sdk.rpc.Api.isSimulationSuccess(simulation) || !simulation.result) {
       res.status(502).json(errorResponse("BALANCE_LOOKUP_FAILED", "The contract could not return this balance"));
       return;
     }
 
-    const retval = simulation.result.retval;
-    const scVal = sdk.xdr.ScVal.fromXDR(Buffer.from(retval.toXDR("base64"), "base64"));
-    if (scVal.switch().name !== "scvI128") {
+    const scVal = simulation.result.retval;
+    if (scVal.type !== "scvI128") {
       res.status(502).json(errorResponse("INVALID_CONTRACT_RESPONSE", "The vault returned an unexpected balance value"));
       return;
     }
-    const amount = scVal.i128();
-    const high = BigInt(amount.hi().toString());
-    const low = BigInt.asUintN(64, BigInt(amount.lo().toString()));
-    const balance = (high << 64n) + low;
+    const { hi, lo } = scVal.i128;
+    const balance = (hi << 64n) | lo;
     res.set("Cache-Control", "public, max-age=15, s-maxage=15");
     const result = successResponse({ balance: balance.toString() });
     res.json({ ...result, balance: balance.toString() });

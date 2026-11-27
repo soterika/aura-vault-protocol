@@ -43,7 +43,7 @@ stellarRouter.get("/fee-stats", async (_req: Request, res: Response): Promise<vo
     const stats = await getStellarFeeStats();
     res.json(successResponse(stats));
   } catch (err) {
-    logger.error("[stellar/fee-stats]", err);
+    logger.error({ err: err }, "[stellar/fee-stats]");
     res.status(500).json(errorResponse(INTERNAL_ERROR, "Failed to retrieve Stellar fee statistics"));
   }
 });
