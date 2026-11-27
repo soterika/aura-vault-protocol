@@ -3,6 +3,7 @@
 import ApyCalculator from "@/components/ApyCalculator";
 import dynamic from "next/dynamic";
 import CollapsibleSection from "@/components/CollapsibleSection";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 /**
  * /dashboard — main vault overview page.
@@ -40,7 +41,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <CollapsibleSection id="vault-stats" title="Vault Stats">
-        <DashboardGrid />
+        <ErrorBoundary section="vault_stats">
+          <DashboardGrid />
+        </ErrorBoundary>
       </CollapsibleSection>
       <CollapsibleSection id="apy-chart" title="APY Chart">
         <PerformanceCharts />

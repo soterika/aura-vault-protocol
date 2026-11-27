@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveNetwork, stellarExpertTxUrl } from "@/lib/explorerLinks";
+
 /**
  * TransactionModal — Issue #259: Mobile-optimised deposit/withdraw flows
  *
@@ -22,6 +24,7 @@ import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import PreSignBreakdown from "./PreSignBreakdown";
 import { ExplorerMenu } from "./ExplorerMenu";
 import { useToast } from "./toast";
+import { getHumanReadableError } from "@/lib/errorMessages";
 
 import {
   useState,
@@ -333,7 +336,7 @@ export default function TransactionModal({
       const hash: string = data.hash || `tx-${Date.now()}`;
       setTxHash(hash);
       // Toast: transaction confirmed — includes "View on Explorer" link
-      const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${hash}`;
+      const explorerUrl = stellarExpertTxUrl(hash, resolveNetwork());
       txSuccess(`${label} confirmed!`, explorerUrl, `Amount: ${amount} XLM`);
     } catch (err: unknown) {
       const errorMsg = (err instanceof Error ? err.message : "Transaction failed") ?? "Transaction failed";
@@ -348,7 +351,7 @@ export default function TransactionModal({
       setTxError(err instanceof Error ? err.message : "Transaction failed");
       if (retrying) setRetryCount((c) => c + 1);
       // Toast: transaction failed — error variant persists until dismissed
-      toastError(`${label} failed`, errorMsg);
+      toastError(`${label} failed`, getHumanReadableError(errorMsg));
     }
   }
 

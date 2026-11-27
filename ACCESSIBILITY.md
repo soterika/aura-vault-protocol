@@ -275,3 +275,22 @@ it('MyComponent has no accessibility violations', async () => {
 ```
 
 7. **Run `npm run test:a11y`** before submitting. All tests must pass.
+
+---
+
+## Audit Results & Remediation Status (Issue #1240)
+
+### Automated Audit Coverage
+
+- **Playwright + axe-core (`playwright/accessibility.spec.ts`)**: Runs `@axe-core/playwright` with `wcag2a`, `wcag2aa`, `wcag21a`, and `wcag21aa` tags across `/`, `/dashboard`, `/faq`, `/settings`, and open modal dialogs, asserting zero `critical` or `serious` violations.
+- **Component Unit Tests (`ui/src/tests/a11y.test.tsx`)**: Runs `jest-axe` (`npm run test:a11y` in `ui/`) against `DepositForm`, `WithdrawForm`, `HarvestPanel`, `Toast`, `Modal`, and `LiveRegion`.
+
+### Remediation Status
+
+| Issue | Status | Details |
+|---|---|---|
+| Form inputs lack visible focus rings | ✅ Remediated | `.ds-input:focus` / `:focus-visible` in `ui/src/styles/components.css` now applies a `3px solid var(--color-primary)` outline with `outline-offset: 2px` in addition to `box-shadow: var(--focus-ring)`. |
+| Disabled button contrast < 3:1 | ✅ Remediated | `.btn:disabled` opacity increased from `0.5` to `0.72` in `ui/src/styles/components.css` and `ui/src/styles/global.css` to preserve ≥ 3:1 UI component contrast. |
+| Skip-to-main-content link | ✅ Remediated | Skip link `<a href="#main" className="skip-link">` rendered in `ui/src/App.tsx` targeting `<main id="main" tabIndex={-1}>`. |
+| Modal focus trap | ✅ Remediated | `ui/src/components/Modal.tsx` uses `useFocusTrap` (`ui/src/lib/useFocusTrap.ts`) to trap `Tab`/`Shift+Tab`, close on `Escape`, and restore focus to the trigger element. |
+| Keyboard navigation | ✅ Verified | All interactive controls use native `<button>`, `<a>`, `<input>` elements with `:focus-visible` indicators. |

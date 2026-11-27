@@ -78,7 +78,39 @@ function authHeaders(token: string): HeadersInit {
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
-export interface UseGovernanceProposalsOptions {
+export interface GovernanceScope {
+  chain?: string | null;
+  contractId?: string | null;
+}
+
+export function governanceScopeKey(scope?: GovernanceScope) {
+  return {
+    chain: scope?.chain ?? "default",
+    contractId: scope?.contractId ?? "default",
+  } as const;
+}
+
+export function governanceListQueryKey(
+  scope?: GovernanceScope,
+  filters?: { status?: ProposalStatus; page?: number; pageSize?: number }
+) {
+  return [
+    ...QUERY_KEYS.governanceProposals,
+    governanceScopeKey(scope),
+    filters ?? {},
+  ] as const;
+}
+
+export function governanceDetailQueryKey(id: string, scope?: GovernanceScope) {
+  return [
+    ...QUERY_KEYS.governanceProposals,
+    governanceScopeKey(scope),
+    "detail",
+    id,
+  ] as const;
+}
+
+export interface UseGovernanceProposalsOptions extends GovernanceScope {
   status?: ProposalStatus;
   page?: number;
   pageSize?: number;
@@ -94,6 +126,8 @@ export function useGovernanceProposals({
   page = 1,
   pageSize = 20,
   token,
+  chain,
+  contractId,
 }: UseGovernanceProposalsOptions) {
   const params = new URLSearchParams({
     page: String(page),
@@ -102,10 +136,10 @@ export function useGovernanceProposals({
   if (status) params.set("status", status);
 
   return useQuery({
-    queryKey: [
-      ...QUERY_KEYS.governanceProposals,
-      { status, page, pageSize },
-    ],
+    queryKey: governanceListQueryKey(
+      { chain, contractId },
+      { status, page, pageSize }
+    ),
     queryFn: () =>
       apiFetch<{ success: boolean; data: ProposalListResponse }>(
         `${API_BASE}/api/v1/governance/proposals?${params}`,
@@ -120,9 +154,13 @@ export function useGovernanceProposals({
 /**
  * Fetch a single proposal by ID.
  */
-export function useGovernanceProposal(id: string, token: string) {
+export function useGovernanceProposal(
+  id: string,
+  token: string,
+  scope?: GovernanceScope
+) {
   return useQuery({
-    queryKey: [...QUERY_KEYS.governanceProposals, id],
+    queryKey: governanceDetailQueryKey(id, scope),
     queryFn: () =>
       apiFetch<{ success: boolean; data: GovernanceProposal }>(
         `${API_BASE}/api/v1/governance/proposals/${id}`,
@@ -141,7 +179,7 @@ export interface VotePayload {
   signer: string;
 }
 
-export function useVoteMutation(token: string) {
+export function useVoteMutation(token: string, scope?: GovernanceScope) {
   const qc = useQueryClient();
 
   return useMutation({
@@ -159,8 +197,11 @@ export function useVoteMutation(token: string) {
       ),
 
     onSuccess: () => {
-      // Invalidate the whole proposals list so the new vote count appears
-      void qc.invalidateQueries({ queryKey: QUERY_KEYS.governanceProposals });
+      // Invalidate the scoped proposals list so the new vote count appears
+      const queryKey = scope
+        ? [...QUERY_KEYS.governanceProposals, governanceScopeKey(scope)]
+        : QUERY_KEYS.governanceProposals;
+      void qc.invalidateQueries({ queryKey });
     },
   });
 }
@@ -172,7 +213,7 @@ export interface ExecutePayload {
   xdr: string;
 }
 
-export function useExecuteMutation(token: string) {
+export function useExecuteMutation(token: string, scope?: GovernanceScope) {
   const qc = useQueryClient();
 
   return useMutation({
@@ -190,7 +231,10 @@ export function useExecuteMutation(token: string) {
       ),
 
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: QUERY_KEYS.governanceProposals });
+      const queryKey = scope
+        ? [...QUERY_KEYS.governanceProposals, governanceScopeKey(scope)]
+        : QUERY_KEYS.governanceProposals;
+      void qc.invalidateQueries({ queryKey });
     },
   });
 }
@@ -204,10 +248,12 @@ export function useExecuteMutation(token: string) {
  * and invalidates the governance proposals cache when a proposal_updated event
  * is received.
  */
-export function useGovernanceSSE(token: string) {
+export function useGovernanceSSE(token: string, scope?: GovernanceScope) {
   const qc = useQueryClient();
   const esRef = useRef<EventSource | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chain = scope?.chain;
+  const contractId = scope?.contractId;
 
   useEffect(() => {
     if (!token || typeof EventSource === "undefined") return;
@@ -224,7 +270,14 @@ export function useGovernanceSSE(token: string) {
       esRef.current = es;
 
       es.addEventListener("proposal_updated", () => {
-        void qc.invalidateQueries({ queryKey: QUERY_KEYS.governanceProposals });
+        const queryKey =
+          chain !== undefined || contractId !== undefined
+            ? [
+                ...QUERY_KEYS.governanceProposals,
+                governanceScopeKey({ chain, contractId }),
+              ]
+            : QUERY_KEYS.governanceProposals;
+        void qc.invalidateQueries({ queryKey });
       });
 
       es.onerror = () => {
@@ -243,5 +296,5 @@ export function useGovernanceSSE(token: string) {
       esRef.current?.close();
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
     };
-  }, [token, qc]);
+  }, [token, qc, chain, contractId]);
 }

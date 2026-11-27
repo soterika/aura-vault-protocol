@@ -1,12 +1,11 @@
 # .github/dependabot.yml
 #
 # Automated dependency update configuration.
-# Closes #948
+# Closes #948, #1248
 #
 # Update strategy:
-#   - Patch updates   → auto-merged via dependabot-auto-merge.yml after CI passes
-#   - Minor updates   → PR opened for manual review
-#   - Major updates   → PR opened for manual review (potential breaking changes)
+#   - Patch & Minor updates → grouped by ecosystem where configured, auto-merged/reviewed
+#   - Major updates         → opened as separate PRs for manual review (potential breaking changes)
 #
 # PR title format follows Conventional Commits:
 #   chore(deps): bump <package> from <old> to <new>
@@ -14,88 +13,31 @@
 version: 2
 
 updates:
-  # ── Rust crates — aura-vault ───────────────────────────────────────────────
-  - package-ecosystem: cargo
-    directory: /aura-vault
+  # ── npm — root ────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
     schedule:
       interval: weekly
       day: monday
       time: "06:00"
       timezone: UTC
     open-pull-requests-limit: 10
+    reviewers:
+      - devops
     labels:
       - dependencies
-      - rust
+      - automated
+      - javascript
     commit-message:
       prefix: "chore(deps)"
       include: scope
-    # Minor and major require manual review; patch updates are auto-merged
-    # by the dependabot-auto-merge.yml workflow once CI is green.
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
     groups:
-      # Batch non-breaking Soroban SDK updates together
-      soroban:
+      npm-root-minor-patch:
         patterns:
-          - "soroban-sdk"
-          - "soroban-sdk-macros"
-      # Group proptest + proptest-derive together
-      proptest:
-        patterns:
-          - "proptest"
-          - "proptest-derive"
-
-  # ── Rust crates — aura-factory ────────────────────────────────────────────
-  - package-ecosystem: cargo
-    directory: /aura-factory
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: UTC
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - rust
-    commit-message:
-      prefix: "chore(deps)"
-      include: scope
-    ignore:
-      - dependency-name: "*"
+          - "*"
         update-types:
-          - "version-update:semver-major"
-    groups:
-      soroban:
-        patterns:
-          - "soroban-sdk"
-          - "soroban-sdk-macros"
-
-  # ── Rust crates — aura-migration ──────────────────────────────────────────
-  - package-ecosystem: cargo
-    directory: /aura-migration
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: UTC
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - rust
-    commit-message:
-      prefix: "chore(deps)"
-      include: scope
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
-    groups:
-      soroban:
-        patterns:
-          - "soroban-sdk"
-          - "soroban-sdk-macros"
+          - minor
+          - patch
 
   # ── npm — backend ─────────────────────────────────────────────────────────
   - package-ecosystem: npm
@@ -106,25 +48,30 @@ updates:
       time: "06:00"
       timezone: UTC
     open-pull-requests-limit: 10
+    reviewers:
+      - devops
     labels:
       - dependencies
+      - automated
       - javascript
     commit-message:
       prefix: "chore(deps)"
       include: scope
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
     groups:
       express-ecosystem:
         patterns:
           - "express"
           - "@types/express"
+        update-types:
+          - minor
+          - patch
       testing:
         patterns:
           - "vitest"
           - "@vitest/*"
+        update-types:
+          - minor
+          - patch
 
   # ── npm — frontend ────────────────────────────────────────────────────────
   - package-ecosystem: npm
@@ -135,16 +82,183 @@ updates:
       time: "06:00"
       timezone: UTC
     open-pull-requests-limit: 10
+    reviewers:
+      - devops
     labels:
       - dependencies
+      - automated
       - javascript
     commit-message:
       prefix: "chore(deps)"
       include: scope
-    ignore:
-      - dependency-name: "*"
+    groups:
+      frontend-minor-patch:
+        patterns:
+          - "*"
         update-types:
-          - "version-update:semver-major"
+          - minor
+          - patch
+
+  # ── npm — mobile ──────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops
+    labels:
+      - dependencies
+      - automated
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      mobile-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── npm — contracts ───────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /contracts
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops
+    labels:
+      - dependencies
+      - automated
+      - javascript
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      contracts-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── Rust crates — aura-vault ──────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-vault
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops
+    labels:
+      - dependencies
+      - automated
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      # Batch non-breaking Soroban SDK updates together
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+        update-types:
+          - minor
+          - patch
+      # Group proptest + proptest-derive together
+      proptest:
+        patterns:
+          - "proptest"
+          - "proptest-derive"
+        update-types:
+          - minor
+          - patch
+      # Group remaining Cargo minor/patch updates by ecosystem to avoid PR flood
+      cargo-ecosystem:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── Rust crates — aura-factory ────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-factory
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops
+    labels:
+      - dependencies
+      - automated
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+        update-types:
+          - minor
+          - patch
+      cargo-ecosystem:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── Rust crates — aura-migration ──────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /aura-migration
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+    open-pull-requests-limit: 10
+    reviewers:
+      - devops
+    labels:
+      - dependencies
+      - automated
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      soroban:
+        patterns:
+          - "soroban-sdk"
+          - "soroban-sdk-macros"
+        update-types:
+          - minor
+          - patch
+      cargo-ecosystem:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # ── GitHub Actions ────────────────────────────────────────────────────────
   - package-ecosystem: github-actions
@@ -155,9 +269,19 @@ updates:
       time: "06:00"
       timezone: UTC
     open-pull-requests-limit: 5
+    reviewers:
+      - devops
     labels:
       - dependencies
+      - automated
       - github-actions
     commit-message:
       prefix: "chore(deps)"
       include: scope
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

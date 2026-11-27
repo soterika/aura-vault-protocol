@@ -228,3 +228,10 @@ variable "email_forwarding_destinations" {
   type        = list(string)
   default     = []
 }
+
+# WAF Configuration Variables
+variable "waf_blocked_countries" {
+  description = "ISO 3166-1 alpha-2 country codes blocked by AWS WAF for OFAC compliance"
+  type        = list(string)
+  default     = ["CU", "IR", "KP", "SY", "RU", "BY"]
+}

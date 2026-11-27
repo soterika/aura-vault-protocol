@@ -48,3 +48,16 @@ CREATE TABLE IF NOT EXISTS event_cursor (
 INSERT INTO event_cursor (id, contract_id, last_event_id, last_ledger)
 VALUES (1, '', NULL, 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- Down Migration
+-- lint-migrations: allow DROP TABLE   reason: rollback removes the tables created by this migration
+BEGIN;
+DROP INDEX IF EXISTS idx_vault_events_contract_id;
+DROP INDEX IF EXISTS idx_vault_events_event_type;
+DROP INDEX IF EXISTS idx_vault_events_ledger;
+DROP INDEX IF EXISTS idx_vault_events_processed;
+DROP INDEX IF EXISTS idx_vault_events_occurred_at;
+DROP TABLE IF EXISTS event_cursor;
+DROP TABLE IF EXISTS dead_letter_events;
+DROP TABLE IF EXISTS vault_events;
+COMMIT;
