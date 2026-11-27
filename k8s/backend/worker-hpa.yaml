@@ -1,0 +1,36 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: backend-worker-scaledobject
+  namespace: aura-vault
+  labels:
+    app: backend-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+    - type: redis
+      metadata:
+        address: redis-service.aura-vault.svc.cluster.local:6379
+        listName: bull:harvest-events:wait
+        listLength: "100"
+        enableTLS: "false"
+      authenticationRef:
+        name: keda-redis-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-redis-auth
+  namespace: aura-vault
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: backend-secrets
+      key: REDIS_PASSWORD
