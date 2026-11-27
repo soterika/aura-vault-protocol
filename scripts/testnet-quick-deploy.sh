@@ -133,7 +133,8 @@ INIT_OUTPUT=$(stellar contract invoke \
   -- initialize \
   --admin "$DEPLOYER_ADDR" \
   --underlying_token "$TOKEN_CONTRACT" \
-  --signers "$SIGNERS")
+  --signers "$SIGNERS" \
+  --decimals 7)
 
 INIT_HASH=$(echo "$INIT_OUTPUT" | jq -r '.transaction_hash // .hash')
 if [ -z "$INIT_HASH" ] || [ "$INIT_HASH" = "null" ]; then
