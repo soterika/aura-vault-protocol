@@ -11,7 +11,8 @@
  * Cache names are versioned so old workers clean up on activation.
  */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION =
+  new URL(self.location.href).searchParams.get("v") || "v1";
 const SHELL_CACHE = `aura-shell-${CACHE_VERSION}`;
 const STATIC_CACHE = `aura-static-${CACHE_VERSION}`;
 const API_CACHE = `aura-api-${CACHE_VERSION}`;
