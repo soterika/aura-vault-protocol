@@ -11,7 +11,7 @@ RUN apk add --no-cache python3 make g++
 # Install the frontend dependencies from its own lockfile
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 COPY frontend ./
 # Build application
@@ -38,7 +38,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/frontend/src/i18n ./frontend/src/
 
 # Install only production dependencies
 WORKDIR /app/frontend
-RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Switch to non-root user
 USER nextjs
