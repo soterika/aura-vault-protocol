@@ -36,7 +36,7 @@
     "@next/bundle-analyzer": "^16.4.6",
     "@size-limit/file": "^14.3.0",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/nprogress": "^0.2.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
